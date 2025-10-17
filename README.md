@@ -23,8 +23,9 @@ Clone and install the package locally:
 git clone https://github.com/navarrew/markshark.git
 cd markshark
 pip install -e .
+```
 
-Make sure you have required dependencies (OpenCV, Typer, Streamlit).
+Make sure you install required dependencies (OpenCV, Typer, Streamlit).
 
 
 ---
@@ -65,8 +66,6 @@ Create a plain text file (for example, `key.txt`) that lists the correct answers
 - Answers can be separated by **commas** (e.g. `A,B,A,D,C,C,D`)
   or placed on **separate lines**, one per question.
 - Make sure the number of answers matches the number of questions on your sheet.
-
----
 
 # Step 2- Scan and align your bubble sheets
 
