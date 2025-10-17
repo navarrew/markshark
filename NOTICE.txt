@@ -1,0 +1,28 @@
+MarkShark — the open-source bubble hunter
+Copyright (c) 2025 William Navarre
+University of Toronto
+Contact: william.navarre@utoronto.ca
+
+This software is distributed under the terms of the
+GNU Affero General Public License v3.0 (AGPL-3.0).
+
+You may use, modify, and redistribute this software for
+academic, research, and other open-source purposes,
+provided that derivative works remain open-source under
+the same license.
+
+Commercial use of this software (including integration
+into proprietary or for-profit systems) requires a
+separate license agreement with the author.
+
+For commercial licensing or attribution inquiries:
+  Email: william.navarre@utoronto.ca
+
+Attribution in derived works or publications should include:
+
+  “MarkShark — the open-source bubble hunter,
+   an Optical Mark Recognition toolkit.
+   Developed by William Navarre, University of Toronto (2025).”
+
+A copy of the AGPL license is provided in the accompanying LICENSE file
+and is also available at <https://www.gnu.org/licenses/agpl-3.0.html>.
