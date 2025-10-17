@@ -1,0 +1,46 @@
+python bubble_synth.py \
+  --config 64Q-config.yaml \
+  --csv fake_students.csv \
+  --template 64Q-template.png \
+  --out-dir out \
+  --random-answers --random-seed 123 \
+  --out-pdf fake_bubbles.pdf
+  
+  
+python bubble_synth.py \
+  --config 64Q-config.yaml \
+  --csv fake_students.csv \
+  --template 64Q-template.png \
+  --out-dir out \
+  --key-txt key.txt \
+  --save-overlays \
+  --out-pdf fake_bubbles.pdf
+  
+  Example (lossless PNG → compact Letter PDF):
+python bubble_synth.py \
+  --config 64Q-config.yaml \
+  --csv fake_students.csv \
+  --template 64Q-template.png \
+  --out-dir out \
+  --key-txt key.txt \
+  --out-pdf out/fake_bubbles.pdf \
+  --dpi 300 --image-format png
+
+Smaller files (JPEG):
+python bubble_synth.py \
+  --config 64Q-config.yaml \
+  --csv fake_students.csv \
+  --template 64Q-template.png \
+  --out-dir out \
+  --random-answers --random-seed 123 \
+  --out-pdf out/fake_bubbles.pdf \
+  --dpi 300 --image-format jpg --jpeg-quality 85
+  
+  
+bubble-omr grade fake_bubbles_1.pdf \
+  --config 64Q-config.yaml \
+  --key-txt examplekey.txt \
+  --annotate-all-cells \
+  --out-annotated-dir annotated_pngs \
+  --label-density \
+  --out-csv results.csv 
