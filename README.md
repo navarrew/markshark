@@ -30,10 +30,9 @@ Make sure you install required dependencies (OpenCV, Typer, Streamlit).
 
 ---
 # MarkShark overview
----
 ## Step 1 - Make Your Bubble Sheet
 
-### 1. Create your bubble sheet (the exam form)
+### Create your bubble sheet (the exam form)
 Start by making a bubble sheet and saving it as a **PDF file**.
 - You can use one of the ready-made templates in the **“bubble forms”** folder.
 - If you want to design your own, you can use any drawing or layout program that can export to PDF.
@@ -41,31 +40,25 @@ Start by making a bubble sheet and saving it as a **PDF file**.
   - **Inkscape** is a good free option that works with `.svg` files and can export to PDF as well.
   - Feel free to modify any templates we provide to meet your own needs.
 
-### 2. Add alignment markers (ARUCO markers) - optional
-We recommended that you include **ARUCO markers**—small black-and-white squares in the corners of your page.
+### optional - add alignment markers (ARUCO markers)
+We recommended that you include **ARUCO markers**—small black-and-white squares in the corners of your bubble sheets.
 - These serve as landmarks that help the software detect and correct any **rotation, skew, or scaling** that happens when the bubble sheets are scanned.
 - We provide these markers in our template files as png images.  You can paste one in each corner of your bubble sheet template.
 - You can generate ARUCO markers with many free online tools or within MarkShark’s utilities
 - Without these markers, scans that are even slightly off may not align correctly during analysis.
 
-### 3. Make a configuration file (`config.yaml`)
-The configuration file tells MarkShark where everything is located on your bubble sheet—
-for example,
-- where the **question bubbles** are,
-- where the **student ID section** is, and
-- any other important zones (like name boxes, version codes, etc).
+### Make a configuration file (`config.yaml`)
+The configuration file is like a map that tells MarkShark where everything is located on your bubble sheet (where the student ID bubbles are, where the answer bubbles are, etc).  You only need to make a configuration file once for your bubble sheet and you can reuse it again and again.  If you use our template bubble sheeets we provide the corresponding conifguration files for you.  Easy peasy.
 
-The config file is like a map that tells bubble_score.py where the bubbles are located on the bubble sheet and what type of bubble the are (student name, student ID, test version, or the answer to a question).  This is a very important starting step because if the config file doesn't line up well with the bubble sheet then you will get poor results.  The software will look for bubbles where there aren't any.
+NOTE: If the config file doesn't line up well with the bubble sheet then you will get poor results.  The software will look for bubbles where there aren't any.
 
-To test and adjust this setup:
-- Use MarkShark’s **visualizer** function to see how the zones from your `config.yaml` file align with your PDF template.
-- If they don’t line up perfectly, adjust the coordinates in the config file and recheck until everything matches cleanly.
+Adjusting your configuration file to match your bubble sheet:
+- Use MarkShark’s **visualizer** function to see how the zones from your `config.yaml` file align with your PDF template.  If the map doesn's line up perfectly with your bubble sheet, adjust the coordinates in the config file and recheck until everything matches cleanly.
 
-### 4. Make an answer key
+### Make your answer key(s) 
 Create a plain text file (for example, `key.txt`) that lists the correct answers.
 - Answers can be separated by **commas** (e.g. `A,B,A,D,C,C,D`)
-  or placed on **separate lines**, one per question.
-- Make sure the number of answers matches the number of questions on your sheet.
+  or placed on **separate lines**, one per question.  You don't have to use every bubble on your sheet.  It's perfectly fine to use a bubble sheet that has space for 64 questions even though your test only asks 30 questions.
 
 ## Step 2- Scan and align your bubble sheets
 
