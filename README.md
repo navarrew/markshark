@@ -61,10 +61,44 @@ markshark gui
 This is a quick summary of how the pipeline works.
 
 ## Step 1- Make your bubble sheet
-1.	Make your bubble sheet as a pdf file.  I provide templates in the 'bubble forms' folder.  I used Affinity Designer to make these (similar to Adobe-Illustrator), but any software could work as long as it exports your bubble sheet as a pdf. I've also had good luck with Inkscape, a freeware program that works well with svg files.
-2.  It’s a good idea to add landmarks called ARUCO markers to it so the scans, which can be wonky and slightly misaligned/rotated, can be easily aligned with software prior to analysis.
-2.	Make a ‘config.yaml’ file that tells the marking software where the question bubbles are, where the student ID bubbles are, etc.  Use the **visualizer** function in MarkShark to see how well the zones described in the config.yaml file fit to your template bubble sheet so you can make adjustments to get everything lined up properly.
-3.	Make a key as a text file.  The answers (as letters like A,B,A,D,C,C,D...) can be comma-separated or separated with newlines.
+# How to Prepare Your Bubble Sheet for MarkShark
+
+## 1. Create your bubble sheet (the exam form)
+Start by making a bubble sheet and saving it as a **PDF file**.
+- You can use one of the ready-made templates in the **“bubble forms”** folder.
+- If you want to design your own, you can use any drawing or layout program that can export to PDF.
+  - I made mine with **Affinity Designer** (similar to Adobe Illustrator).
+  - **Inkscape** is a good free option that works with `.svg` files and can export to PDF as well.
+
+---
+
+## 2. Add alignment markers (ARUCO markers)
+It’s strongly recommended that you include **ARUCO markers**—small black-and-white squares in the corners of your page.
+- These serve as landmarks that help the software detect and correct any **rotation, skew, or scaling** that happens when the sheet is scanned.
+- You can generate ARUCO markers with many free online tools or within MarkShark’s utilities.
+- Without these markers, scans that are even slightly off may not align correctly during analysis.
+
+---
+
+## 3. Make a configuration file (`config.yaml`)
+The configuration file tells MarkShark where everything is located on your bubble sheet—
+for example,
+- where the **question bubbles** are,
+- where the **student ID section** is, and
+- any other important zones (like name boxes).
+
+To test and adjust this setup:
+- Use MarkShark’s **visualizer** function to see how the zones from your `config.yaml` file align with your PDF template.
+- If they don’t line up perfectly, adjust the coordinates in the config file and recheck until everything matches cleanly.
+
+---
+
+## 4. Make an answer key
+Create a plain text file (for example, `key.txt`) that lists the correct answers.
+- Answers can be separated by **commas** (e.g. `A,B,A,D,C,C,D`)
+  or placed on **separate lines**, one per question.
+- Make sure the number of answers matches the number of questions on your sheet.
+
 
 ## Step 2- Scan and align your bubble sheets
 1.	Scan your student bubble sheets with a high quality scanner (garbage in, garbage out).  
