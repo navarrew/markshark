@@ -1,7 +1,7 @@
-# MarkShark
+# MarkSharkOMR
 ## A fast, accurate, customizable, open-source test bubble sheet scanner
 
-MarkShark is a versatile, fast Python tool to **align, visualize, grade, and analyze bubble-sheet exams**.  
+MarkSharkOMR is a versatile, fast Python tool to **align, visualize, grade, and analyze bubble-sheet exams**.  
 It supports YAML/JSON configuration files, command-line and GUI modes, and outputs annotated images, CSV results, and detailed item-analysis statistics.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
