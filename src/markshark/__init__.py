@@ -1,10 +1,13 @@
-# src/markshark/__init__.py
+# Prefer the generated _version.py written by hatch-vcs during build
 try:
-    from importlib.metadata import version, PackageNotFoundError
-except ImportError:  # Python <3.8 backport, but you require 3.9+, so not needed.
-    from importlib_metadata import version, PackageNotFoundError  # pragma: no cover
-
-try:
-    __version__ = version("markshark")
-except PackageNotFoundError:
-    __version__ = "0.0.0+local"
+    from ._version import __version__  # created at build/editable install time
+except Exception:
+    # Fallback during editable runs before build hook fires
+    try:
+        from importlib.metadata import version, PackageNotFoundError
+        try:
+            __version__ = version("markshark")
+        except PackageNotFoundError:
+            __version__ = "0.0.0+local"
+    except Exception:
+        __version__ = "0.0.0+local"

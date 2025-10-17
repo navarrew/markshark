@@ -4,9 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "markshark"
-# Remove the fixed `version = "..."` line
-dynamic = ["version"]
-description = "MarkSharkOMR — the open-source bubble hunter (Optical Mark Recognition toolkit)"
+dynamic = ["version"]                       # <— remove the fixed version
+description = "MarkShark — the open-source bubble hunter (Optical Mark Recognition toolkit)"
 authors = [
   { name = "William Navarre", email = "william.navarre@utoronto.ca" }
 ]
@@ -35,15 +34,17 @@ dependencies = [
 ]
 
 [project.scripts]
-markshark    = "markshark.cli:app_main"
+markshark     = "markshark.cli:app_main"
 markshark-gui = "markshark.gui_launcher:main"
-bubble-omr   = "markshark.cli:app_main"  # temporary alias
+bubble-omr    = "markshark.cli:app_main"  # temporary alias
 
-# Tell Hatch to derive the version from git tags
+# Use VCS (git tags) as the version source
 [tool.hatch.version]
 source = "vcs"
 
-# Optional: control how version strings are formed between tags
+# hatch-vcs MUST know where to write a version file during build
 [tool.hatch.build.hooks.vcs]
-# If no tag exists yet during a local build, use this placeholder
+version-file = "src/markshark/_version.py"
+
+# Optional fallback if no tags exist yet (local builds)
 fallback-version = "0.1.0"
