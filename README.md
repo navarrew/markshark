@@ -48,7 +48,6 @@ Start by making a bubble sheet and saving it as a **PDF file**.
   - **Inkscape** is a great free option that supports `.svg` files.  
   - Templates are provided in both PDF and SVG formats for easy editing.
 
----
 
 ### (Optional) Add alignment markers (ARUCO markers)
 
@@ -61,16 +60,16 @@ We recommend adding **ARUCO markers**—small black-and-white squares in the cor
 
 ---
 
-### Make a configuration file (`config.yaml`)
+## Step 2 – Make a configuration file for your bubble sheet
 
-The configuration file is a **map** that tells MarkShark where key areas are located on your sheet:
+The configuration file is like a **map** that tells MarkShark where the important areas are located on your sheet including:
 - student ID bubbles  
 - answer bubbles  
 - name boxes, etc.
 
-You only need to make the configuration file once per sheet and can reuse it indefinitely.
+The configuration file is in YAML format and you only need to make it once and can reuse it indefinitely for a given type of bubble sheet.  However, if you change where the bubbles are located on your bubble sheet you will have to update your configuration file to match.
 
-> **Tip:** If the zones in the config file don’t line up with the printed bubbles, grading will fail or be inaccurate.
+> **Tip:** It's worth putting in some time to make sure your map fits well to your master bubble sheet.  If the zones in the config file don’t line up with the printed bubbles, grading will fail or be inaccurate.
 
 **To check and adjust your config file:**
 - Use MarkShark’s **visualizer** function to preview how your `config.yaml` zones align with your template.  
@@ -78,17 +77,17 @@ You only need to make the configuration file once per sheet and can reuse it ind
 
 ---
 
-### Make your answer key
+## Step 3 - Make your answer key
 
 Create a plain-text file (e.g. `key.txt`) listing the correct answers.
 
 - Answers can be separated by **commas** (`A,B,A,D,C,C,D`)  
   or placed on **separate lines** (one per question).  
-- The key can be shorter than the total number of bubbles—unused ones will simply be ignored.
+- The key can be shorter than the total number of bubbles.  Unused ones will simply be ignored.
 
 ---
 
-## Step 2 – Scan and Align Your Bubble Sheets
+## Step 4 – Scan and Align Your Bubble Sheets
 
 You can scan student sheets using any standard desktop scanner (flatbed or sheet-fed).
 
@@ -107,7 +106,7 @@ Even high-quality scans are often slightly misaligned. Pre-aligning them ensures
 
 ---
 
-## Step 3 – Score
+## Step 5 – Score
 
 1. Run the **`grade`** function on the aligned PDF in a directory containing your `key.txt` and `config.yaml`.  
 2. MarkShark outputs a **CSV file** with each student’s answers and final score.  
@@ -116,7 +115,7 @@ Even high-quality scans are often slightly misaligned. Pre-aligning them ensures
 
 ---
 
-## Step 4 – Analyze Results
+## Step 6 – Analyze Results
 
 1. Run the **`stats`** function on the CSV output from the grading step.  
 2. This generates a report summarizing overall performance, item difficulty, and question quality.  
