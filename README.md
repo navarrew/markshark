@@ -12,12 +12,6 @@ It supports YAML/JSON configuration files, command-line and GUI modes, and outpu
 ## 🧰 Prerequisites
 
 - **Python 3.9 – 3.12**
-  - macOS → `brew install ghostscript`
-  - Ubuntu/Debian → `sudo apt-get install ghostscript`
-- Optional but recommended:
-  - A virtual environment (`python -m venv venv` → `source venv/bin/activate`)
-  - Or [`pipx`](https://pypa.github.io/pipx/) for isolated installs
-
 ---
 
 ## 📦 Installation
@@ -29,7 +23,7 @@ git clone https://github.com/navarrew/markshark.git
 cd markshark
 pip install -e .
 
-Make sure you have required dependencies (OpenCV, Typer, Streamlit, Ghostscript for PDF compression).
+Make sure you have required dependencies (OpenCV, Typer, Streamlit).
 
 ---
 
@@ -152,17 +146,13 @@ One row per item-option combination:
 One PNG per item, showing a nonparametric Item Characteristic Curve (ICC):
 - X-axis: binned total-minus-item score.
 - Y-axis: proportion correct in each bin.
+
 Interpretation of Statistics
-•	Difficulty (Pct correct):
-Proportion of students who answered correctly. Ideal values often 0.3–0.8.
-•	Point–biserial:
-Correlation between correctness and total score (excluding the item). Higher positive values indicate better discrimination. Negative values are problematic.
-•	KR-20:
-Reliability coefficient for dichotomous items. Higher values (≥0.7) indicate consistent test performance.
-•	KR-21:
-Approximation of KR-20 assuming items have similar difficulty. Useful when item-level data is limited.
-•	Option biserial:
-Correlation between selecting a particular option and student ability. Correct option should be positive; distractors should be negative or near-zero.
+•	Difficulty (Pct correct): Proportion of students who answered correctly. Ideal values often 0.3–0.8.
+•	Point–biserial: Correlation between correctness and total score (excluding the item). Higher positive values indicate better discrimination. Negative values are problematic.
+•	KR-20: Reliability coefficient for dichotomous items. Higher values (≥0.7) indicate consistent test performance.
+•	KR-21: Approximation of KR-20 assuming items have similar difficulty. Useful when item-level data is limited.
+•	Option biserial: Correlation between selecting a particular option and student ability. Correct option should be positive; distractors should be negative or near-zero.
 
 
 
