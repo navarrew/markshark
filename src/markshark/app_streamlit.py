@@ -1,15 +1,16 @@
 
 #!/usr/bin/env python3
 """
-Streamlit GUI wrapper for the MarkShark CLI.
+Streamlit GUI wrapper for the MarkSharkOMR CLI.
 This app shells out to the Typer commands (align, visualize, grade, stats),
 so the GUI stays in sync with the single source of truth: the CLI + defaults.py.
 """
 from __future__ import annotations
 
 import os
+import io
+import zipfile
 import sys
-import shutil
 import tempfile
 import subprocess
 from pathlib import Path
@@ -62,13 +63,17 @@ def _download_file_button(label: str, path: Path):
         st.download_button(label, data=path.read_bytes(), file_name=path.name)
 
 def _zip_dir_to_bytes(dir_path: Path) -> bytes:
-    mem = io.BytesIO()
-    with zipfile.ZipFile(mem, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for p in dir_path.rglob("*"):
-            if p.is_file():
-                zf.write(p, p.relative_to(dir_path))
-    mem.seek(0)
-    return mem.read()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        # sort for deterministic order; skip hidden files/dirs
+        for p in sorted(dir_path.rglob("*")):
+            rel = p.relative_to(dir_path)
+            parts_hidden = any(part.startswith(".") for part in rel.parts)
+            if parts_hidden or not p.is_file():
+                continue
+            zf.write(p, rel)
+    buf.seek(0)
+    return buf.read()
 
 # --------------------- Sidebar ---------------------
 st.sidebar.title("MarkShark GUI")
