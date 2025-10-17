@@ -11,7 +11,6 @@ It supports YAML/JSON configuration files, command-line and GUI modes, and outpu
 ## 🧰 Prerequisites
 
 - **Python 3.9 – 3.12**
-- **Ghostscript** (required for PDF compression and merging)
   - macOS → `brew install ghostscript`
   - Ubuntu/Debian → `sudo apt-get install ghostscript`
 - Optional but recommended:
@@ -25,8 +24,8 @@ It supports YAML/JSON configuration files, command-line and GUI modes, and outpu
 Clone and install the package locally:
 
 ```bash
-git clone https://github.com/navarrew/bubble-OMR.git
-cd bubble-OMR
+git clone https://github.com/navarrew/markshark.git
+cd markshark
 pip install -e .
 
 Make sure you have required dependencies (OpenCV, Typer, Streamlit, Ghostscript for PDF compression).
@@ -37,44 +36,44 @@ Make sure you have required dependencies (OpenCV, Typer, Streamlit, Ghostscript 
 
 ### Align scans
 ```bash
-bubble-omr align raw_scans.pdf --template template.pdf --out-pdf aligned_scans.pdf
+markshark align raw_scans.pdf --template template.pdf --out-pdf aligned_scans.pdf
 ```
 
 ### Visualize configuration
 ```bash
-bubble-omr visualize template.pdf --config config.yaml --out-image config_overlay.png
+markshark visualize template.pdf --config config.yaml --out-image config_overlay.png
 ```
 
 ### Grade aligned scans
 ```bash
-bubble-omr grade aligned_scans.pdf --config config.yaml --key-txt key.txt --total-questions 34 --out-csv results.csv --out-annotated-dir annotated --annotate-all-cells
+markshark grade aligned_scans.pdf --config config.yaml --key-txt key.txt --total-questions 34 --out-csv results.csv --out-annotated-dir annotated --annotate-all-cells
 ```
 
 ### Compute statistics
 ```bash
-bubble-omr stats results.csv --output-csv results_with_item_stats.csv --item-report-csv item_analysis.csv --exam-stats-csv exam_stats.csv
+markshark stats results.csv --output-csv results_with_item_stats.csv --item-report-csv item_analysis.csv --exam-stats-csv exam_stats.csv
 ```
 
 ### Launch the GUI
 ```bash
-bubble-omr gui
+markshark gui
 ```
 
 ---
 
-# Bubble-OMR overview
+# MarkShark overview
 This is a quick summary of how the pipeline works.
 
 ## Step 1- Make your bubble sheet
 1.	Make your bubble sheet as a pdf file.  I provide templates in the 'bubble forms' folder.  I used Affinity Designer to make these (similar to Adobe-Illustrator), but any software could work as long as it exports your bubble sheet as a pdf. I've also had good luck with Inkscape, a freeware program that works well with svg files.
 2.  It’s a good idea to add landmarks called ARUCO markers to it so the scans, which can be wonky and slightly misaligned/rotated, can be easily aligned with software prior to analysis.
-2.	Make a ‘config.yaml’ file that tells the marking software where the question bubbles are, where the student ID bubbles are, etc.  Use the **visualizer** function in bubble-omr to see how well the zones described in the config.yaml file fit to your template bubble sheet so you can make adjustments to get everything lined up properly.
+2.	Make a ‘config.yaml’ file that tells the marking software where the question bubbles are, where the student ID bubbles are, etc.  Use the **visualizer** function in MarkShark to see how well the zones described in the config.yaml file fit to your template bubble sheet so you can make adjustments to get everything lined up properly.
 3.	Make a key as a text file.  The answers (as letters like A,B,A,D,C,C,D...) can be comma-separated or separated with newlines.
 
 ## Step 2- Scan and align your bubble sheets
 1.	Scan your student bubble sheets with a high quality scanner (garbage in, garbage out).  
 2.  It's easiest if the scans are provided as a single multi-page pdf at 300dpi.
-2.	Align the student pdfs to a blank version of the bubble sheet (the clean, original pdf file is best) using the **align** functions of bubble-omr.  It will give you a new pdf where all the bubble-sheets within are aligned to your template so the software can accurately find the bubbles.
+2.	Align the student pdfs to a blank version of the bubble sheet (the clean, original pdf file is best) using the **align** functions of MarkShark.  It will give you a new pdf where all the bubble-sheets within are aligned to your template so the software can accurately find the bubbles.
 
 ## Step 3- Score 
 1.	Run the **grade** function on the aligned pdf file in a directory that also has the key.txt file and the config file.  
