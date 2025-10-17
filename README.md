@@ -34,11 +34,11 @@ Make sure you install required dependencies (OpenCV, Typer, Streamlit).
 
 ### Create your bubble sheet (the exam form)
 Start by making a bubble sheet and saving it as a **PDF file**.
-- You can use one of the ready-made templates in the **“bubble forms”** folder.
-- If you want to design your own, you can use any drawing or layout program that can export to PDF.
+- If you're in a hurry, we provide a few different templates (and their corresponding config files) that should be ready to use right away with no issues.  You can freely modify these templates for your own use.  The ready-made templates are in the **“bubble forms”** folder.
+- If you want to make your own bubble sheet from scratch that's fine too.  If you want to design your own, you can use any drawing or layout program that can export to PDF.
   - We made ours with **Affinity Designer** (similar to Adobe Illustrator).
   - **Inkscape** is a good free option that works with `.svg` files and can export to PDF as well.
-  - Feel free to modify any templates we provide to meet your own needs.
+  - Our templates are provided both in pdf and svg formats that can be modified by Adobe Illustrator, Inkscape, Affinity Designer, and many other graphics programs.
 
 ### optional - add alignment markers (ARUCO markers)
 We recommended that you include **ARUCO markers**—small black-and-white squares in the corners of your bubble sheets.
@@ -76,8 +76,8 @@ You can, in theory, scan by taking pictures with your phone but we don't recomme
 2.  You will get an output comma-separated file with each student in a row, their answers, and their final score
 3.  You can optionally export a pdf of the bubble sheets with circles that visually indicate which bubbles were scored.  This is useful for diagnosing issues if you have any.
 
-### Step 4 - Analyze the results and assess how good your questions are
-1.	Run the **stats** function on the csv file that was the output of the grade program.  This will give you an overall picture of student performance.
+## Step 4 - Analyze the results and assess how good your questions are
+1.	Run the **stats** function on the csv file that was the output of the grade program.  This will generate a report that will give you an overall picture of student performance.  It will flag questions that were not effective and highlight potential places for improvement.
 
 ---
 # Command examples
@@ -86,7 +86,7 @@ You can, in theory, scan by taking pictures with your phone but we don't recomme
 # Additional instructions
 
 ## Making your bubble sheet
-If you're in a hurry, we provide a few different templates (and their corresponding config files) that should be ready to use right away with no issues.  You can also freely modify these files for your own use.  If you want to make your own bubble sheet from scratch that's fine too.
+
 
 Suggestions:
 1. You should align the bubbles with even spacing between each.  You'll run into problems if the gaps between bubbles in a row/column are not consistent.   Use the 'align' and 'distribute' features on your graphics software to ensure your bubbles are aligned and spaced properly.
