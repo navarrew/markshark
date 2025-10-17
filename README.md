@@ -26,72 +26,39 @@ pip install -e .
 
 Make sure you have required dependencies (OpenCV, Typer, Streamlit).
 
----
-
-## Usage
-
-### Align scans
-```bash
-markshark align raw_scans.pdf --template template.pdf --out-pdf aligned_scans.pdf
-```
-
-### Visualize configuration
-```bash
-markshark visualize template.pdf --config config.yaml --out-image config_overlay.png
-```
-
-### Grade aligned scans
-```bash
-markshark grade aligned_scans.pdf --config config.yaml --key-txt key.txt --total-questions 34 --out-csv results.csv --out-annotated-dir annotated --annotate-all-cells
-```
-
-### Compute statistics
-```bash
-markshark stats results.csv --output-csv results_with_item_stats.csv --item-report-csv item_analysis.csv --exam-stats-csv exam_stats.csv
-```
-
-### Launch the GUI
-```bash
-markshark gui
-```
 
 ---
-
 # MarkShark overview
-This is a quick summary of how the pipeline works.
-
-## Step 1- Make your bubble sheet
-# How to Prepare Your Bubble Sheet for MarkShark
+---
+# Step 1 - How to Make a Bubble Sheet for MarkShark
 
 ## 1. Create your bubble sheet (the exam form)
 Start by making a bubble sheet and saving it as a **PDF file**.
 - You can use one of the ready-made templates in the **“bubble forms”** folder.
 - If you want to design your own, you can use any drawing or layout program that can export to PDF.
-  - I made mine with **Affinity Designer** (similar to Adobe Illustrator).
+  - We made ours with **Affinity Designer** (similar to Adobe Illustrator).
   - **Inkscape** is a good free option that works with `.svg` files and can export to PDF as well.
+  - Feel free to modify any templates we provide to meet your own needs.
 
----
-
-## 2. Add alignment markers (ARUCO markers)
-It’s strongly recommended that you include **ARUCO markers**—small black-and-white squares in the corners of your page.
-- These serve as landmarks that help the software detect and correct any **rotation, skew, or scaling** that happens when the sheet is scanned.
-- You can generate ARUCO markers with many free online tools or within MarkShark’s utilities.
+## 2. Add alignment markers (ARUCO markers) - optional
+We recommended that you include **ARUCO markers**—small black-and-white squares in the corners of your page.
+- These serve as landmarks that help the software detect and correct any **rotation, skew, or scaling** that happens when the bubble sheets are scanned.
+- We provide these markers in our template files as png images.  You can paste one in each corner of your bubble sheet template.
+- You can generate ARUCO markers with many free online tools or within MarkShark’s utilities
 - Without these markers, scans that are even slightly off may not align correctly during analysis.
-
----
 
 ## 3. Make a configuration file (`config.yaml`)
 The configuration file tells MarkShark where everything is located on your bubble sheet—
 for example,
 - where the **question bubbles** are,
 - where the **student ID section** is, and
-- any other important zones (like name boxes).
+- any other important zones (like name boxes, version codes, etc).
+
+The config file is like a map that tells bubble_score.py where the bubbles are located on the bubble sheet and what type of bubble the are (student name, student ID, test version, or the answer to a question).  This is a very important starting step because if the config file doesn't line up well with the bubble sheet then you will get poor results.  The software will look for bubbles where there aren't any.
 
 To test and adjust this setup:
 - Use MarkShark’s **visualizer** function to see how the zones from your `config.yaml` file align with your PDF template.
 - If they don’t line up perfectly, adjust the coordinates in the config file and recheck until everything matches cleanly.
-
----
 
 ## 4. Make an answer key
 Create a plain text file (for example, `key.txt`) that lists the correct answers.
@@ -99,19 +66,25 @@ Create a plain text file (for example, `key.txt`) that lists the correct answers
   or placed on **separate lines**, one per question.
 - Make sure the number of answers matches the number of questions on your sheet.
 
+---
 
-## Step 2- Scan and align your bubble sheets
-1.	Scan your student bubble sheets with a high quality scanner (garbage in, garbage out).  
-2.  It's easiest if the scans are provided as a single multi-page pdf at 300dpi.
-2.	Align the student pdfs to a blank version of the bubble sheet (the clean, original pdf file is best) using the **align** functions of MarkShark.  It will give you a new pdf where all the bubble-sheets within are aligned to your template so the software can accurately find the bubbles.
+# Step 2- Scan and align your bubble sheets
+
+You can scan your student bubble sheets using any typical desktop scanner (flatbed or fed through a feeder).  After scanning, even with a quality scanner, it is typical that the page images will be randomly a bit off-center or askew.  A small bit of rotation in a page is usually tolerated by the scoring software but much better results will be obtained the pages are pre-processed to align almost perfectly with the map in config file.
+
+## 1.	Scan your student bubble sheets with a high quality scanner.
+You can, in theory, scan by taking pictures with your phone but we don't recommend it because the lighting across the page will vary and you will have to adjust the skew, etc.  You'll spend more time correcting and adjusting your scans than it's worth.
+
+## 2. It's easiest if the scans are saved as a single multi-page pdf at 150 or 300 dpi (grayscale or color).
+## 3.	Align the student pdfs to a blank version of the bubble sheet (the clean, original pdf file is best) using the **align** functions of MarkShark.  You will get a new pdf where all the bubble-sheets within are aligned to your template so the software can accurately find the bubbles.
 
 ## Step 3- Score 
 1.	Run the **grade** function on the aligned pdf file in a directory that also has the key.txt file and the config file.  
 2.  You will get an output comma-separated file with each student in a row, their answers, and their final score
-3.  You can optionally export a pdf of the bubble sheets with circles that visually indicate which bubbles were scored.  This is useful for diagnosing issues.
+3.  You can optionally export a pdf of the bubble sheets with circles that visually indicate which bubbles were scored.  This is useful for diagnosing issues if you have any.
 
 ## Step 4 - Analyze the results and assess how good your questions are
-1.	Run the **stats** function on the csv file that was the output of the grade program.
+1.	Run the **stats** function on the csv file that was the output of the grade program.  This will give you an overall picture of student performance.
 
 
 
@@ -129,18 +102,15 @@ Suggestions:
 ---
 ## Using the visualizer to make the config file for your bubble sheet template
 
-The config file is like a map that tells bubble_score.py where the bubbles are located on the bubble sheet and what type of bubble the are (student name, student ID, test version, or the answer to a question).  This is a very important starting step because if the config file doesn't line up with the bubble sheet then you will get poor results.  
+
 
 Config files are written in 'YAML' format.
 
----
-## Making your test key
-Test keys are text files where the answers (A, B, C, D, E...) are separated by spaces, commas, or newlines.
 
 ---
 ## Aligning your scanned documents with 'align'.
 
-After scanning it is typical that the page images will be randomly a bit off-center or askew.  A small bit of rotation in a page is usually tolerated by the scoring software but much better results will be obtained the pages are pre-processed to align almost perfectly with the original template that matches the config map file.
+
 
 A philosophy of 'garbage in, garbage out' should apply here.  The higher quality scans you provide, the less likely you'll have issues later.  300 dpi inputs are great.  A high quality scanner that isn't prone to warping or scrunching is also great.
 
