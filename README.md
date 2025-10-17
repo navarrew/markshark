@@ -1,21 +1,25 @@
 # MarkSharkOMR
 ## A fast, accurate, customizable, open-source test bubble sheet scanner
 
-MarkSharkOMR is a versatile and fast tool to **visualize, grade, and analyze bubble-sheet exams**. 
+MarkSharkOMR is a versatile and fast tool to **visualize, grade, and analyze bubble-sheet exams**.
 
 It supports command-line and GUI modes, and outputs annotated images, CSV results, and detailed item-analysis statistics.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+
 ---
+
 ![OMR pipeline](images/pipeline.jpeg)
+
 ---
 
-## 🧰 Prerequisites
+## Prerequisites
 
-- **Python 3.9 – 3.12**
+- **Python 3.9–3.12**
+
 ---
 
-## 📦 Installation
+## Installation
 
 Clone and install the package locally:
 
@@ -25,274 +29,207 @@ cd markshark
 pip install -e .
 ```
 
-Make sure you install required dependencies (OpenCV, Typer, Streamlit).
-
+Make sure you install required dependencies (**OpenCV**, **Typer**, **Streamlit**).
 
 ---
-# MarkShark overview
-## Step 1 - Make Your Bubble Sheet
+
+# Using MarkShark
+
+## Step 1 – Make Your Bubble Sheet
 
 ### Create your bubble sheet (the exam form)
-Start by making a bubble sheet and saving it as a **PDF file**.
-- If you're in a hurry, we provide a few different templates (and their corresponding config files) that should be ready to use right away with no issues.  You can freely modify these templates for your own use.  The ready-made templates are in the **“bubble forms”** folder.
-- If you want to make your own bubble sheet from scratch that's fine too.  If you want to design your own, you can use any drawing or layout program that can export to PDF.
-  - We made ours with **Affinity Designer** (similar to Adobe Illustrator).
-  - **Inkscape** is a good free option that works with `.svg` files and can export to PDF as well.
-  - Our templates are provided both in pdf and svg formats that can be modified by Adobe Illustrator, Inkscape, Affinity Designer, and many other graphics programs.
 
-### optional - add alignment markers (ARUCO markers)
-We recommended that you include **ARUCO markers**—small black-and-white squares in the corners of your bubble sheets.
-- These serve as landmarks that help the software detect and correct any **rotation, skew, or scaling** that happens when the bubble sheets are scanned.
-- We provide these markers in our template files as png images.  You can paste one in each corner of your bubble sheet template.
-- You can generate ARUCO markers with many free online tools or within MarkShark’s utilities
-- Without these markers, scans that are even slightly off may not align correctly during analysis.
+Start by making a bubble sheet and saving it as a **PDF file**.
+
+- You can use the ready-made templates (and their corresponding config files) in the **`bubble forms`** folder.  
+- You can freely modify these templates for your own use.  
+- To design your own sheet, use any drawing or layout program that exports to PDF.  
+  - **Affinity Designer** (similar to Adobe Illustrator) works well.  
+  - **Inkscape** is a great free option that supports `.svg` files.  
+  - Templates are provided in both PDF and SVG formats for easy editing.
+
+---
+
+### (Optional) Add alignment markers (ARUCO markers)
+
+We recommend adding **ARUCO markers**—small black-and-white squares in the corners of each page.
+
+- These act as landmarks that help the software detect and correct **rotation**, **skew**, or **scaling** in scanned images.  
+- PNG marker files are included in the template folder; paste one in each corner of your sheet.  
+- You can also generate ARUCO markers using free online tools or MarkShark’s utilities.  
+- Without them, even slight scan misalignment can reduce grading accuracy.
+
+---
 
 ### Make a configuration file (`config.yaml`)
-The configuration file is like a map that tells MarkShark where everything is located on your bubble sheet (where the student ID bubbles are, where the answer bubbles are, etc).  You only need to make a configuration file once for your bubble sheet and you can reuse it again and again.  If you use our template bubble sheeets we provide the corresponding conifguration files for you.  Easy peasy.
 
-NOTE: If the config file doesn't line up well with the bubble sheet then you will get poor results.  The software will look for bubbles where there aren't any.
+The configuration file is a **map** that tells MarkShark where key areas are located on your sheet:
+- student ID bubbles  
+- answer bubbles  
+- name boxes, etc.
 
-Adjusting your configuration file to match your bubble sheet:
-- Use MarkShark’s **visualizer** function to see how the zones from your `config.yaml` file align with your PDF template.  If the map doesn's line up perfectly with your bubble sheet, adjust the coordinates in the config file and recheck until everything matches cleanly.
+You only need to make the configuration file once per sheet and can reuse it indefinitely.
 
-### Make your answer key(s) 
-Create a plain text file (for example, `key.txt`) that lists the correct answers.
-- Answers can be separated by **commas** (e.g. `A,B,A,D,C,C,D`)
-  or placed on **separate lines**, one per question.  You don't have to use every bubble on your sheet.  It's perfectly fine to use a bubble sheet that has space for 64 questions even though your test only asks 30 questions.
+> **Tip:** If the zones in the config file don’t line up with the printed bubbles, grading will fail or be inaccurate.
 
-## Step 2- Scan and align your bubble sheets
-
-You can scan your student bubble sheets using any typical desktop scanner (flatbed or fed through a feeder).  After scanning, even with a quality scanner, it is typical that the page images will be randomly a bit off-center or askew.  A small bit of rotation in a page is usually tolerated by the scoring software but much better results will be obtained the pages are pre-processed to align almost perfectly with the map in config file.
-
-### 1.	Scan your student bubble sheets with a high quality scanner.
-You can, in theory, scan by taking pictures with your phone but we don't recommend it because the lighting across the page will vary and you will have to adjust the skew, etc.  You'll spend more time correcting and adjusting your scans than it's worth.
-
-### 2. It's easiest if the scans are saved as a single multi-page pdf at 150 or 300 dpi (grayscale or color).
-
-### 3.	Align the student pdfs to a blank version of the bubble sheet (the clean, original pdf file is best) using the **align** functions of MarkShark.  You will get a new pdf where all the bubble-sheets within are aligned to your template so the software can accurately find the bubbles.
-
-## Step 3- Score 
-1.	Run the **grade** function on the aligned pdf file in a directory that also has the key.txt file and the config file.  
-2.  You will get an output comma-separated file with each student in a row, their answers, and their final score
-3.  You can optionally export a pdf of the bubble sheets with circles that visually indicate which bubbles were scored.  This is useful for diagnosing issues if you have any.
-
-## Step 4 - Analyze the results and assess how good your questions are
-1.	Run the **stats** function on the csv file that was the output of the grade program.  This will generate a report that will give you an overall picture of student performance.  It will flag questions that were not effective and highlight potential places for improvement.
+**To check and adjust your config file:**
+- Use MarkShark’s **visualizer** function to preview how your `config.yaml` zones align with your template.  
+- Adjust coordinates and re-test until everything matches cleanly.
 
 ---
-# Command examples
+
+### Make your answer key
+
+Create a plain-text file (e.g. `key.txt`) listing the correct answers.
+
+- Answers can be separated by **commas** (`A,B,A,D,C,C,D`)  
+  or placed on **separate lines** (one per question).  
+- The key can be shorter than the total number of bubbles—unused ones will simply be ignored.
 
 ---
-# Additional instructions
 
-## Making your bubble sheet
+## Step 2 – Scan and Align Your Bubble Sheets
 
+You can scan student sheets using any standard desktop scanner (flatbed or sheet-fed).
 
-Suggestions:
-1. You should align the bubbles with even spacing between each.  You'll run into problems if the gaps between bubbles in a row/column are not consistent.   Use the 'align' and 'distribute' features on your graphics software to ensure your bubbles are aligned and spaced properly.
+Even high-quality scans are often slightly misaligned. Pre-aligning them ensures precise grading.
 
-2. You may want to decrease the darkness of the bubbles themselves (gray instead of black circles and letters) so the student marks stand out more against the background of the bubbles. (Our templates were made with hollow black circles and their transparency was set down to 50% before saving as a pdf.)
+1. **Scan the sheets**  
+   - Use a high-quality scanner.  
+   - Avoid phone photos—uneven lighting and perspective distortions are difficult to correct.
 
----
-## Using the visualizer to make the config file for your bubble sheet template
+2. **Export scans**  
+   - Save them as a **single multi-page PDF**, at **150 dpi** or **300 dpi**, grayscale or color.
 
-
-
-Config files are written in 'YAML' format.
-
-
----
-## Aligning your scanned documents with 'align'.
-
-
-
-A philosophy of 'garbage in, garbage out' should apply here.  The higher quality scans you provide, the less likely you'll have issues later.  300 dpi inputs are great.  A high quality scanner that isn't prone to warping or scrunching is also great.
-
+3. **Align the scans**  
+   - Use the MarkShark **`align`** command to align scanned pages with the clean template PDF.  
+   - The output will be a new, perfectly aligned multipage PDF for grading.
 
 ---
-## Scoring the tests with grade
 
+## Step 3 – Score
+
+1. Run the **`grade`** function on the aligned PDF in a directory containing your `key.txt` and `config.yaml`.  
+2. MarkShark outputs a **CSV file** with each student’s answers and final score.  
+3. Optionally, export an **annotated PDF** showing which bubbles were recognized.  
+   - This is useful for debugging alignment or fill-threshold issues.
 
 ---
-## Analyzing the results with stats
 
-The *stats* processes the output from *grade*. It supports a KEY row (with correct answers) and student responses, converts them into a correctness matrix (0/1), and computes per-item and exam-level statistics.
+## Step 4 – Analyze Results
+
+1. Run the **`stats`** function on the CSV output from the grading step.  
+2. This generates a report summarizing overall performance, item difficulty, and question quality.  
+
+---
+
+# Command Examples
+
+*(Add usage snippets here — align, grade, and stats commands as examples.)*
+
+---
+
+# Additional Instructions
+
+## Designing Your Bubble Sheet
+
+1. Align bubbles with **consistent spacing** in rows and columns.  
+   Use “align” and “distribute” features in your design software.  
+2. Use **gray** or **semi-transparent black** circles so student marks stand out.  
+   (Our templates use hollow black circles at 50 % opacity.)
+
+---
+
+## Using the Visualizer to Build Your Config File
+
+Config files use **YAML** format.  
+The visualizer overlays your configuration zones on the sheet, helping you fine-tune coordinates.
+
+---
+
+## Aligning Your Scans
+
+> “Garbage in, garbage out.”  
+> Use the highest-quality scans possible (300 dpi recommended).  
+> Avoid scanners that warp or compress pages unevenly.
+
+---
+
+## Scoring Tests with `grade`
+
+Once aligned, grading is automatic.  
+All results are written to a CSV file, ready for analysis.
+
+---
+
+## Analyzing Results with `stats`
+
+The **`stats`** module processes the CSV output from `grade`, computes exam- and item-level metrics, and generates CSV summaries and plots.
 
 ### Usage
-Basic command:
 
-
-### Outputs
-1. Main CSV (results_with_item_stats.csv):
-- Original data (including KEY row).
-- Appends two rows at the bottom:
-  * 'Pct correct (0-1)' or '(0-100)': item difficulty.
-  * 'Point–biserial': discrimination index of each item.
-2. Exam-level stats (exam_stats.csv):
-Contains summary statistics:
-- k_items: Number of questions.
-- mean_total, sd_total, var_total: Distribution of student scores.
-- avg_difficulty: Mean proportion correct across items.
-- KR-20: Reliability estimate for dichotomous items.
-- KR-21: Approximate reliability using mean difficulty.
-3. Item report (item_analysis.csv):
-One row per item-option combination:
-- item, key, option, is_key.
-- option_count, option_prop: How often each option was selected.
-- option_biserial: Correlation between choosing this option and total score (excl. item).
-- item_difficulty, item_point_biserial.
-4. Item plots (item_plots/):
-One PNG per item, showing a nonparametric Item Characteristic Curve (ICC):
-- X-axis: binned total-minus-item score.
-- Y-axis: proportion correct in each bin.
-
-Interpretation of Statistics
-•	Difficulty (Pct correct): Proportion of students who answered correctly. Ideal values often 0.3–0.8.
-•	Point–biserial: Correlation between correctness and total score (excluding the item). Higher positive values indicate better discrimination. Negative values are problematic.
-•	KR-20: Reliability coefficient for dichotomous items. Higher values (≥0.7) indicate consistent test performance.
-•	KR-21: Approximation of KR-20 assuming items have similar difficulty. Useful when item-level data is limited.
-•	Option biserial: Correlation between selecting a particular option and student ability. Correct option should be positive; distractors should be negative or near-zero.
-
-
-
----
-
-## Example Config (YAML)
-
-```yaml
-# 64_question_config_axis.yaml
-# coordinates are given in percentages from top (y values) and left (x values) of page.
-# x_topleft: 0.5 -> means a point 50% or in the middle of the page from left to right
-
-# -----------------------------
-# Name blocks (select one row per column)
-# -----------------------------
-last_name_layout:
-  x_topleft: 0.3737
-  y_topleft: 0.1148
-  x_bottomright: 0.7537
-  y_bottomright: 0.5603
-  radius_pct: 0.008
-  questions: 27            # synonymous with rows (letters incl. leading space)
-  choices: 14              # synonymous with columns (positions)
-  bubble_shape: circle
-  selection_axis: col
-  labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-first_name_layout:
-  x_topleft: 0.8106
-  y_topleft: 0.1148
-  x_bottomright: 0.9278
-  y_bottomright: 0.5603
-  radius_pct: 0.008
-  questions: 27
-  choices: 5
-  bubble_shape: circle
-  selection_axis: col
-  labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-# -----------------------------
-# Student ID (select one row per column)
-# -----------------------------
-id_layout:
-  x_topleft: 0.0510
-  y_topleft: 0.4058
-  x_bottomright: 0.3110
-  y_bottomright: 0.5603
-  radius_pct: 0.008
-  questions: 10           # rows 10
-  choices: 10             # 10 digit positions
-  bubble_shape: circle
-  selection_axis: col
-  labels: "0123456789"
-
-# -----------------------------
-# Test version (select one column in a single row)
-# -----------------------------
-version_layout:
-  x_topleft: 0.2173
-  y_topleft: 0.3179
-  x_bottomright: 0.2965
-  y_bottomright: 0.3179
-  radius_pct: 0.008
-  questions: 1
-  choices: 4
-  bubble_shape: circle
-  selection_axis: row
-  labels: "ABCD"
-
-# -----------------------------
-# Answer blocks (select one column per row)
-# -----------------------------
-answer_layouts:
-  - x_topleft: 0.0801
-    y_topleft: 0.6035
-    x_bottomright: 0.2275
-    y_bottomright: 0.9130
-    radius_pct: 0.007
-    questions: 16
-    choices: 5
-    bubble_shape: circle
-    selection_axis: row
-    labels: "ABCDE"
-    
-  - x_topleft: 0.3157
-    y_topleft: 0.6035
-    x_bottomright: 0.4631
-    y_bottomright: 0.9130
-    radius_pct: 0.007
-    questions: 16
-    choices: 5
-    bubble_shape: circle
-    selection_axis: row
-    labels: "ABCDE"
-
-  - x_topleft: 0.5514
-    y_topleft: 0.6035
-    x_bottomright: 0.6988
-    y_bottomright: 0.9130
-    radius_pct: 0.007
-    questions: 16
-    choices: 5
-    bubble_shape: circle
-    selection_axis: row
-    labels: "ABCDE"
-
-  - x_topleft: 0.7875
-    y_topleft: 0.6035
-    x_bottomright: 0.9341
-    y_bottomright: 0.9130
-    radius_pct: 0.007
-    questions: 16
-    choices: 5
-    bubble_shape: circle
-    selection_axis: row
-    labels: "ABCDE"
-
-total_questions: 64
+```bash
+markshark stats results.csv
 ```
 
+### Outputs
+
+1. **Main CSV** – `results_with_item_stats.csv`  
+   - Original data (including KEY row)  
+   - Adds rows for:
+     - *Pct correct (0–1)*: item difficulty  
+     - *Point–biserial*: discrimination index  
+
+2. **Exam stats** – `exam_stats.csv`  
+   - Overall test summary:
+     - `k_items`: number of questions  
+     - `mean_total`, `sd_total`, `var_total`: score distribution  
+     - `avg_difficulty`: mean proportion correct  
+     - `KR-20`, `KR-21`: reliability estimates  
+
+3. **Item report** – `item_analysis.csv`  
+   - One row per item-option:
+     - `item`, `key`, `option`, `is_key`  
+     - `option_count`, `option_prop`  
+     - `option_biserial`, `item_difficulty`, `item_point_biserial`
+
+4. **Plots** – folder `item_plots/`  
+   - One PNG per item showing Item Characteristic Curves (ICC):  
+     - **X-axis:** binned total-minus-item score  
+     - **Y-axis:** proportion correct per bin
+
 ---
 
-## Outputs
+### Interpretation of Statistics
 
-- **Aligned scans**: multipage PDF (`aligned_scans.pdf`)
-- **Overlay visualization**: PNG preview of config zones
-- **Grading results**: `results.csv` per student
-- **Annotated sheets**: optional PNGs in `annotated/`
-- **Stats**: item analysis, KR-20 reliability, difficulty, point-biserial
+| Metric | Description | Ideal / Notes |
+|:--|:--|:--|
+| **Difficulty (Pct correct)** | Proportion of students answering correctly. | Ideal range ≈ 0.3–0.8 |
+| **Point–biserial** | Correlation between item correctness and total score (excluding that item). | Higher = better discrimination; negative = problematic |
+| **KR-20** | Reliability coefficient for dichotomous items. | ≥ 0.7 = good internal consistency |
+| **KR-21** | Approximation of KR-20 assuming equal item difficulty. | Use when item data are limited |
+| **Option biserial** | Correlation between selecting an option and student ability. | Correct = positive; distractors = negative / ~0 |
 
 ---
 
+## Outputs Summary
+
+- **Aligned scans:** `aligned_scans.pdf`  
+- **Zone overlay visualization:** PNG previews  
+- **Grading results:** `results.csv`  
+- **Annotated sheets:** optional PNGs in `annotated/`  
+- **Statistical analysis:** KR-20 reliability, difficulty, point-biserial, and ICC plots
+
+---
 
 ## License
 
-MarkShark — the open-source bubble hunter  
-Copyright (c) 2025 William Navarre, University of Toronto  
+**MarkShark — the open-source bubble hunter**  
+Copyright © 2025 William Navarre, University of Toronto  
 Licensed under the **GNU Affero General Public License v3 (AGPL-3.0)**.
 
-You are free to use, modify, and redistribute this software for **academic, research, and open-source** purposes, provided that derivative works remain open-source and disclose their source code under the same license.
+You may use, modify, and redistribute this software for **academic, research, and open-source** purposes, provided derivative works remain open-source under the same license.
 
-**Commercial or institutional deployment** (e.g. SaaS, proprietary educational tools, or for-profit distribution) requires a separate license.
+**Commercial or institutional use** (e.g., SaaS platforms, proprietary educational tools, or for-profit distribution) requires a separate license.
 
 For licensing inquiries, contact [william.navarre@utoronto.ca](mailto:william.navarre@utoronto.ca).
