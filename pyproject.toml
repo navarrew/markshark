@@ -1,24 +1,24 @@
-
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "markshark"
-version = "1.0.0"
-description = "MarkShark — the open-source bubble hunter (Optical Mark Recognition toolkit)"
+# Remove the fixed `version = "..."` line
+dynamic = ["version"]
+description = "MarkSharkOMR — the open-source bubble hunter (Optical Mark Recognition toolkit)"
 authors = [
-    { name = "William Navarre", email = "william.navarre@utoronto.ca" }
+  { name = "William Navarre", email = "william.navarre@utoronto.ca" }
 ]
 license = { text = "AGPL-3.0-only with dual commercial licensing available; contact william.navarre@utoronto.ca" }
 readme = "README.md"
 requires-python = ">=3.9"
 classifiers = [
-    "License :: OSI Approved :: GNU Affero General Public License v3",
-    "Programming Language :: Python :: 3",
-    "Intended Audience :: Education",
-    "Topic :: Education",
-    "Topic :: Scientific/Engineering :: Image Recognition",
+  "License :: OSI Approved :: GNU Affero General Public License v3",
+  "Programming Language :: Python :: 3",
+  "Intended Audience :: Education",
+  "Topic :: Education",
+  "Topic :: Scientific/Engineering :: Image Recognition",
 ]
 dependencies = [
   "typer>=0.12",
@@ -34,10 +34,16 @@ dependencies = [
   "pyyaml",
 ]
 
-
 [project.scripts]
-markshark = "markshark.cli:app_main"
+markshark    = "markshark.cli:app_main"
 markshark-gui = "markshark.gui_launcher:main"
+bubble-omr   = "markshark.cli:app_main"  # temporary alias
 
-# (Optional for a few releases: keep old CLI as an alias)
-bubble-omr = "markshark.cli:app_main"
+# Tell Hatch to derive the version from git tags
+[tool.hatch.version]
+source = "vcs"
+
+# Optional: control how version strings are formed between tags
+[tool.hatch.build.hooks.vcs]
+# If no tag exists yet during a local build, use this placeholder
+fallback-version = "0.1.0"
