@@ -6,6 +6,7 @@ MarkSharkOMR is a versatile and fast tool to **visualize, grade, and analyze bub
 It supports command-line and GUI modes, and outputs annotated images, CSV results, and detailed item-analysis statistics.
 
 
+![OMR pipeline](images/shark.png)
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
