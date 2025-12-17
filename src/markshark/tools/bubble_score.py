@@ -174,9 +174,17 @@ def roi_fill_scores(
     bin_method: str = "global",          # "adaptive" or "global"
     block_size: int = 35,                # odd; for adaptive threshold
     C: int = 8,                          # subtractive constant for adaptive
-    fixed_thresh: int = 180,             # for global threshold
+    fixed_thresh: Optional[int] = None,  # for global threshold             # for global threshold
 ) -> List[float]:
 
+    """Compute per-ROI fill scores for a page.
+
+    The page is binarized once (adaptive or global threshold, with inversion so white equals ink),
+    then each ROI is scored by measuring the filled fraction inside the ROI.
+    """
+    
+    if fixed_thresh is None:
+        fixed_thresh = SCORING_DEFAULTS.fixed_thresh
 
     H, W = gray.shape[:2]
 
@@ -486,68 +494,68 @@ def load_pages(paths: List[str], dpi: int = 300) -> List[np.ndarray]:
     return images
 
 
-
-# ------------------------------------------------------------------------------
-# CLI
-# ------------------------------------------------------------------------------
-
-def main():
-    ap = argparse.ArgumentParser(description="Grade OMR sheets (answers + names + ID + version) using axis-based centers.")
-    ap.add_argument("--config", required=True, help="YAML config path (axis-mode fields).")
-    ap.add_argument("--key-txt", required=False, help="Answer key text file (A/B/C/...).")
-    ap.add_argument("--out-csv", default="results.csv", help="Output CSV path.")
-    ap.add_argument("--dpi", type=int, default=300, help="DPI when rasterizing PDFs.")
-    ap.add_argument("--min-fill", type=float, default=None, help="Min fill darkness (0..1) to accept a bubble.")
-    ap.add_argument("--top2-ratio", type=float, default=None, help="Second-best <= top2_ratio * best to accept.")
-    ap.add_argument("--min-score", type=float, default=None, help="Absolute separation in percentage points")
-    ap.add_argument("--min-abs", type=float, default=None, help="Absolute minimum fill guard")
-    ap.add_argument("inputs", nargs="+", help="PDF(s) or image(s) to grade.")
-    args = ap.parse_args()
-
-    cfg = load_config(args.config)
-
-    # Optional key
-    key: Optional[List[str]] = load_key_txt(args.key_txt) if args.key_txt else None
-
-    pages = load_pages(args.inputs, dpi=args.dpi)
-
-    # CSV header
-    total_q = sum(a.questions for a in cfg.answer_layouts)
-    header = ["page_index", "LastName", "FirstName", "StudentID", "Version"] + [f"Q{i+1}" for i in range(total_q)]
-    if key:
-        header += ["score", "total"]
-
-    rows_out: List[List[str]] = []
-
-    for pi, img_bgr in enumerate(pages):
-        scoring = apply_overrides(min_fill=args.min_fill, top2_ratio=args.top2_ratio, min_score=args.min_score, min_abs=args.min_abs)
-        info, answers = process_page_all(img_bgr, cfg,
-                                         min_fill=scoring.min_fill,
-                                         top2_ratio=scoring.top2_ratio,
-                                         min_score=scoring.min_score,
-                                         min_abs=scoring.min_abs)
-
-        # Score if key provided
-        row = [str(pi), info["last_name"], info["first_name"], info["student_id"], info["version"]]
-        ans_for_csv = [a if a is not None else "" for a in answers]
-        row.extend(ans_for_csv)
-
-        if key:
-            got, tot = score_against_key([a or "" for a in answers], key)
-            row += [str(got), str(tot)]
-
-        rows_out.append(row)
-
-    # Write CSV
-    os.makedirs(os.path.dirname(args.out_csv) or ".", exist_ok=True)
-    with open(args.out_csv, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(header)
-        for r in rows_out:
-            w.writerow(r)
-
-    print(f"[OK] Wrote {args.out_csv} with {len(rows_out)} row(s).")
-
-
-if __name__ == "__main__":
-    main()
+# 
+# # ------------------------------------------------------------------------------
+# # CLI
+# # ------------------------------------------------------------------------------
+# 
+# def main():
+#     ap = argparse.ArgumentParser(description="Grade OMR sheets (answers + names + ID + version) using axis-based centers.")
+#     ap.add_argument("--config", required=True, help="YAML config path (axis-mode fields).")
+#     ap.add_argument("--key-txt", required=False, help="Answer key text file (A/B/C/...).")
+#     ap.add_argument("--out-csv", default="results.csv", help="Output CSV path.")
+#     ap.add_argument("--dpi", type=int, default=300, help="DPI when rasterizing PDFs.")
+#     ap.add_argument("--min-fill", type=float, default=None, help="Min fill darkness (0..1) to accept a bubble.")
+#     ap.add_argument("--top2-ratio", type=float, default=None, help="Second-best <= top2_ratio * best to accept.")
+#     ap.add_argument("--min-score", type=float, default=None, help="Absolute separation in percentage points")
+#     ap.add_argument("--min-abs", type=float, default=None, help="Absolute minimum fill guard")
+#     ap.add_argument("inputs", nargs="+", help="PDF(s) or image(s) to grade.")
+#     args = ap.parse_args()
+# 
+#     cfg = load_config(args.config)
+# 
+#     # Optional key
+#     key: Optional[List[str]] = load_key_txt(args.key_txt) if args.key_txt else None
+# 
+#     pages = load_pages(args.inputs, dpi=args.dpi)
+# 
+#     # CSV header
+#     total_q = sum(a.questions for a in cfg.answer_layouts)
+#     header = ["page_index", "LastName", "FirstName", "StudentID", "Version"] + [f"Q{i+1}" for i in range(total_q)]
+#     if key:
+#         header += ["score", "total"]
+# 
+#     rows_out: List[List[str]] = []
+# 
+#     for pi, img_bgr in enumerate(pages):
+#         scoring = apply_overrides(min_fill=args.min_fill, top2_ratio=args.top2_ratio, min_score=args.min_score, min_abs=args.min_abs)
+#         info, answers = process_page_all(img_bgr, cfg,
+#                                          min_fill=scoring.min_fill,
+#                                          top2_ratio=scoring.top2_ratio,
+#                                          min_score=scoring.min_score,
+#                                          min_abs=scoring.min_abs)
+# 
+#         # Score if key provided
+#         row = [str(pi), info["last_name"], info["first_name"], info["student_id"], info["version"]]
+#         ans_for_csv = [a if a is not None else "" for a in answers]
+#         row.extend(ans_for_csv)
+# 
+#         if key:
+#             got, tot = score_against_key([a or "" for a in answers], key)
+#             row += [str(got), str(tot)]
+# 
+#         rows_out.append(row)
+# 
+#     # Write CSV
+#     os.makedirs(os.path.dirname(args.out_csv) or ".", exist_ok=True)
+#     with open(args.out_csv, "w", newline="", encoding="utf-8") as f:
+#         w = csv.writer(f)
+#         w.writerow(header)
+#         for r in rows_out:
+#             w.writerow(r)
+# 
+#     print(f"[OK] Wrote {args.out_csv} with {len(rows_out)} row(s).")
+# 
+# 
+# if __name__ == "__main__":
+#     main()

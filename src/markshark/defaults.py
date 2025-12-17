@@ -27,7 +27,9 @@ class ScoringDefaults:
     top2_ratio: float = 0.80       # second-best must be <= top2_ratio * best
     min_score: float = 10.0        # absolute gap in percentage points (100*(best-second))
     min_abs: float = 0.10          # absolute minimum fill guard in _pick_single_from_scores
-
+    # Global binarization threshold (only used when bin_method == "global")
+    fixed_thresh: int = 180
+    
 SCORING_DEFAULTS = ScoringDefaults()
 
 def apply_scoring_overrides(**kwargs) -> ScoringDefaults:
