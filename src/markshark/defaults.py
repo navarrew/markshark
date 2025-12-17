@@ -60,7 +60,11 @@ class AlignDefaults:
     export_pngs: bool = False                   # Also export aligned PNGs
     overwrite: bool = True                      # Overwrite existing outputs if present
     verbose: bool = True                        # Print per-page status lines
-
+    # Guardrails for non-ArUco feature alignment residuals (pixels)
+    fail_med: float = 3.0
+    fail_p95: float = 8.0
+    fail_br: float = 8.0
+    
 ALIGN_DEFAULTS = AlignDefaults()
 
 def apply_align_overrides(**kwargs) -> AlignDefaults:

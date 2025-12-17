@@ -113,8 +113,8 @@ def _zip_dir_to_bytes(dir_path: Path) -> bytes:
     return buf.read()
 
 # --------------------- Sidebar ---------------------
-image_url = "https://github.com/navarrew/markshark/blob/main/src/markshark/assets/shark.png" 
-st.sidebar.image(image_url, caption="MarkShark Logo", use_column_width=True)
+# image_url = "https://github.com/navarrew/markshark/blob/main/images/shark.png" 
+# st.sidebar.image(image_url, caption="MarkShark Logo", use_column_width=True)
 st.sidebar.title("MarkShark 1.0")
 page = st.sidebar.radio("Select below", ["1) Align scans", "2) Grade", "3) Stats", "4) Config visualizer"])
 

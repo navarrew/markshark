@@ -175,7 +175,7 @@ def _annotate_answers(
 
                 cv2.circle(out, (cx, cy), radius, col, thickness, lineType=cv2.LINE_AA)
 
-				#here we add the text for the density of the pencil marks in the bubble
+                #here we add the text for the density of the pencil marks in the bubble
                 if label_density:
                     pct = int(round(100 * row_scores[c]))
                     cv2.putText(out, f"{pct}", (cx - 8, cy + 5),

@@ -174,7 +174,7 @@ def roi_fill_scores(
     bin_method: str = "global",          # "adaptive" or "global"
     block_size: int = 35,                # odd; for adaptive threshold
     C: int = 8,                          # subtractive constant for adaptive
-    fixed_thresh: int = 200,             # for global threshold
+    fixed_thresh: int = 180,             # for global threshold
 ) -> List[float]:
 
 

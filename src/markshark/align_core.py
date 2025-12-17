@@ -184,8 +184,8 @@ def align_pdf_scans(
         ecc_levels=getattr(EST_DEFAULTS, 'ecc_levels', 4),
         ecc_max_iters=getattr(EST_DEFAULTS, 'ecc_max_iters', 50),
         ecc_eps=getattr(EST_DEFAULTS, 'ecc_eps', 1e-6),
-        # Guard thresholds (optional; keep for signature compatibility)
-        fail_med=None, fail_p95=None, fail_br=None,
+        # Guard thresholds
+        fail_med=ALIGN_DEFAULTS.fail_med, fail_p95=ALIGN_DEFAULTS.fail_p95, fail_br=ALIGN_DEFAULTS.fail_br,
         # Misc
         save_debug=save_debug, fallback_original=fallback_original,
     )
