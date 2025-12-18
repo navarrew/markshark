@@ -36,7 +36,6 @@ dependencies = [
 [project.scripts]
 markshark     = "markshark.cli:app_main"
 markshark-gui = "markshark.gui_launcher:main"
-bubble-omr    = "markshark.cli:app_main"  # temporary alias
 
 # Use VCS (git tags) as the version source
 [tool.hatch.version]

@@ -2,7 +2,7 @@
 #!/usr/bin/env python3
 """
 Streamlit GUI wrapper for the MarkSharkOMR CLI.
-This app shells out to the Typer commands (align, visualize, grade, stats),
+This app shells out to the Typer commands (align, score, stats, visualize),
 so the GUI stays in sync with the single source of truth: the CLI + defaults.py.
 """
 from __future__ import annotations
@@ -116,7 +116,7 @@ def _zip_dir_to_bytes(dir_path: Path) -> bytes:
 # image_url = "https://github.com/navarrew/markshark/blob/main/images/shark.png" 
 # st.sidebar.image(image_url, caption="MarkShark Logo", use_column_width=True)
 st.sidebar.title("MarkShark 1.0")
-page = st.sidebar.radio("Select below", ["1) Align scans", "2) Grade", "3) Stats", "4) Config visualizer"])
+page = st.sidebar.radio("Select below", ["1) Align scans", "2) Score", "3) Stats", "4) Config visualizer"])
 
 # Initialize / show working directory selector
 _init_workdir()
@@ -211,7 +211,7 @@ if page.startswith("1"):
 
 # ===================== 2) GRADE =====================
 elif page.startswith("2"):
-    st.header("Grade aligned scans")
+    st.header("Score/grade aligned scans")
     # Top-of-page controls and status
     top_col1, top_col2 = st.columns([1, 3])
     with top_col1:
@@ -285,7 +285,7 @@ elif page.startswith("2"):
 
 # ===================== 3) STATS =====================
 elif page.startswith("3"):
-    st.header("3) Item/exam statistics")
+    st.header("Item/exam statistics")
     colA, colB = st.columns(2)
     with colA:
         in_csv = _tempfile_from_uploader("Results CSV (from grade)", "stats_csv", types=("csv",))
@@ -345,7 +345,7 @@ elif page.startswith("3"):
 
 # ===================== 4) VISUALIZE CONFIG =====================
 else:
-    st.header("4) Visualize config overlay")
+    st.header("View your config.yaml on your template")
     colA, colB = st.columns(2)
     with colA:
         pdf = _tempfile_from_uploader("Template or aligned PDF (single page preferred)", "viz_pdf", types=("pdf",))
