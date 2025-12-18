@@ -11,7 +11,7 @@ from .defaults import (
     FEAT_DEFAULTS, MATCH_DEFAULTS, EST_DEFAULTS, ALIGN_DEFAULTS, RENDER_DEFAULTS,
     apply_feat_overrides, apply_est_overrides,
 )
-from .tools import scan_aligner as SA 
+from .tools import align_tools as SA 
 
 """
 Convert a set of PDFs to a list of BGR images; align against a template.

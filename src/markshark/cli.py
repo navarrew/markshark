@@ -21,8 +21,8 @@ from .defaults import (
 from .defaults import SCORING_DEFAULTS as DEFAULTS
 from .align_core import align_pdf_scans
 from .visualize_core import overlay_config
-from .grade_core import grade_pdf
-from .tools import bubble_stats as stats_mod  # has run(...)
+from .score_core import grade_pdf
+from .tools import stats_tools as stats_mod  # has run(...)
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -189,7 +189,7 @@ def stats(
     Compute item difficulty, point-biserial, and exam reliability (KR-20/KR-21).
     """
     try:
-        # Newer bubble_stats.run signatures accept 'decimals'; older ones don't.
+        # Newer stats_tools.run signatures accept 'decimals'; older ones don't.
         stats_mod.run(
             input_csv=input_csv,
             output_csv=output_csv,
@@ -219,7 +219,7 @@ def stats(
             item_report_csv=item_report_csv,
             key_label=key_label,
         )
-        rprint("[yellow]Note:[/yellow] your bubble_stats.run() doesn’t support a 'decimals' parameter; "
+        rprint("[yellow]Note:[/yellow] your stats_tools.run() doesn’t support a 'decimals' parameter; "
                "update it to get consistent 3-decimal rounding in all outputs.")
     rprint(f"[green]Wrote stats:[/green] {output_csv}")
     if exam_stats_csv:

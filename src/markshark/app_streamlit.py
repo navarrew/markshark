@@ -156,9 +156,9 @@ if page.startswith("1"):
         match_ratio = st.number_input("Match ratio (Lowe)", min_value=0.50, max_value=0.99, value=0.75, step=0.01, format="%.2f")
 
         st.markdown("---")
+        template_page = st.number_input("Template page (use if your template pdf has multiple pages)", min_value=1, value=1, step=1)
         first_page = st.number_input("First page to align in your raw scans (0 = auto)", min_value=0, value=0, step=1)
         last_page = st.number_input("Last page to align in your raw scans (0 = auto)", min_value=0, value=0, step=1)
-        template_page = st.number_input("Template page (use if your template pdf has multiple pages)", min_value=1, value=1, step=1)
 
     if run_align_clicked:
         if not scans or not template:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 MarkShark
-grade_core.py  —  Axis-based MarkShark grading engine
+score_core.py  —  Axis-based MarkShark grading engine
 
 Features:
  - CSV includes: correct, incorrect, blank, multi, percent
@@ -22,7 +22,7 @@ import numpy as np
 import cv2
 
 from .config_io import load_config, Config, GridLayout
-from .tools.bubble_score import (
+from .tools.score_tools import (
     load_pages,
     process_page_all,
     load_key_txt,

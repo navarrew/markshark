@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 r"""
 MarkShark
-bubble_stats.py
-Append item statistics to a multiple-choice results CSV produced by bubble_score.py
+stats_tools.py
+Append item statistics to a multiple-choice results CSV produced by score_core.py
 
 Key features
 ------------

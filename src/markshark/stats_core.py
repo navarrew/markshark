@@ -1,6 +1,6 @@
 
 from typing import Optional
-from .tools.bubble_stats import run as _run_stats
+from .tools.stats_tools import run as _run_stats
 def compute_stats(results_csv: str, output_csv: str = "results_with_item_stats.csv", item_report_csv: str = "item_analysis.csv",
                   exam_stats_csv: str = "exam_stats.csv", plots_dir: Optional[str] = None, decimals: int = 3,
                   item_pattern: str = r"^Q\d+$", percent: bool = False, label_col: str = "Name", key_row_index: Optional[int] = None,

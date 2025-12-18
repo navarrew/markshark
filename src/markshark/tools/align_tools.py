@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 MarkShark
-scan_aligner.py (helpers only)
+align_tools.py (helpers only)
 ------------------------------
 Reusable alignment primitives:
 

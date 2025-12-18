@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
 MarkShark
-bubble_score.py
+score_tools.py
 ---------------
+Reusable scoring primitives:
+
 Axis-based grading for MarkShark sheets (answers + names + ID + version).
 
 Uses config_io.Config with per-layout axis definitions:
