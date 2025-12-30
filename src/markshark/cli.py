@@ -90,7 +90,8 @@ def align(
 def visualize(
     input_pdf: str = typer.Argument(..., help="An aligned page PDF or template PDF"),
     config: str = typer.Option(..., "--config", "-c", help="Config file (.yaml/.yml)"),
-    out_image: str = typer.Option("config_overlay.png", "--out-image", "-o", help="Output overlay PNG"),
+    out_image: str = typer.Option("config_overlay.png", "--out-image", "-o", help="Output overlay image (png/jpg/pdf)"),
+    pdf_renderer: str = typer.Option("auto", "--pdf-renderer", help="PDF renderer: auto|fitz|pdf2image"),
     dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Render DPI"),
 ):
     """
@@ -102,6 +103,7 @@ def visualize(
             input_path=input_pdf,
             out_image=out_image,
             dpi=dpi,
+            pdf_renderer=pdf_renderer,
         )
     except Exception as e:
         rprint(f"[red]Visualization failed for {config}:[/red] {e}")
@@ -110,7 +112,7 @@ def visualize(
     rprint(f"[green]Wrote:[/green] {out_image}")
     
     
-# ---------------------- GRADE ----------------------
+# ---------------------- SCORE ----------------------
 @app.command()
 def grade(
     input_pdf: str = typer.Argument(..., help="Aligned scans PDF"),

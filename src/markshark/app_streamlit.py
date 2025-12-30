@@ -209,7 +209,7 @@ if page.startswith("1"):
             except Exception as e:
                 status.error(f"Error during alignment: {e}")
 
-# ===================== 2) GRADE =====================
+# ===================== 2) SCORE =====================
 elif page.startswith("2"):
     st.header("Score/grade aligned scans")
     # Top-of-page controls and status
@@ -242,7 +242,7 @@ elif page.startswith("2"):
             st.error("Please upload aligned PDF and config.")
         else:
             base = WORKDIR or Path(os.getcwd())
-            out_dir = Path(tempfile.mkdtemp(prefix="grade_", dir=str(base)))
+            out_dir = Path(tempfile.mkdtemp(prefix="score_", dir=str(base)))
             out_csv = out_dir / out_csv_name
             args = [
                 "grade",
@@ -270,7 +270,7 @@ elif page.startswith("2"):
             if min_abs.strip():
                 args += ["--min-abs", min_abs.strip()]
 
-            with st.spinner("Grading via CLI..."):
+            with st.spinner("Scoring tests via CLI..."):
                 try:
                     out = _run_cli(args)
                     st.code(out or "Done.", language="bash")

@@ -26,15 +26,12 @@ Outputs CSV with columns:
 
 from __future__ import annotations
 from ..defaults import SCORING_DEFAULTS
-import argparse
-import csv
-import os
 from typing import List, Tuple, Iterable, Optional
 
 import numpy as np
 import cv2
 
-from ..config_io import load_config, GridLayout, Config
+from ..config_io import GridLayout, Config
 
 # ------------------------------------------------------------------------------
 # Geometry
@@ -461,35 +458,3 @@ def process_page_all(
         answers.extend(row_labels)
 
     return info, answers
-
-
-# ------------------------------------------------------------------------------
-# I/O helpers
-# ------------------------------------------------------------------------------
-
-"""
-load_pages — Loads each input path as a BGR image: rasterizes PDFs via pdf2image
-at a specified DPI and converts to BGR, or reads regular images via OpenCV.
-Returns a list of page images ready for grading.
-"""
-def load_pages(paths: List[str], dpi: int = 300) -> List[np.ndarray]:
-    images: List[np.ndarray] = []
-    for p in paths:
-        ext = os.path.splitext(p)[1].lower()
-        if ext in (".pdf",):
-            try:
-                from pdf2image import convert_from_path
-            except Exception as e:
-                raise RuntimeError("pdf2image is required to read PDFs. Install with `pip install pdf2image`") from e
-            pil_pages = convert_from_path(p, dpi=dpi)
-            for pg in pil_pages:
-                rgb = np.array(pg)  # HxWx3 RGB
-                bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-                images.append(bgr)
-        else:
-            img = cv2.imread(p, cv2.IMREAD_COLOR)
-            if img is None:
-                raise FileNotFoundError(f"Could not read image: {p}")
-            images.append(img)
-    return images
-

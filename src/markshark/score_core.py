@@ -22,8 +22,8 @@ import numpy as np
 import cv2
 
 from .config_io import load_config, Config, GridLayout
+from .tools import io_pages as IO
 from .tools.score_tools import (
-    load_pages,
     process_page_all,
     load_key_txt,
     grid_centers_axis_mode,
@@ -200,9 +200,11 @@ def grade_pdf(
     min_abs: float,
     key_txt: Optional[str] = None,
     out_annotated_dir: Optional[str] = None,
+    out_pdf: Optional[str] = "scored_scans.pdf",
     dpi: int = 300,
     annotate_all_cells: bool = False,
     label_density: bool = False,
+    pdf_renderer: str = "auto",
 ) -> str:
     
     """
@@ -215,7 +217,7 @@ def grade_pdf(
       - Annotated images combine blue name/ID overlays and answer overlays.
     """
     cfg: Config = load_config(config_path)
-    pages = load_pages([input_path], dpi=dpi)
+    pages = IO.load_pages(input_path, dpi=dpi, renderer=pdf_renderer)
     key: Optional[List[str]] = load_key_txt(key_txt) if key_txt else None
 
     total_q = sum(a.questions for a in cfg.answer_layouts)
@@ -233,6 +235,16 @@ def grade_pdf(
     _ensure_dir(os.path.dirname(out_csv) or ".")
     if out_annotated_dir:
         _ensure_dir(out_annotated_dir)
+
+
+    annotated_pages: List[np.ndarray] = []
+    out_pdf_path: Optional[str] = None
+    if out_annotated_dir and out_pdf:
+        out_pdf_path = out_pdf
+        if not os.path.isabs(out_pdf_path):
+            base_dir = os.path.dirname(out_csv) or "."
+            out_pdf_path = os.path.join(base_dir, out_pdf_path)
+        _ensure_dir(os.path.dirname(out_pdf_path) or ".")
 
     with open(out_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -334,5 +346,8 @@ def grade_pdf(
                 )
                 out_png = os.path.join(out_annotated_dir, f"page_{page_idx:03d}_overlay.png")
                 cv2.imwrite(out_png, vis)
+                annotated_pages.append(vis)
+    if out_pdf_path and annotated_pages:
+        IO.save_images_as_pdf(annotated_pages, out_pdf_path, dpi=dpi)
 
     return out_csv

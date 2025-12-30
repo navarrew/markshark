@@ -1,8 +1,7 @@
 import os
-import csv
 import sys
 from types import SimpleNamespace
-from typing import Optional, List, Tuple, Sequence, Union, Iterator
+from typing import Optional, List, Tuple
 
 import numpy as np  # type: ignore
 import cv2  # type: ignore
@@ -11,132 +10,11 @@ from .defaults import (
     FEAT_DEFAULTS, MATCH_DEFAULTS, EST_DEFAULTS, ALIGN_DEFAULTS, RENDER_DEFAULTS,
     apply_feat_overrides, apply_est_overrides,
 )
-from .tools import align_tools as SA 
+from .tools import align_tools as SA
+from .tools import io_pages as IO
 
 """
 Convert a set of PDFs to a list of BGR images; align against a template.
-"""
-
-# ---------- low-level: PDF → BGR pages (generator) ----------
-
-"""
-_iter_pdf_bgr_pages
-A generator that rasterizes a PDF into BGR images page-by-page. 
-It first tries PyMuPDF (fitz) with a zoom set by dpi/72, and if that fails,
-falls back to pdf2image (which requires Poppler). 
-It yields (source_path, 1-based page_index, bgr_image) for each page 
-and raises a RuntimeError if neither renderer works.
-"""
-
-def _iter_pdf_bgr_pages(pdf_path: str, dpi: int) -> Iterator[Tuple[str, int, np.ndarray]]:
-    """
-    Yield (pdf_path, 1-based page_index, bgr_image) for each page in the PDF.
-    Tries PyMuPDF first; falls back to pdf2image if needed.
-    """
-    # Try PyMuPDF (fitz)
-    try:
-        import fitz  # type: ignore
-        zoom = dpi / 72.0
-        doc = fitz.open(pdf_path)
-        try:
-            for idx, p in enumerate(doc, 1):
-                mat = fitz.Matrix(zoom, zoom)
-                pix = p.get_pixmap(matrix=mat, alpha=False)
-                img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
-                bgr = img[:, :, ::-1].copy()  # RGB -> BGR
-                yield (pdf_path, idx, bgr)
-            return
-        finally:
-            doc.close()
-    except Exception:
-        pass
-
-    # Fallback: pdf2image
-    try:
-        from pdf2image import convert_from_path  # type: ignore
-        pil_pages = convert_from_path(pdf_path, dpi=dpi)
-        for idx, pil in enumerate(pil_pages, 1):
-            rgb = np.array(pil.convert("RGB"))
-            bgr = rgb[:, :, ::-1].copy()
-            yield (pdf_path, idx, bgr)
-    except Exception as e:
-        raise RuntimeError(
-            f"Cannot render PDF '{pdf_path}'. Install PyMuPDF (fitz) or pdf2image+poppler. Original error: {e}"
-        )
-
-# ---------- high-level: inputs → list of (path, page#, bgr) ----------
-
-"""
-convert_pdf_pages_to_bgr_tuples
-(inputs: Union[str, Sequence[str]], dpi: int) -> List[Tuple[str, int, np.ndarray]]
-Normalizes inputs (single path or list of paths), enforces “PDF only,” 
-and uses _iter_pdf_bgr_pages to collect all pages into 
-a list of (source_path, page_number, bgr_image) tuples. 
-If nothing is produced, it raises RuntimeError("No input pages found.").
-"""
-
-def convert_pdf_pages_to_bgr_tuples(
-    inputs: Union[str, Sequence[str]],
-    dpi: int,
-) -> List[Tuple[str, int, np.ndarray]]:
-    """
-    Accepts a single path or a list of paths. For now, only PDFs are supported.
-    Returns a list of (source_path, page_number, bgr_image) tuples.
-    """
-    if isinstance(inputs, str):
-        input_files = [inputs]
-    else:
-        input_files = list(inputs)
-
-    out: List[Tuple[str, int, np.ndarray]] = []
-    for path in input_files:
-        ext = os.path.splitext(path)[1].lower()
-        if ext != ".pdf":
-            raise ValueError(f"Only PDFs supported for now (got: {path})")
-        for triple in _iter_pdf_bgr_pages(path, dpi=dpi):
-            out.append(triple)
-    if not out:
-        raise RuntimeError("No input pages found.")
-    return out
-
-"""
-save_images_as_pdf
-Writes a list of BGR numpy images to a single multi-page PDF using PIL. 
-It converts BGR→RGB for each image, saves the first page, appends the rest, 
-sets the PDF “resolution” metadata to dpi, and prints a confirmation line. 
-Raises ValueError if the list is empty.
-"""
-
-def save_images_as_pdf(pages_bgr: List[np.ndarray], out_path: str, dpi: int = 150) -> None:
-    """
-    Save a list of BGR NumPy arrays to a single PDF at the requested DPI.
-    """
-    from PIL import Image
-    if not pages_bgr:
-        raise ValueError("No pages to save.")
-    pil_pages = [Image.fromarray(p[:, :, ::-1].astype("uint8")).convert("RGB") for p in pages_bgr]  # BGR->RGB
-    first, rest = pil_pages[0], pil_pages[1:]
-    first.save(out_path, save_all=True, append_images=rest, format="PDF", resolution=dpi)
-    print(f"[ok] wrote PDF: {out_path}")
-
-
-
-"""
-align_pdf_scans
-a high-level convenience wrapper
-    1.  Builds an args SimpleNamespace that bundles rendering params 
-        (DPI, page range, outputs), ArUco options, feature detection/matching settings 
-        (tiles, ORB, ratio test, FLANN), and geometric estimation/ECC settings 
-        (method, RANSAC, iters, confidence, ECC details).
-    2.  Loads the template PDF at the requested dpi, 
-        selects template_page (1-based), and converts 
-        the input_pdf to raw page images.
-    3.  Calls align_raw_bgr_scans(...) to align each scan to the 
-        template and collect metrics.
-    4.  If alignment produced pages and an output filename is set, writes 
-        an aligned PDF via save_images_as_pdf.
-Returns the output PDF path. (Note: fallback_original is forwarded in args for
-downstream use; this function itself doesn’t branch on it.)
 """
 
 def align_pdf_scans(
@@ -144,6 +22,7 @@ def align_pdf_scans(
     template: str,
     out_pdf: str = "aligned_scans.pdf",
     dpi: int = RENDER_DEFAULTS.dpi,
+    pdf_renderer: str = "auto",
     template_page: int = 1,
     method: str = EST_DEFAULTS.method,
     dict_name: str = ALIGN_DEFAULTS.dict_name,
@@ -191,20 +70,24 @@ def align_pdf_scans(
     )
 
     # Load template page as BGR image (1-based page index)
-    tpl_tuples = convert_pdf_pages_to_bgr_tuples(template, dpi=dpi)
+    renderer = pdf_renderer
+    if renderer == "auto":
+        renderer = IO.choose_common_pdf_renderer([template, input_pdf], dpi=int(dpi), prefer="fitz")
+
+    tpl_tuples = IO.convert_pdf_pages_to_bgr_tuples(template, dpi=dpi, renderer=renderer)
     if not (1 <= template_page <= len(tpl_tuples)):
         template_page = 1
     template_bgr = tpl_tuples[template_page - 1][2]  # (path, idx, bgr) → bgr
 
     # Convert raw scans to (src_path, page_idx, bgr)
-    raw_scans_bgr = convert_pdf_pages_to_bgr_tuples(input_pdf, dpi=dpi)
+    raw_scans_bgr = IO.convert_pdf_pages_to_bgr_tuples(input_pdf, dpi=dpi, renderer=renderer)
 
     # Align
     aligned_pages, metrics_rows = align_raw_bgr_scans(raw_scans_bgr, template_bgr, args)
 
     # Write outputs
     if args.out and aligned_pages:
-        save_images_as_pdf(aligned_pages, args.out, dpi=args.dpi)
+        IO.save_images_as_pdf(aligned_pages, args.out, dpi=args.dpi)
 
     # Optional: write metrics CSV here if desired (similar to below)
     return out_pdf
@@ -260,6 +143,10 @@ def align_raw_bgr_scans(
         print("[info] ArUco-based alignment enabled.", file=sys.stderr)
         non_aruco_pages = []
         for (src_path, page_idx, scan_bgr) in raw_scans_bgr:
+            if getattr(args, "first_page", None) is not None and page_idx < int(args.first_page):
+                continue
+            if getattr(args, "last_page", None) is not None and page_idx > int(args.last_page):
+                continue
             try:
                 warped_a, H_a, detected_ids = SA.align_with_aruco(
                     scan_bgr, template_bgr,

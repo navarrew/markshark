@@ -14,27 +14,16 @@ Reusable alignment primitives:
 - Fallback via page quadrilateral: detect_page_quad, warp_by_page_quad
 - Guardrailed alignment pipeline: align_page_once, align_with_guardrails
 
-Basic I/O helpers (optional):
-- _save_as_pdf(pages_bgr, out_path, dpi)
-- _render_pdf_to_bgr_pages(pdf_path, dpi)
-- load_pages(path, dpi)  # PDF or single image to list of BGR pages
 """
 
 from __future__ import annotations
 
 from typing import List, Optional, Tuple, Dict
 import os
-
 import numpy as np  # type: ignore
 import cv2 as cv    # type: ignore
 
-from ..defaults import (
-    FeatureParams, FEAT_DEFAULTS, apply_feat_overrides,
-    EstParams, EST_DEFAULTS, apply_est_overrides,
-    MatchParams, MATCH_DEFAULTS, apply_match_overrides,
-    AlignDefaults, ALIGN_DEFAULTS, apply_align_overrides,
-    RenderParams, RENDER_DEFAULTS, apply_render_overrides,
-)
+from ..defaults import FeatureParams, EstParams, apply_feat_overrides, apply_est_overrides
 
 # ---------------------------- Utilities & I/O ----------------------------
 
@@ -44,84 +33,8 @@ def _ensure_dir(p: str) -> None:
     os.makedirs(p, exist_ok=True)
 
 def _has_cv_usac() -> bool:
-    try:
-        import cv2  # type: ignore
-        return hasattr(cv2, "USAC_MAGSAC")
-    except Exception:
-        return False
-
-def _save_as_pdf(pages_bgr: List[np.ndarray], out_path: str, dpi: int = 150) -> None:
-    """
-    Save a list of BGR NumPy arrays to a single PDF at the requested DPI.
-    (Helper, optional)
-    """
-    from PIL import Image
-
-    if not pages_bgr:
-        raise ValueError("No pages to save.")
-
-    pil_pages = [Image.fromarray(p[:, :, ::-1].astype("uint8")).convert("RGB")  # BGR->RGB
-                 for p in pages_bgr]
-    first, rest = pil_pages[0], pil_pages[1:]
-    first.save(out_path, save_all=True, append_images=rest, format="PDF", resolution=dpi)
-
-def _render_pdf_to_bgr_pages(pdf_path: str, dpi: int) -> List[np.ndarray]:
-    """
-    Render a PDF to a list of BGR images. Tries PyMuPDF (fitz), falls back to pdf2image.
-    (Helper, optional)
-    """
-    try:
-        import fitz  # type: ignore
-        zoom = dpi / 72.0
-        doc = fitz.open(pdf_path)
-        pages = []
-        try:
-            for p in doc:
-                mat = fitz.Matrix(zoom, zoom)
-                pix = p.get_pixmap(matrix=mat, alpha=False)
-                img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
-                bgr = img[:, :, ::-1].copy()  # RGB -> BGR
-                pages.append(bgr)
-            return pages
-        finally:
-            doc.close()
-    except Exception:
-        pass
-
-    try:
-        from pdf2image import convert_from_path  # type: ignore
-        pil_pages = convert_from_path(pdf_path, dpi=dpi)
-        pages = []
-        for pil in pil_pages:
-            rgb = np.array(pil.convert("RGB"))
-            bgr = rgb[:, :, ::-1].copy()
-            pages.append(bgr)
-        return pages
-    except Exception as e:
-        raise RuntimeError(
-            f"Cannot render PDF '{pdf_path}'. Install PyMuPDF (fitz) or pdf2image+poppler. Original error: {e}"
-        )
-
-def _load_image_to_bgr(path: str) -> Optional[np.ndarray]:
-    try:
-        img = cv.imread(path, cv.IMREAD_COLOR)
-        return img
-    except Exception:
-        return None
-
-def load_pages(path: str, dpi: int) -> List[np.ndarray]:
-    """
-    If path is a PDF → list of pages (BGR). If image → [single BGR].
-    """
-    ext = os.path.splitext(path)[1].lower()
-    if ext == ".pdf":
-        return _render_pdf_to_bgr_pages(path, dpi)
-    img = _load_image_to_bgr(path)
-    if img is None:
-        raise FileNotFoundError(f"Could not read image: {path}")
-    return [img]
-
-# --------------------------- ArUco-based alignment ---------------------------
+    """Return True if this OpenCV build exposes the USAC constants we want."""
+    return hasattr(cv, "USAC_MAGSAC")
 
 def detect_aruco_centers(img_bgr: np.ndarray, dict_name: str = "DICT_4X4_50") -> Dict[int, Tuple[float, float]]:
     """Return dict id -> (cx, cy) for detected ArUco markers (in image coords)."""
