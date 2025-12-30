@@ -83,7 +83,7 @@ _dc_replace() (aliased from dataclasses.replace) creates a copy of ALIGN_DEFAULT
 @dataclass(frozen=True)
 class EstParams:
     """Homography estimation knobs (RANSAC/USAC) and optional ECC refinement."""
-    method: Literal["auto", "ransac", "usac"] = "auto"  # 'auto' picks USAC if available
+    estimator_method: Literal["auto", "ransac", "usac"] = "auto"  # 'auto' picks USAC if available
     ransac_thresh: float = 3.0              # px reprojection threshold
     max_iters: int = 10000                  # robust estimator iterations
     confidence: float = 0.999               # success probability for RANSAC/USAC

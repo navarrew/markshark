@@ -24,10 +24,14 @@ def align_pdf_scans(
     dpi: int = RENDER_DEFAULTS.dpi,
     pdf_renderer: str = "auto",
     template_page: int = 1,
-    method: str = EST_DEFAULTS.method,
+    estimator_method: str = EST_DEFAULTS.estimator_method,
+    align_method: str = "auto",
     dict_name: str = ALIGN_DEFAULTS.dict_name,
     min_markers: int = ALIGN_DEFAULTS.min_aruco,
     ransac: float = EST_DEFAULTS.ransac_thresh,
+    use_ecc: bool = EST_DEFAULTS.use_ecc,
+    ecc_max_iters: int = EST_DEFAULTS.ecc_max_iters,
+    ecc_eps: float = EST_DEFAULTS.ecc_eps,
     orb_nfeatures: int = FEAT_DEFAULTS.orb_nfeatures,
     match_ratio: float = MATCH_DEFAULTS.ratio_test,
     first_page: Optional[int] = None,
@@ -42,7 +46,9 @@ def align_pdf_scans(
         first_page=first_page, last_page=last_page,
         out=out_pdf, out_dir=None, prefix="aligned",
         # ArUco / align toggles
-        dict_name=dict_name, min_markers=min_markers, use_aruco=ALIGN_DEFAULTS.use_aruco,
+        dict_name=dict_name, min_markers=min_markers,
+        align_method=align_method,
+        use_aruco=(align_method in ("auto", "aruco")) and ALIGN_DEFAULTS.use_aruco,
         # Feature detection
         tiles_x=FEAT_DEFAULTS.tiles_x, tiles_y=FEAT_DEFAULTS.tiles_y,
         topk_per_tile=FEAT_DEFAULTS.topk_per_tile,
@@ -50,19 +56,16 @@ def align_pdf_scans(
         orb_fast_threshold=FEAT_DEFAULTS.orb_fast_threshold,
         # Matching
         match_ratio=match_ratio or MATCH_DEFAULTS.ratio_test,
-        mutual_check=MATCH_DEFAULTS.mutual_check,
-        max_matches=MATCH_DEFAULTS.max_matches,
-        use_flann=MATCH_DEFAULTS.use_flann,
         # Estimation / ECC
-        method=method or EST_DEFAULTS.method,
+        estimator_method=estimator_method or EST_DEFAULTS.estimator_method,
         ransac=ransac or EST_DEFAULTS.ransac_thresh,
         ransac_thresh=ransac or EST_DEFAULTS.ransac_thresh,  # alias for downstream
         max_iters=EST_DEFAULTS.max_iters,
         confidence=EST_DEFAULTS.confidence,
-        use_ecc=getattr(EST_DEFAULTS, 'use_ecc', True),
+        use_ecc=bool(use_ecc),
         ecc_levels=getattr(EST_DEFAULTS, 'ecc_levels', 4),
-        ecc_max_iters=getattr(EST_DEFAULTS, 'ecc_max_iters', 50),
-        ecc_eps=getattr(EST_DEFAULTS, 'ecc_eps', 1e-6),
+        ecc_max_iters=int(ecc_max_iters),
+        ecc_eps=float(ecc_eps),
         # Guard thresholds
         fail_med=ALIGN_DEFAULTS.fail_med, fail_p95=ALIGN_DEFAULTS.fail_p95, fail_br=ALIGN_DEFAULTS.fail_br,
         # Misc
@@ -131,7 +134,7 @@ def align_raw_bgr_scans(
         orb_fast_threshold=args.orb_fast_threshold,
     )
     epar = apply_est_overrides(
-        method=args.method, ransac_thresh=args.ransac_thresh,
+        estimator_method=args.estimator_method, ransac_thresh=args.ransac_thresh,
         max_iters=args.max_iters, confidence=args.confidence,
         use_ecc=args.use_ecc, ecc_levels=args.ecc_levels,
         ecc_max_iters=args.ecc_max_iters, ecc_eps=args.ecc_eps,
@@ -183,6 +186,23 @@ def align_raw_bgr_scans(
             print("[info] All pages processed with ArUco alignment.", file=sys.stderr)
     else:
         print("[info] ArUco-based alignment not enabled.", file=sys.stderr)
+
+    # If user requested ArUco-only, do not run feature alignment.
+    if getattr(args, "align_method", "auto") == "aruco":
+        if getattr(args, "fallback_original", True):
+            for (src_path, page_idx, scan_bgr) in remaining_pages:
+                aligned_pages.append(scan_bgr)
+                metrics_rows.append({
+                    "source": os.path.basename(src_path),
+                    "page": page_idx,
+                    "mode": "fallback_original",
+                    "res_median": "nan",
+                    "res_p95": "nan",
+                    "res_br_p95": "nan",
+                    "n_inliers": "",
+                })
+                print(f"[info] {src_path} p{page_idx}: kept original (ArUco-only mode).", file=sys.stderr)
+        return aligned_pages, metrics_rows
 
     # 2) Feature-based pass with guardrails
     for (src_path, page_idx, scan_bgr) in remaining_pages:

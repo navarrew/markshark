@@ -141,7 +141,7 @@ def estimate_homography(src_pts: np.ndarray, dst_pts: np.ndarray, est: EstParams
     if len(src_pts) < 4 or len(dst_pts) < 4:
         return None, None
     method_flag = None
-    if est.method == "usac" or (est.method == "auto" and _has_cv_usac()):
+    if est.estimator_method == "usac" or (est.estimator_method == "auto" and _has_cv_usac()):
         import cv2  # type: ignore
         method_flag = getattr(cv2, "USAC_MAGSAC", None)
     if method_flag is None:
@@ -216,7 +216,7 @@ def ecc_refine(template_gray: np.ndarray,
         scan_warped = cv.warpPerspective(scan_gray, H_inv_init, (w, h), flags=cv.INTER_LINEAR)
         scn = scan_warped.astype('float32') / 255.0
         warp = np.eye(3, dtype='float32')
-        criteria = (cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, est.ecc_iters, est.ecc_eps)
+        criteria = (cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, est.ecc_max_iters, est.ecc_eps)
         inputMask = (mask.astype('uint8') * 255) if mask.dtype != 'uint8' else (mask * 255)
         inputMask = (inputMask > 0).astype('uint8')
         cc, warp_delta = cv.findTransformECC(
