@@ -36,14 +36,6 @@ def apply_scoring_overrides(**kwargs) -> ScoringDefaults:
     """Return a copy of SCORING_DEFAULTS with the provided fields overridden."""
     return _dc_replace(SCORING_DEFAULTS, **kwargs)
 
-"""
-_dc_replace() (aliased from dataclasses.replace) creates a copy of SCORING_DEFAULTS 
-    with specific fields replaced.  The two asterisks in the function definition signal
-    the program to 'pack' keyword arguments into a dictionary.  In the function call
-    the two asterisks in front of kwargs serve to 'unpack' the dictionary.
-    
-kwargs is a standard convential notation for 'keyword arguments'.  
-"""
 
 # ---------------------------
 # High-level alignment outputs / IO
@@ -72,10 +64,6 @@ ALIGN_DEFAULTS = AlignDefaults()
 def apply_align_overrides(**kwargs) -> AlignDefaults:
     return _dc_replace(ALIGN_DEFAULTS, **kwargs)
 
-"""
-_dc_replace() (aliased from dataclasses.replace) creates a copy of ALIGN_DEFAULTS 
-    with specific fields replaced.
-"""
 
 # ---------------------------
 # Geometry estimation / refinement
@@ -98,10 +86,6 @@ EST_DEFAULTS = EstParams()
 def apply_est_overrides(**kwargs) -> EstParams:
     return _dc_replace(EST_DEFAULTS, **kwargs)
 
-"""
-_dc_replace() (aliased from dataclasses.replace) creates a copy of EST_DEFAULTS 
-    with specific variables replaced.  
-"""
 
 # ---------------------------
 # Feature detection / tiling
@@ -209,13 +193,3 @@ __all__ = [
     "SCORING_DEFAULTS", "ALIGN_DEFAULTS", "EST_DEFAULTS", "FEAT_DEFAULTS", "MATCH_DEFAULTS", "RENDER_DEFAULTS", "ALL_DEFAULTS", "ANNOTATION_DEFAULTS",
     "apply_scoring_overrides", "apply_align_overrides", "apply_est_overrides", "apply_feat_overrides", "apply_match_overrides", "apply_render_overrides", "apply_annotation_overrides",
 ]
-
-"""
-USAGE:
-__all__ is a special module-level variable (a plain Python list of strings) that tells Python:
-
-“When someone does from module import *, only export these names.”
-
-This allows you to keep some functions 'hidden' from general importing.  Such functions 
-or objects are typically internal to the script and not meant for use outside of it.
-"""

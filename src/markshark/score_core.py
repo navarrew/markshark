@@ -46,9 +46,16 @@ def _rowwise_scores(
     rois: List[Tuple[int, int, int, int]],
     rows: int,
     cols: int,
+    fixed_thresh: Optional[int] = None,
 ) -> List[List[float]]:
-    """Return a rows×cols matrix of fill scores (0–1)."""
-    flat = roi_fill_scores(gray, rois, inner_radius_ratio=0.70, blur_ksize=5)
+    """Return a rows x cols matrix of fill scores (0-1)."""
+    flat = roi_fill_scores(
+        gray,
+        rois,
+        inner_radius_ratio=0.70,
+        blur_ksize=5,
+        fixed_thresh=fixed_thresh,
+    )
     return [flat[r * cols:(r + 1) * cols] for r in range(rows)]
 
 # ----------------------------
@@ -107,6 +114,7 @@ def _annotate_answers(
     top2_ratio: float,
     min_score: float,
     min_abs: float,
+    fixed_thresh: Optional[int] = None,
     color_correct=(0, 200, 0),
     color_incorrect=(0, 0, 255),
     color_blank=(160, 160, 160),
@@ -122,8 +130,6 @@ def _annotate_answers(
     Optionally put % fill text in each bubble (label_density=True).
     Returns a new image with drawings (does not modify input in place).
     """
-    min_score=min_score,
-    min_abs=min_abs,
     out = img_bgr.copy()
     H, W = out.shape[:2]
     key_seq = [k.upper() for k in key_letters] if key_letters else None
@@ -137,8 +143,8 @@ def _annotate_answers(
             layout.questions, layout.choices
         )
         rois = centers_to_circle_rois(centers, W, H, layout.radius_pct)
-        M = _rowwise_scores(gray, rois, layout.questions, layout.choices)
-        choice_labels = [chr(ord("A") + i) for i in range(layout.choices)]
+        M = _rowwise_scores(gray, rois, layout.questions, layout.choices, fixed_thresh=fixed_thresh,)
+        choice_labels = list(layout.labels) if layout.labels else [chr(ord("A") + i) for i in range(layout.choices)]
 
         for r in range(layout.questions):
             row_scores = M[r]
@@ -176,10 +182,33 @@ def _annotate_answers(
                 cv2.circle(out, (cx, cy), radius, col, thickness, lineType=cv2.LINE_AA)
 
                 #here we add the text for the density of the pencil marks in the bubble
+#                 if label_density:
+#                     pct = int(round(100 * row_scores[c]))
+#                     cv2.putText(out, f"{pct}", (cx - 8, cy + 5),
+#                                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 255), 1, cv2.LINE_AA)
+
                 if label_density:
                     pct = int(round(100 * row_scores[c]))
-                    cv2.putText(out, f"{pct}", (cx - 8, cy + 5),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 255), 1, cv2.LINE_AA)
+                
+                    # Put text above the circle
+                    text = f"{pct}"
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    font_scale = 0.3
+                    text_thickness = 1
+                
+                    (tw, th), baseline = cv2.getTextSize(text, font, font_scale, text_thickness)
+                
+                    gap = 4  # pixels above circle
+                    tx = cx - tw // 2
+                    ty = cy - radius - gap  # baseline position above circle
+                
+                    # Keep text inside the image bounds
+                    tx = max(0, min(tx, W - tw - 1))
+                    ty = max(th + 1, ty)  # avoid going off the top
+                
+                    cv2.putText(out, text, (tx, ty),
+                                font, font_scale, (255, 0, 255),
+                                text_thickness, cv2.LINE_AA)
 
             q_global += 1
 
@@ -198,6 +227,7 @@ def grade_pdf(
     top2_ratio: float,
     min_score: float,
     min_abs: float,
+    fixed_thresh: Optional[int] = None,
     key_txt: Optional[str] = None,
     out_annotated_dir: Optional[str] = None,
     out_pdf: Optional[str] = "scored_scans.pdf",
@@ -255,7 +285,7 @@ def grade_pdf(
 
         for page_idx, img_bgr in enumerate(pages, start=1):
             # Decode all fields using the shared axis-mode pipeline
-            info, answers = process_page_all(img_bgr, cfg, min_fill=min_fill, top2_ratio=top2_ratio, min_score=min_score, min_abs=min_abs)
+            info, answers = process_page_all(img_bgr, cfg, min_fill=min_fill, top2_ratio=top2_ratio, min_score=min_score, min_abs=min_abs, fixed_thresh=fixed_thresh,)
 
             # Limit answers to the Qs we output (based on key length if present)
             answers_out = answers[:q_out]
@@ -291,7 +321,13 @@ def grade_pdf(
                     layout.questions, layout.choices
                 )
                 rois = centers_to_circle_rois(centers, W, H, layout.radius_pct)
-                M = _rowwise_scores(gray, rois, layout.questions, layout.choices)
+                M = _rowwise_scores(
+            gray,
+            rois,
+            layout.questions,
+            layout.choices,
+            fixed_thresh=fixed_thresh,
+        )
                 for r in range(layout.questions):
                     if q_idx >= q_out:
                         break
@@ -342,7 +378,8 @@ def grade_pdf(
                     min_fill=min_fill,
                     top2_ratio=top2_ratio,
                     min_score=min_score,
-                    min_abs=min_abs
+                    min_abs=min_abs,
+                    fixed_thresh=fixed_thresh
                 )
                 out_png = os.path.join(out_annotated_dir, f"page_{page_idx:03d}_overlay.png")
                 cv2.imwrite(out_png, vis)

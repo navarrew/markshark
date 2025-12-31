@@ -138,12 +138,11 @@ if page.startswith("1"):
     with colA:
         scans = _tempfile_from_uploader("Raw student scans (PDF)", "align_scans", types=("pdf",))
         template = _tempfile_from_uploader("Template bubble sheet (PDF)", "align_template", types=("pdf",))
-        out_pdf_name = st.text_input("Output aligned PDF name", value="aligned_scans.pdf")
         method = st.selectbox("Alignment method", ["auto", "aruco", "feature"], index=1)
         dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=150, step=1)
-        keep_intermediates = st.checkbox("Keep debug intermediates", value=True)
 
     with colB:
+        out_pdf_name = st.text_input("Output aligned PDF name", value="aligned_scans.pdf")
         st.markdown("ArUco mark alignment parameters")
         min_markers = st.number_input("Min ArUco markers to accept", min_value=0, max_value=32, value=0, step=1)
         dict_name = st.text_input("ArUco dictionary (if aruco)", value="DICT_4X4_50")
@@ -173,16 +172,13 @@ if page.startswith("1"):
                 "--template", str(template),
                 "--out-pdf", str(out_pdf),
                 "--dpi", str(int(dpi)),
-                "--method", method,
+                "--align_method", method,
                 "--template-page", str(int(template_page)),
                 "--ransac", str(float(ransac)),
-                "--confidence", str(float(confidence)),
                 "--orb-nfeatures", str(int(orb_nfeatures)),
                 "--match-ratio", str(float(match_ratio)),
                 "--min-markers", str(int(min_markers)),
             ]
-            if keep_intermediates:
-                args += ["--keep-intermediates"]
             if dict_name.strip():
                 args += ["--dict-name", dict_name.strip()]
             if first_page > 0:
@@ -198,14 +194,6 @@ if page.startswith("1"):
 
                 _download_file_button("Download aligned_scans.pdf", out_pdf)
 
-                if keep_intermediates:
-                    dbg = out_dir / "intermediates"
-                    if dbg.exists():
-                        st.download_button(
-                            "Download intermediates.zip",
-                            data=_zip_dir_to_bytes(dbg),
-                            file_name="intermediates.zip",
-                        )
             except Exception as e:
                 status.error(f"Error during alignment: {e}")
 
@@ -226,9 +214,9 @@ elif page.startswith("2"):
         aligned = _tempfile_from_uploader("Aligned scans PDF", "grade_pdf", types=("pdf",))
         config = _tempfile_from_uploader("Config (YAML)", "grade_cfg", types=("yaml","yml"))
         key_txt = _tempfile_from_uploader("Key TXT (optional)", "grade_key", types=("txt",))
+    with colB:
         out_csv_name = st.text_input("Output results CSV", value="results.csv")
         out_ann_dir = st.text_input("Annotated pages directory (optional)", value="")
-    with colB:
         annotate_all = st.checkbox("Annotate all cells", value=True)
         label_density = st.checkbox("Label density diagnostics", value=True)
         dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=150, step=1)

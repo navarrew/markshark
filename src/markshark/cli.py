@@ -12,13 +12,15 @@ from rich import print as rprint
 from .config_io import load_config
 
 from .defaults import (
-    SCORING_DEFAULTS, FEAT_DEFAULTS, MATCH_DEFAULTS, EST_DEFAULTS, ALIGN_DEFAULTS, RENDER_DEFAULTS,
-    ANNOTATION_DEFAULTS, apply_annotation_overrides, AnnotationDefaults,
+    SCORING_DEFAULTS,
+    FEAT_DEFAULTS,
+    MATCH_DEFAULTS,
+    EST_DEFAULTS,
+    ALIGN_DEFAULTS,
+    RENDER_DEFAULTS,
     apply_scoring_overrides,
 )
-
 # Core modules
-from .defaults import SCORING_DEFAULTS as DEFAULTS
 from .align_core import align_pdf_scans
 from .visualize_core import overlay_config
 from .score_core import grade_pdf
@@ -119,13 +121,12 @@ def grade(
     top2_ratio: Optional[float] = typer.Option(None, "--top2-ratio", help=f"default {SCORING_DEFAULTS.top2_ratio}"),
     min_score: Optional[float] = typer.Option(None, "--min-score", help=f"default {SCORING_DEFAULTS.min_score}"),
     min_abs: Optional[float] = typer.Option(None, "--min-abs", help=f"default {SCORING_DEFAULTS.min_abs}"),
+    fixed_thresh: Optional[int] = typer.Option(None, "--fixed-thresh", help=f"default {SCORING_DEFAULTS.fixed_thresh}"),
     # (annotation flags you already added can stay)
 ):
     """
     Grade aligned scans using axis-based config.
     """
-    # Build annotation overrides from CLI (if any) ... (your existing code)
-
     try:
         _ = load_config(config)
     except Exception as e:
@@ -138,6 +139,7 @@ def grade(
             top2_ratio=top2_ratio if top2_ratio is not None else SCORING_DEFAULTS.top2_ratio,
             min_score=min_score if min_score is not None else SCORING_DEFAULTS.min_score,
             min_abs=min_abs if min_abs is not None else SCORING_DEFAULTS.min_abs,
+            fixed_thresh=fixed_thresh if fixed_thresh is not None else SCORING_DEFAULTS.fixed_thresh,
         )
 
         grade_pdf(
@@ -151,9 +153,9 @@ def grade(
             top2_ratio=scoring.top2_ratio,
             min_score=scoring.min_score,
             min_abs=scoring.min_abs,
+            fixed_thresh=scoring.fixed_thresh,
             annotate_all_cells=annotate_all_cells,
             label_density=label_density,
-            # annot=annot_obj  ← if your grade_pdf supports it; otherwise thread it in there too
         )
     except Exception as e:
         rprint(f"[red]Grading failed:[/red] {e}")
@@ -328,17 +330,6 @@ def app_main(
         rprint("\n[red]Interrupted[/red]")
         sys.exit(130)
 
-
 if __name__ == "__main__":
     app_main()
 
-def _parse_bgr_csv(s: Optional[str]):
-    if not s:
-        return None
-    try:
-        parts = [int(x.strip()) for x in s.split(',')]
-        if len(parts) != 3:
-            raise ValueError
-        return tuple(parts)
-    except Exception:
-        raise typer.BadParameter(f"Invalid BGR CSV: {s}")
