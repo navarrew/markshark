@@ -40,15 +40,15 @@ def align(
     out_pdf: str = typer.Option("aligned_scans.pdf", "--out-pdf", "-o", help="Output aligned PDF"),
     dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Render DPI for alignment & output"),
     template_page: int = typer.Option(1, "--template-page", help="Template page index to use (1-based)"),
-    align_method: str = typer.Option("auto", "--align-method", "--align_method", help="Alignment pipeline: auto|aruco|feature"),
-    estimator_method: str = typer.Option(EST_DEFAULTS.estimator_method, "--estimator-method", "--estimator_method", help="Homography estimator: auto|ransac|usac"),
+    align_method: str = typer.Option("auto", "--align-method", help="Alignment pipeline: auto|aruco|feature"),
+    estimator_method: str = typer.Option(EST_DEFAULTS.estimator_method, "--estimator-method", help="Homography estimator: auto|ransac|usac"),
     min_markers: int = typer.Option(ALIGN_DEFAULTS.min_aruco, "--min-markers", help="Min ArUco markers to accept"),
     ransac: float = typer.Option(EST_DEFAULTS.ransac_thresh, "--ransac", help="RANSAC reprojection threshold"),
     use_ecc: bool = typer.Option(EST_DEFAULTS.use_ecc, "--use-ecc/--no-use-ecc", help="Enable ECC refinement"),
     ecc_max_iters: int = typer.Option(EST_DEFAULTS.ecc_max_iters, "--ecc-max-iters", help="ECC iterations"),
     ecc_eps: float = typer.Option(EST_DEFAULTS.ecc_eps, "--ecc-eps", help="ECC termination epsilon"),
     orb_nfeatures: int = typer.Option(FEAT_DEFAULTS.orb_nfeatures, "--orb-nfeatures", help="ORB features for feature-based align"),
-    match_ratio: float = typer.Option(MATCH_DEFAULTS.ratio_test, "--match-ratio", help="Lowe ratio for feature matching"),
+    match_ratio: float = typer.Option(MATCH_DEFAULTS.ratio_test, "--match-ratio", help="Lowe's ratio test for feature matching"),
     dict_name: str = typer.Option(ALIGN_DEFAULTS.dict_name, "--dict-name", help="ArUco dictionary"),
     first_page: Optional[int] = typer.Option(None, "--first-page", help="First page index (1-based)"),
     last_page: Optional[int] = typer.Option(None, "--last-page", help="Last page index (inclusive, 1-based)"),
@@ -117,10 +117,25 @@ def grade(
     annotate_all_cells: bool = typer.Option(False, "--annotate-all-cells", help="Draw every bubble in each row"),
     label_density: bool = typer.Option(False, "--label-density", help="Overlay % fill text at bubble centers"),
     dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Scan/PDF render DPI"),
-    min_fill: Optional[float] = typer.Option(None, "--min-fill", help=f"default {SCORING_DEFAULTS.min_fill}"),
+    min_fill: Optional[float] = typer.Option(
+        None,
+        "--min-fill",
+        help=f"""Minimum fraction of the darkest bubble required to consider a mark filled (default: {SCORING_DEFAULTS.min_fill}).
+        Increase to require more completely filled bubbles; decrease to accept lighter or partially filled marks."""
+    ),
     top2_ratio: Optional[float] = typer.Option(None, "--top2-ratio", help=f"default {SCORING_DEFAULTS.top2_ratio}"),
-    min_score: Optional[float] = typer.Option(None, "--min-score", help=f"default {SCORING_DEFAULTS.min_score}"),
-    min_abs: Optional[float] = typer.Option(None, "--min-abs", help=f"default {SCORING_DEFAULTS.min_abs}"),
+    min_score: Optional[float] = typer.Option(
+        None,
+        "--min-score",
+        help=f"""Minimum score required to accept a bubble as filled (default: {SCORING_DEFAULTS.min_score}).
+        Increase to require higher confidence in filled bubbles; decrease to accept lower scores."""
+    ),
+    min_abs: Optional[float] = typer.Option(
+        None,
+        "--min-abs",
+        help=f"""Minimum absolute fill value required for a bubble to be considered filled (default: {SCORING_DEFAULTS.min_abs}).
+        Increase to require darker marks; decrease to accept lighter marks."""
+    ),
     fixed_thresh: Optional[int] = typer.Option(None, "--fixed-thresh", help=f"default {SCORING_DEFAULTS.fixed_thresh}"),
     # (annotation flags you already added can stay)
 ):
@@ -169,8 +184,8 @@ def grade(
 def stats(
     input_csv: str = typer.Argument(..., help="Results CSV (from 'grade')"),
     output_csv: str = typer.Option("results_with_stats.csv", "--output-csv", "-o", help="Augmented CSV with summary rows"),
-    item_pattern: str = typer.Option(r"^Q\d+$", "--item-pattern", help="Regex for item columns (default: ^Q\\d+$)"),
-    percent: bool = typer.Option(True, "--percent/--proportion", help="Report difficulty as percent (0-100) or proportion (0-1)"),
+    item_pattern: str = typer.Option(r"^Q\d+$", "--item-pattern", help="Regex for item columns (default: ^Q\\d+$). Example: '^Q\\d+$'"),
+    percent: bool = typer.Option(True, "--percent/--proportion", help="Report difficulty as percent (0-100) (default) or proportion (0-1)"),
     label_col: Optional[str] = typer.Option("name", "--label-col", help="Column containing student label (name/id)"),
     exam_stats_csv: Optional[str] = typer.Option(None, "--exam-stats-csv", help="Optional CSV with KR-20/KR-21, mean, SD"),
     plots_dir: Optional[str] = typer.Option(None, "--plots-dir", help="Optional directory for IRT-ish item plots"),
