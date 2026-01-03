@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 Streamlit GUI wrapper for the MarkSharkOMR CLI.
@@ -17,6 +16,25 @@ from pathlib import Path
 from typing import Optional, List
 
 import streamlit as st
+
+# Optional, pull defaults from MarkShark so GUI matches CLI defaults.
+try:
+    from markshark.defaults import (
+        SCORING_DEFAULTS,
+        FEAT_DEFAULTS,
+        MATCH_DEFAULTS,
+        EST_DEFAULTS,
+        ALIGN_DEFAULTS,
+        RENDER_DEFAULTS,
+    )
+except Exception:  # pragma: no cover
+    SCORING_DEFAULTS = FEAT_DEFAULTS = MATCH_DEFAULTS = EST_DEFAULTS = ALIGN_DEFAULTS = RENDER_DEFAULTS = None
+
+def _dflt(obj, attr: str, fallback):
+    """Best-effort defaults helper when markshark.defaults is unavailable."""
+    if obj is None:
+        return fallback
+    return getattr(obj, attr, fallback)
 
 # --------------------- Working directory handling ---------------------
 WORKDIR: Path | None = None
@@ -116,7 +134,7 @@ def _zip_dir_to_bytes(dir_path: Path) -> bytes:
 # image_url = "https://github.com/navarrew/markshark/blob/main/images/shark.png" 
 # st.sidebar.image(image_url, caption="MarkShark Logo", use_column_width=True)
 st.sidebar.title("MarkShark 1.0")
-page = st.sidebar.radio("Select below", ["1) Align scans", "2) Score", "3) Stats", "4) Config visualizer"])
+page = st.sidebar.radio("Select below", ["1) Align scans", "2) Grade", "3) Stats", "4) Config visualizer", "5) Help"])
 
 # Initialize / show working directory selector
 _init_workdir()
@@ -138,21 +156,48 @@ if page.startswith("1"):
     with colA:
         scans = _tempfile_from_uploader("Raw student scans (PDF)", "align_scans", types=("pdf",))
         template = _tempfile_from_uploader("Template bubble sheet (PDF)", "align_template", types=("pdf",))
-        method = st.selectbox("Alignment method", ["auto", "aruco", "feature"], index=1)
-        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=150, step=1)
+        method = st.selectbox("Alignment method", ["auto", "aruco", "feature"], index=0)
+        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1)
 
     with colB:
         out_pdf_name = st.text_input("Output aligned PDF name", value="aligned_scans.pdf")
         st.markdown("ArUco mark alignment parameters")
-        min_markers = st.number_input("Min ArUco markers to accept", min_value=0, max_value=32, value=0, step=1)
-        dict_name = st.text_input("ArUco dictionary (if aruco)", value="DICT_4X4_50")
+        min_markers = st.number_input("Min ArUco markers to accept", min_value=0, max_value=32, value=int(_dflt(ALIGN_DEFAULTS, "min_aruco", 0)), step=1)
+        dict_name = st.text_input("ArUco dictionary (if aruco)", value=str(_dflt(ALIGN_DEFAULTS, "dict_name", "DICT_4X4_50")))
 
         st.markdown("---")
         st.markdown("Align parameters without ArUco markers")
-        ransac = st.number_input("RANSAC reprojection threshold", min_value=0.1, max_value=20.0, value=2.0, step=0.1)
-        confidence = st.number_input("USAC confidence (0–1)", min_value=0.10, max_value=1.00, value=0.99, step=0.01, format="%.2f")
-        orb_nfeatures = st.number_input("ORB nfeatures", min_value=200, max_value=20000, value=3000, step=100)
-        match_ratio = st.number_input("Match ratio (Lowe)", min_value=0.50, max_value=0.99, value=0.75, step=0.01, format="%.2f")
+        ransac = st.number_input("RANSAC reprojection threshold", min_value=0.1, max_value=20.0, value=float(_dflt(EST_DEFAULTS, "ransac_thresh", 2.0)), step=0.1)
+        orb_nfeatures = st.number_input("ORB nfeatures", min_value=200, max_value=20000, value=int(_dflt(FEAT_DEFAULTS, "orb_nfeatures", 3000)), step=100)
+        match_ratio = st.number_input("Match ratio (Lowe)", min_value=0.50, max_value=0.99, value=float(_dflt(MATCH_DEFAULTS, "ratio_test", 0.75)), step=0.01, format="%.2f")
+
+        with st.expander("Advanced (estimator and ECC)", expanded=False):
+            estimator_method = st.selectbox(
+                "Homography estimator method",
+                ["auto", "ransac", "usac"],
+                index=0,
+                help="Maps to --estimator-method in the CLI (auto|ransac|usac).",
+            )
+            use_ecc = st.checkbox(
+                "Enable ECC refinement",
+                value=bool(_dflt(EST_DEFAULTS, "use_ecc", True)),
+                help="Maps to --use-ecc/--no-use-ecc in the CLI.",
+            )
+            ecc_max_iters = st.number_input(
+                "ECC max iterations",
+                min_value=1,
+                max_value=5000,
+                value=int(_dflt(EST_DEFAULTS, "ecc_max_iters", 250)),
+                step=10,
+            )
+            ecc_eps = st.number_input(
+                "ECC epsilon",
+                min_value=1e-7,
+                max_value=1e-2,
+                value=float(_dflt(EST_DEFAULTS, "ecc_eps", 1e-5)),
+                step=1e-6,
+                format="%.7f",
+            )
 
         st.markdown("---")
         template_page = st.number_input("Template page (use if your template pdf has multiple pages)", min_value=1, value=1, step=1)
@@ -173,6 +218,7 @@ if page.startswith("1"):
                 "--out-pdf", str(out_pdf),
                 "--dpi", str(int(dpi)),
                 "--align_method", method,
+                "--estimator-method", estimator_method,
                 "--template-page", str(int(template_page)),
                 "--ransac", str(float(ransac)),
                 "--orb-nfeatures", str(int(orb_nfeatures)),
@@ -219,11 +265,12 @@ elif page.startswith("2"):
         out_ann_dir = st.text_input("Annotated pages directory (optional)", value="")
         annotate_all = st.checkbox("Annotate all cells", value=True)
         label_density = st.checkbox("Label density diagnostics", value=True)
-        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=150, step=1)
+        fixed_thresh = st.text_input("fixed-thresh (blank for default)", value="")
         min_fill = st.text_input("min-fill (blank for default)", value="")
         top2_ratio = st.text_input("top2-ratio (blank for default)", value="")
         min_score = st.text_input("min-score (blank for default)", value="")
         min_abs = st.text_input("min-abs (blank for default)", value="")
+        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1)
 
     if run_score_clicked:
         if not aligned or not config:
@@ -257,6 +304,8 @@ elif page.startswith("2"):
                 args += ["--min-score", min_score.strip()]
             if min_abs.strip():
                 args += ["--min-abs", min_abs.strip()]
+            if fixed_thresh.strip():
+                args += ["--fixed-thresh", fixed_thresh.strip()]
 
             with st.spinner("Scoring tests via CLI..."):
                 try:
@@ -332,14 +381,14 @@ elif page.startswith("3"):
                     st.error(str(e))
 
 # ===================== 4) VISUALIZE CONFIG =====================
-else:
+elif page.startswith("4"):
     st.header("View your config.yaml on your template")
     colA, colB = st.columns(2)
     with colA:
         pdf = _tempfile_from_uploader("Template or aligned PDF (single page preferred)", "viz_pdf", types=("pdf",))
         config = _tempfile_from_uploader("Config (YAML)", "viz_cfg", types=("yaml","yml"))
-        out_image_name = st.text_input("Output image name", value="config_overlay.png")
     with colB:
+        out_image_name = st.text_input("Output image name", value="config_overlay.png")
         dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=300, step=1)
 
     if st.button("Render overlay"):
@@ -365,6 +414,39 @@ else:
                     st.error(str(e))
 
 
+
+# ===================== 5) HELP =====================
+else:
+    st.header("Help and CLI reference")
+    st.markdown("""
+**Typical workflow**
+1. Align scans (raw student scans PDF + template PDF) to create an aligned PDF
+2. Grade the aligned PDF (aligned PDF + config YAML, optional key.txt) to get results.csv
+3. Compute stats from results.csv (item analysis, KR-20, plots)
+4. (Optional) Visualize your config overlay to verify bubble ROI placement
+
+If the GUI is missing something, the CLI is always the single source of truth.
+""")
+
+    st.subheader("Show CLI help")
+    topic = st.selectbox("Help topic", ["markshark", "align", "grade", "stats", "visualize"], index=0)
+    help_args = {
+        "markshark": ["--help"],
+        "align": ["align", "--help"],
+        "grade": ["grade", "--help"],
+        "stats": ["stats", "--help"],
+        "visualize": ["visualize", "--help"],
+    }
+
+    @st.cache_data(show_spinner=False)
+    def _cached_help(args: List[str]) -> str:
+        return _run_cli(args)
+
+    try:
+        st.code(_cached_help(help_args[topic]) or "(no output)", language="text")
+    except Exception as e:
+        st.error(f"Could not run CLI help: {e}")
+
 if __name__ == "__main__":
     os.environ.setdefault("STREAMLIT_BROWSER_GATHER_USAGE_STATS", "0")
-    st.write("Run with:  streamlit run app_streamlit_cliwrap.py")
+    st.write("Run with:  streamlit run app_streamlit.py")

@@ -223,61 +223,6 @@ def stats(
         rprint(f"[green]Item report:[/green] {item_report_csv}")
 
 
-# --------------------------- COMPRESS-PDF ----------------------------
-@app.command("compress-pdf")
-def compress_pdf_cmd(
-    input_pdf: str = typer.Argument(..., help="Input PDF to compress"),
-    output_pdf: Optional[str] = typer.Option(None, "--output-pdf", "-o", help="Output path; if omitted, overwrite input"),
-    quality: str = typer.Option("ebook", "--quality", help="Ghostscript -dPDFSETTINGS: screen|ebook|printer|prepress"),
-    quiet: bool = typer.Option(True, "--quiet/--no-quiet", help="Suppress Ghostscript output"),
-):
-    """
-    Compress a PDF using Ghostscript if installed (macOS: `brew install ghostscript`).
-    """
-    gs = "gs"
-    args = [
-        gs, "-sDEVICE=pdfwrite",
-        "-dCompatibilityLevel=1.4",
-        f"-dPDFSETTINGS=/{quality}",
-        "-dNOPAUSE",
-        "-dBATCH",
-    ]
-    if quiet:
-        args.append("-dQUIET")
-
-    in_path = Path(input_pdf).expanduser().resolve()
-    if output_pdf:
-        out_path = Path(output_pdf).expanduser().resolve()
-    else:
-        out_path = in_path  # overwrite
-
-    if out_path == in_path:
-        tmp_out = in_path.with_suffix(".compressed.pdf")
-        args.extend(["-sOutputFile=" + str(tmp_out), str(in_path)])
-        try:
-            rprint(f"[cyan]Running:[/cyan] {' '.join(args)}")
-            subprocess.run(args, check=True)
-            tmp_out.replace(in_path)
-            rprint(f"[green]Compressed (inplace):[/green] {in_path}")
-        except FileNotFoundError:
-            rprint("[red]Ghostscript ('gs') not found. Install it (e.g., `brew install ghostscript`).[/red]")
-            raise typer.Exit(code=3)
-        except subprocess.CalledProcessError as e:
-            rprint(f"[red]Ghostscript failed:[/red] {e}")
-            raise typer.Exit(code=4)
-    else:
-        args.extend(["-sOutputFile=" + str(out_path), str(in_path)])
-        try:
-            rprint(f"[cyan]Running:[/cyan] {' '.join(args)}")
-            subprocess.run(args, check=True)
-            rprint(f"[green]Compressed ->[/green] {out_path}")
-        except FileNotFoundError:
-            rprint("[red]Ghostscript ('gs') not found. Install it (e.g., `brew install ghostscript`).[/red]")
-            raise typer.Exit(code=3)
-        except subprocess.CalledProcessError as e:
-            rprint(f"[red]Ghostscript failed:[/red] {e}")
-            raise typer.Exit(code=4)
-
 
 # ------------------------------- GUI ---------------------------------
 @app.command()
