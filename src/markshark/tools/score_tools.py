@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
-"""markshark.score_tools
-
-Scoring and decoding utilities for MarkShark bubble sheets.
+"""
+MarkShark
+score_tools.py - scoring and decoding utilities for MarkShark bubble sheets.
 
 This module implements:
 - Grid center generation (in normalized coordinates).
-- ROI creation for bubble centers.
+- ROI (region of interest) creation for bubble centers.
 - Page binarization and per-ROI fill scoring.
 - Simple decision rules to select a single bubble per row or per column.
 - Helpers to decode text/ID layouts and answer layouts from an aligned page.
@@ -228,7 +227,6 @@ def _pick_single_from_scores(
     min_fill: float = SCORING_DEFAULTS.min_fill,
     top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
     min_score: float = SCORING_DEFAULTS.min_score,
-    min_abs: float = SCORING_DEFAULTS.min_abs,
 ) -> Optional[int]:
     """Pick a single winner index from a 1D vector of scores.
 
@@ -243,17 +241,96 @@ def _pick_single_from_scores(
     second = float(best_first[int(order[1])]) if best_first.size > 1 else 0.0
 
     # Blank rule: require a minimum absolute fill
-    if top < max(float(min_fill), float(min_abs)):
+    if top < (float(min_fill)):
         return None
 
-    # Separation rules
-    sep_score = (top - second) * 100.0           # absolute gap in percentage points
-    sep_ratio_ok = (second <= top * float(top2_ratio))  # ratio separation
+    # Separation between best bubble and second best bubble rules
+    sep_score = (top - second) * 100.0           # absolute gap in percentage points between top and next best
+    sep_ratio_ok = (second <= top * float(top2_ratio))  # ratio separation between top and next best bubbles
 
     if (sep_score >= float(min_score)) or sep_ratio_ok:
         return best_idx
 
     return None
+
+
+
+def scores_to_labels_row(
+    scores: List[float],
+    rows: int,
+    cols: int,
+    choice_labels: List[str],
+    *,
+    min_fill: float = SCORING_DEFAULTS.min_fill,
+    top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
+    min_score: float = SCORING_DEFAULTS.min_score,
+    multi_top_k: int = 2,
+    multi_delim: str = ",",
+) -> List[Optional[str]]:
+    """Convert per-ROI scores into per-row labels.
+
+    Behavior:
+      - Blank row (top score < min_fill): returns None
+      - Clear single mark: returns a single label (e.g., "A")
+      - Ambiguous / multi-mark row: returns the top K labels joined by multi_delim (e.g., "A,C")
+
+    The "clear single" vs "multi" decision matches _pick_single_from_scores():
+      a single winner is accepted if either:
+        - absolute separation >= min_score (in percentage points), OR
+        - ratio separation: second <= top * top2_ratio
+    """
+    arr = np.asarray(scores, dtype=float)
+    if arr.size != int(rows) * int(cols):
+        raise ValueError(f"scores length {arr.size} != rows*cols {rows*cols}")
+
+    out: List[Optional[str]] = []
+    cols_i = int(cols)
+    k = max(2, int(multi_top_k)) if int(cols) > 1 else 1
+
+    for r in range(int(rows)):
+        row_slice = arr[r * cols_i : (r + 1) * cols_i]
+        if row_slice.size == 0:
+            out.append(None)
+            continue
+
+        order = np.argsort(row_slice)[::-1]
+        best_idx = int(order[0])
+        top = float(row_slice[best_idx])
+
+        if top < float(min_fill):
+            out.append(None)
+            continue
+
+        # If there's only one choice, it's always a single mark when above min_fill.
+        if cols_i <= 1:
+            out.append(choice_labels[best_idx] if best_idx < len(choice_labels) else None)
+            continue
+
+        second_idx = int(order[1])
+        second = float(row_slice[second_idx])
+
+        # If the runner-up is below min_fill, we treat as a single mark.
+        if second < float(min_fill):
+            out.append(choice_labels[best_idx] if best_idx < len(choice_labels) else None)
+            continue
+
+        sep_score = (top - second) * 100.0
+        sep_ratio_ok = (second <= top * float(top2_ratio))
+
+        if (sep_score >= float(min_score)) or sep_ratio_ok:
+            out.append(choice_labels[best_idx] if best_idx < len(choice_labels) else None)
+            continue
+
+        # Ambiguous: return top-K labels (default: top 2)
+        picks = []
+        for j in range(min(k, order.size)):
+            idx = int(order[j])
+            if 0 <= idx < len(choice_labels):
+                picks.append(choice_labels[idx])
+        out.append(multi_delim.join(picks) if picks else None)
+
+    return out
+
 
 
 def select_per_row(
@@ -263,7 +340,6 @@ def select_per_row(
     min_fill: float = SCORING_DEFAULTS.min_fill,
     top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
     min_score: float = SCORING_DEFAULTS.min_score,
-    min_abs: float = SCORING_DEFAULTS.min_abs,
 ) -> List[Optional[int]]:
     """For each row, pick one column index or None."""
     arr = np.asarray(scores, dtype=float)
@@ -274,7 +350,7 @@ def select_per_row(
     cols_i = int(cols)
     for r in range(int(rows)):
         row_slice = arr[r * cols_i : (r + 1) * cols_i]
-        picked.append(_pick_single_from_scores(row_slice, min_fill, top2_ratio, min_score, min_abs))
+        picked.append(_pick_single_from_scores(row_slice, min_fill, top2_ratio, min_score))
     return picked
 
 
@@ -285,7 +361,6 @@ def select_per_col(
     min_fill: float = SCORING_DEFAULTS.min_fill,
     top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
     min_score: float = SCORING_DEFAULTS.min_score,
-    min_abs: float = SCORING_DEFAULTS.min_abs,
 ) -> List[Optional[int]]:
     """For each column, pick one row index or None."""
     arr = np.asarray(scores, dtype=float)
@@ -296,7 +371,7 @@ def select_per_col(
     cols_i = int(cols)
     for c in range(cols_i):
         col_slice = arr[c::cols_i]
-        picked.append(_pick_single_from_scores(col_slice, min_fill, top2_ratio, min_score, min_abs))
+        picked.append(_pick_single_from_scores(col_slice, min_fill, top2_ratio, min_score))
     return picked
 
 
@@ -311,7 +386,6 @@ def decode_layout(
     min_fill: float = SCORING_DEFAULTS.min_fill,
     top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
     min_score: float = SCORING_DEFAULTS.min_score,
-    min_abs: float = SCORING_DEFAULTS.min_abs,
     fixed_thresh: Optional[int] = None,
 ) -> Tuple[List[Optional[int]], List[Tuple[int, int, int, int]], List[float]]:
     """Decode a single GridLayout, returning (picked, rois, scores)."""
@@ -338,9 +412,9 @@ def decode_layout(
     scores = roi_fill_scores(gray, rois, fixed_thresh=fixed_thresh)
 
     if layout.selection_axis == "row":
-        picked = select_per_row(scores, layout.questions, layout.choices, min_fill, top2_ratio, min_score, min_abs)
+        picked = select_per_row(scores, layout.questions, layout.choices, min_fill, top2_ratio, min_score)
     else:
-        picked = select_per_col(scores, layout.questions, layout.choices, min_fill, top2_ratio, min_score, min_abs)
+        picked = select_per_col(scores, layout.questions, layout.choices, min_fill, top2_ratio, min_score)
 
     return picked, rois, scores
 
@@ -402,7 +476,6 @@ def process_page_all(
     min_fill: float = SCORING_DEFAULTS.min_fill,
     top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
     min_score: float = SCORING_DEFAULTS.min_score,
-    min_abs: float = SCORING_DEFAULTS.min_abs,
     fixed_thresh: Optional[int] = None,
 ) -> Tuple[dict, List[Optional[str]]]:
     """Decode names/ID/version and all answers from an aligned page."""
@@ -417,7 +490,6 @@ def process_page_all(
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_score=min_score,
-            min_abs=min_abs,
             fixed_thresh=fixed_thresh,
         )
         info["last_name"] = indices_to_text_col(
@@ -431,7 +503,6 @@ def process_page_all(
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_score=min_score,
-            min_abs=min_abs,
             fixed_thresh=fixed_thresh,
         )
         info["first_name"] = indices_to_text_col(
@@ -445,7 +516,6 @@ def process_page_all(
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_score=min_score,
-            min_abs=min_abs,
             fixed_thresh=fixed_thresh,
         )
         info["student_id"] = indices_to_text_col(picked, cfg.id_layout.labels or "0123456789").strip()
@@ -457,7 +527,6 @@ def process_page_all(
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_score=min_score,
-            min_abs=min_abs,
             fixed_thresh=fixed_thresh,
         )
         if cfg.version_layout.selection_axis == "row":
@@ -469,16 +538,28 @@ def process_page_all(
 
     answers: List[Optional[str]] = []
     for layout in cfg.answer_layouts:
-        picked, _, _ = decode_layout(
+        picked, _, scores = decode_layout(
             gray,
             layout,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_score=min_score,
-            min_abs=min_abs,
             fixed_thresh=fixed_thresh,
         )
         choice_labels = list(layout.labels) if layout.labels else [chr(ord("A") + k) for k in range(layout.choices)]
-        answers.extend(indices_to_labels_row(picked, layout.choices, choice_labels))
+        if layout.selection_axis == "row":
+            answers.extend(
+                scores_to_labels_row(
+                    scores,
+                    layout.questions,
+                    layout.choices,
+                    choice_labels,
+                    min_fill=min_fill,
+                    top2_ratio=top2_ratio,
+                    min_score=min_score,
+                )
+            )
+        else:
+            answers.extend(indices_to_labels_row(picked, layout.choices, choice_labels))
 
     return info, answers

@@ -222,6 +222,60 @@ def load_pages(path: str, dpi: int, renderer: PdfRenderer = "auto") -> List[np.n
     return [img]
 
 
+class PdfPageWriter:
+    """
+    Stream pages into a PDF using PyMuPDF (fitz), embedding each page image as a JPEG.
+
+    This keeps memory usage low (no need to hold all pages) and produces much smaller
+    PDFs than embedding lossless PNGs.
+    """
+
+    def __init__(self, out_path: str, dpi: int, jpeg_quality: int = 85) -> None:
+        self.out_path = out_path
+        self.dpi = int(dpi)
+        self.jpeg_quality = int(jpeg_quality)
+        import fitz  # type: ignore
+        self._fitz = fitz
+        self._doc = fitz.open()
+        self._closed = False
+
+    def add_page(self, page_bgr: np.ndarray) -> None:
+        if self._closed:
+            raise RuntimeError("PdfPageWriter is closed.")
+        if page_bgr is None or page_bgr.size == 0:
+            raise ValueError("Empty page image.")
+
+        # Encode as JPEG to reduce PDF size
+        encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(self.jpeg_quality)]
+        ok, buf = cv2.imencode(".jpg", page_bgr, encode_params)
+        if not ok:
+            raise RuntimeError("cv2.imencode('.jpg', page_bgr) failed")
+
+        h, w = page_bgr.shape[:2]
+        page_w_pt = w * 72.0 / float(self.dpi)
+        page_h_pt = h * 72.0 / float(self.dpi)
+        page = self._doc.new_page(width=page_w_pt, height=page_h_pt)
+        page.insert_image(page.rect, stream=buf.tobytes())
+
+    def close(self, save: bool = True) -> None:
+        if self._closed:
+            return
+        try:
+            if save:
+                # deflate + garbage cleanup can shrink the output further
+                self._doc.save(self.out_path, deflate=True, garbage=4)
+        finally:
+            self._doc.close()
+            self._closed = True
+
+    def __enter__(self) -> "PdfPageWriter":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        # If an exception occurred, avoid writing a partial PDF.
+        self.close(save=(exc_type is None))
+
+
 def save_images_as_pdf(pages_bgr: List[np.ndarray], out_path: str, dpi: int) -> None:
     """Save a list of BGR arrays to a single multi-page PDF."""
     from PIL import Image

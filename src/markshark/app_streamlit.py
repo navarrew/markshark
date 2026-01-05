@@ -161,12 +161,13 @@ if page.startswith("1"):
 
     with colB:
         out_pdf_name = st.text_input("Output aligned PDF name", value="aligned_scans.pdf")
+        st.markdown("---")
         st.markdown("ArUco mark alignment parameters")
         min_markers = st.number_input("Min ArUco markers to accept", min_value=0, max_value=32, value=int(_dflt(ALIGN_DEFAULTS, "min_aruco", 0)), step=1)
         dict_name = st.text_input("ArUco dictionary (if aruco)", value=str(_dflt(ALIGN_DEFAULTS, "dict_name", "DICT_4X4_50")))
 
         st.markdown("---")
-        st.markdown("Align parameters without ArUco markers")
+        st.markdown("Non-ArUco align parameters")
         ransac = st.number_input("RANSAC reprojection threshold", min_value=0.1, max_value=20.0, value=float(_dflt(EST_DEFAULTS, "ransac_thresh", 2.0)), step=0.1)
         orb_nfeatures = st.number_input("ORB nfeatures", min_value=200, max_value=20000, value=int(_dflt(FEAT_DEFAULTS, "orb_nfeatures", 3000)), step=100)
         match_ratio = st.number_input("Match ratio (Lowe)", min_value=0.50, max_value=0.99, value=float(_dflt(MATCH_DEFAULTS, "ratio_test", 0.75)), step=0.01, format="%.2f")
@@ -262,16 +263,17 @@ elif page.startswith("2"):
         key_txt = _tempfile_from_uploader("Key TXT (optional)", "grade_key", types=("txt",))
     with colB:
         out_csv_name = st.text_input("Output results CSV", value="results.csv")
-        out_ann_dir = st.text_input("Annotated pages directory (optional)", value="")
+        scored_pdf_name = st.text_input("Annotated scored PDF filename", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "out_pdf", "scored_scans.pdf")))
+        out_ann_dir = st.text_input("Annotated png directory (optional)", value="", placeholder="Enter a folder name here for png files")
         annotate_all = st.checkbox("Annotate all cells", value=True)
         label_density = st.checkbox("Label density diagnostics", value=True)
-        fixed_thresh = st.text_input("fixed-thresh (blank for default)", value="")
-        min_fill = st.text_input("min-fill (blank for default)", value="")
-        top2_ratio = st.text_input("top2-ratio (blank for default)", value="")
-        min_score = st.text_input("min-score (blank for default)", value="")
-        min_abs = st.text_input("min-abs (blank for default)", value="")
         dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1)
-
+        st.markdown("---")
+        st.markdown("Adjustments if scoring isn't working well")
+        fixed_thresh = st.text_input("Gray sensitivity (1-255: higher number = more sensitive to lighter shades)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "fixed_thresh", "")))
+        min_fill = st.text_input("Minimum bubble area filled", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", "")))
+        min_score = st.text_input("Minimum fill area difference between top two filled bubbles", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_score", "")))
+        top2_ratio = st.text_input("Minimum area fill ratio between 1st and 2nd most filled bubble", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", "")))
     if run_score_clicked:
         if not aligned or not config:
             st.error("Please upload aligned PDF and config.")
@@ -291,27 +293,33 @@ elif page.startswith("2"):
             if out_ann_dir.strip():
                 ann_dir = out_dir / out_ann_dir.strip()
                 args += ["--out-annotated-dir", str(ann_dir)]
+            # Optional annotated PDF output name (only pass if user provided)
+            if scored_pdf_name.strip():
+                args += ["--out-pdf", scored_pdf_name.strip()]
             if annotate_all:
                 args += ["--annotate-all-cells"]
             if label_density:
                 args += ["--label-density"]
             # Optional scoring thresholds (only pass if user provided)
+            if fixed_thresh.strip():
+                args += ["--fixed-thresh", fixed_thresh.strip()]
             if min_fill.strip():
                 args += ["--min-fill", min_fill.strip()]
             if top2_ratio.strip():
                 args += ["--top2-ratio", top2_ratio.strip()]
             if min_score.strip():
                 args += ["--min-score", min_score.strip()]
-            if min_abs.strip():
-                args += ["--min-abs", min_abs.strip()]
-            if fixed_thresh.strip():
-                args += ["--fixed-thresh", fixed_thresh.strip()]
 
             with st.spinner("Scoring tests via CLI..."):
                 try:
                     out = _run_cli(args)
                     st.code(out or "Done.", language="bash")
                     _download_file_button("Download results.csv", out_csv)
+                    # Offer annotated PDF if produced
+                    pdf_name = scored_pdf_name.strip() or str(_dflt(SCORING_DEFAULTS, "out_pdf", "scored_scans.pdf"))
+                    pdf_path = Path(pdf_name) if Path(pdf_name).is_absolute() else (out_dir / pdf_name)
+                    _download_file_button(f"Download {pdf_path.name}", pdf_path)
+
                     # Offer annotated pages if produced
                     if out_ann_dir.strip():
                         ann_dir = out_dir / out_ann_dir.strip()

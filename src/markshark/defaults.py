@@ -1,4 +1,3 @@
-
 # MarkShark
 # defaults.py
 # Unified "single source of truth" for scoring + alignment tuning knobs.
@@ -22,19 +21,42 @@ from typing import Optional, Literal
 # ---------------------------
 @dataclass(frozen=True)
 class ScoringDefaults:
-    """Thresholds for deciding filled bubbles and resolving ties."""
-    min_fill: float = 0.20         # minimum filled fraction to accept non-blank
+    #Thresholds for deciding filled area bubbles and resolving ties.
+    min_fill: float = 0.50         # minimum filled fraction to accept non-blank
     top2_ratio: float = 0.80       # second-best must be <= top2_ratio * best
     min_score: float = 10.0        # absolute gap in percentage points (100*(best-second))
-    min_abs: float = 0.10          # absolute minimum fill guard in _pick_single_from_scores
-    # Global binarization threshold (only used when bin_method == "global")
+
+    # Global binarization threshold (only used when bin_method == "global") for gray pixels
     fixed_thresh: int = 180
+
+    #Default output names and directories for scoring.
+    out_pdf: str = "scored_scans.pdf"
+    out_pdf_dir: Optional[str] = None  # None means "same directory as out_csv"
+
     
 SCORING_DEFAULTS = ScoringDefaults()
 
 def apply_scoring_overrides(**kwargs) -> ScoringDefaults:
     """Return a copy of SCORING_DEFAULTS with the provided fields overridden."""
     return _dc_replace(SCORING_DEFAULTS, **kwargs)
+
+def resolve_scored_pdf_path(out_pdf: str, out_csv: str, out_pdf_dir: Optional[str] = None) -> str:
+    """Resolve the scored PDF path.
+
+    Rules:
+      - If out_pdf is absolute, return as-is.
+      - If out_pdf is relative:
+          - If out_pdf_dir is provided (not None), join out_pdf_dir/out_pdf.
+          - Else, use SCORING_DEFAULTS.out_pdf_dir.
+          - If that is None, default to dirname(out_csv).
+    """
+    import os
+    if os.path.isabs(out_pdf):
+        return out_pdf
+    base_dir = out_pdf_dir if out_pdf_dir is not None else SCORING_DEFAULTS.out_pdf_dir
+    if base_dir is None:
+        base_dir = os.path.dirname(out_csv) or "."
+    return os.path.normpath(os.path.join(base_dir, out_pdf))
 
 
 # ---------------------------
@@ -153,8 +175,8 @@ class AnnotationDefaults:
     """Colors/thickness/font for drawn overlays (BGR order)."""
     # Name/ID zones
     color_zone: Tuple[int, int, int] = (255, 0, 0)        # blue circles for name/ID zones
-    percent_text_color: Tuple[int, int, int] = (255, 0, 255)  # magenta for % labels
-    text_color: Tuple[int, int, int] = (255, 0, 255)      # alias used by older code paths
+    percent_text_color: Tuple[int, int, int] = (255, 0, 0)  # blue for % labels
+    text_color: Tuple[int, int, int] = (255, 0, 0)      # alias used by older code paths
     thickness_names: int = 2
     label_font_scale: float = 0.4
     label_thickness: int = 1
@@ -163,8 +185,18 @@ class AnnotationDefaults:
     color_correct: Tuple[int, int, int] = (0, 200, 0)     # green
     color_incorrect: Tuple[int, int, int] = (0, 0, 255)   # red
     color_blank: Tuple[int, int, int] = (160, 160, 160)   # grey
+    color_blank_answer_row: Tuple[int, int, int] = (255, 0, 255)   # purple
     color_multi: Tuple[int, int, int] = (0, 140, 255)     # orange
     thickness_answers: int = 2
+
+    # Answer row boxes and required-blank highlighting
+    box_multi: bool = True
+    box_blank_answer_row: bool = True
+    box_color_multi: Tuple[int, int, int] = (0, 140, 255)        # orange
+    box_color_blank_answer_row: Tuple[int, int, int] = (255, 0, 255)  # purple
+    box_thickness: int = 2
+    box_pad: int = 6
+    box_top_extra: int = 10  # raise the top edge to avoid overwriting % labels
 
 ANNOTATION_DEFAULTS = AnnotationDefaults()
 
@@ -191,5 +223,6 @@ ALL_DEFAULTS = AllDefaults()
 __all__ = [
     "ScoringDefaults", "AlignDefaults", "EstParams", "FeatureParams", "MatchParams", "RenderParams", "AllDefaults", "AnnotationDefaults",
     "SCORING_DEFAULTS", "ALIGN_DEFAULTS", "EST_DEFAULTS", "FEAT_DEFAULTS", "MATCH_DEFAULTS", "RENDER_DEFAULTS", "ALL_DEFAULTS", "ANNOTATION_DEFAULTS",
-    "apply_scoring_overrides", "apply_align_overrides", "apply_est_overrides", "apply_feat_overrides", "apply_match_overrides", "apply_render_overrides", "apply_annotation_overrides",
+    "apply_scoring_overrides", "apply_align_overrides", "apply_est_overrides", "apply_feat_overrides", "apply_match_overrides", "apply_render_overrides",
+    "apply_annotation_overrides", "resolve_scored_pdf_path",
 ]

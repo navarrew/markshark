@@ -114,6 +114,11 @@ def grade(
         help="Answer key file (A/B/C/... one per line). If provided, only first len(key) questions are graded/output."),
     out_csv: str = typer.Option("results.csv", "--out-csv", "-o", help="Output CSV of per-student results"),
     out_annotated_dir: Optional[str] = typer.Option(None, "--out-annotated-dir", help="Directory to write annotated sheets"),
+    out_pdf: Optional[str] = typer.Option(
+        None,
+        "--out-pdf",
+        help=f"Annotated PDF output filename. Default: {SCORING_DEFAULTS.out_pdf}. Use \"\"\" to disable.",
+    ),
     annotate_all_cells: bool = typer.Option(False, "--annotate-all-cells", help="Draw every bubble in each row"),
     label_density: bool = typer.Option(False, "--label-density", help="Overlay % fill text at bubble centers"),
     dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Scan/PDF render DPI"),
@@ -130,12 +135,6 @@ def grade(
         help=f"""Minimum score required to accept a bubble as filled (default: {SCORING_DEFAULTS.min_score}).
         Increase to require higher confidence in filled bubbles; decrease to accept lower scores."""
     ),
-    min_abs: Optional[float] = typer.Option(
-        None,
-        "--min-abs",
-        help=f"""Minimum absolute fill value required for a bubble to be considered filled (default: {SCORING_DEFAULTS.min_abs}).
-        Increase to require darker marks; decrease to accept lighter marks."""
-    ),
     fixed_thresh: Optional[int] = typer.Option(None, "--fixed-thresh", help=f"default {SCORING_DEFAULTS.fixed_thresh}"),
     # (annotation flags you already added can stay)
 ):
@@ -149,11 +148,10 @@ def grade(
         raise typer.Exit(code=2)
 
     try:
-        scoring = apply_scoring_overrides(  # ← use centralized helper
+        scoring = apply_scoring_overrides(  # ← use centralized helper in defaults.py
             min_fill=min_fill if min_fill is not None else SCORING_DEFAULTS.min_fill,
             top2_ratio=top2_ratio if top2_ratio is not None else SCORING_DEFAULTS.top2_ratio,
             min_score=min_score if min_score is not None else SCORING_DEFAULTS.min_score,
-            min_abs=min_abs if min_abs is not None else SCORING_DEFAULTS.min_abs,
             fixed_thresh=fixed_thresh if fixed_thresh is not None else SCORING_DEFAULTS.fixed_thresh,
         )
 
@@ -167,7 +165,6 @@ def grade(
             min_fill=scoring.min_fill,
             top2_ratio=scoring.top2_ratio,
             min_score=scoring.min_score,
-            min_abs=scoring.min_abs,
             fixed_thresh=scoring.fixed_thresh,
             annotate_all_cells=annotate_all_cells,
             label_density=label_density,
