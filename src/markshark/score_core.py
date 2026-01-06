@@ -299,7 +299,7 @@ box_top_extra: Optional[int] = None,
 # Main grading entry point
 # ----------------------------
 
-def grade_pdf(
+def score_pdf(
     input_path: str,
     config_path: str,
     out_csv: str,

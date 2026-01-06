@@ -23,13 +23,13 @@ from .defaults import (
 # Core modules
 from .align_core import align_pdf_scans
 from .visualize_core import overlay_config
-from .score_core import grade_pdf
+from .score_core import score_pdf
 from .tools import stats_tools as stats_mod  # has run(...)
 
 app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
-    help="MarkShark: align, visualize, grade, and analyze bubble-sheet exams.",
+    help="MarkShark: align, visualize, score, and analyze bubble-sheet exams.",
 )
 
 # ---------------------- ALIGN ----------------------
@@ -107,11 +107,11 @@ def visualize(
     
 # ---------------------- SCORE ----------------------
 @app.command()
-def grade(
+def score(
     input_pdf: str = typer.Argument(..., help="Aligned scans PDF"),
     config: str = typer.Option(..., "--config", "-c", help="Config file (.yaml/.yml)"),
     key_txt: Optional[str] = typer.Option(None, "--key-txt", "-k",
-        help="Answer key file (A/B/C/... one per line). If provided, only first len(key) questions are graded/output."),
+        help="Answer key file (A/B/C/... one per line). If provided, only first len(key) questions are scored."),
     out_csv: str = typer.Option("results.csv", "--out-csv", "-o", help="Output CSV of per-student results"),
     out_annotated_dir: Optional[str] = typer.Option(None, "--out-annotated-dir", help="Directory to write annotated sheets"),
     out_pdf: Optional[str] = typer.Option(
@@ -155,7 +155,7 @@ def grade(
             fixed_thresh=fixed_thresh if fixed_thresh is not None else SCORING_DEFAULTS.fixed_thresh,
         )
 
-        grade_pdf(
+        score_pdf(
             input_path=input_pdf,
             config_path=config,
             out_csv=out_csv,
@@ -179,7 +179,7 @@ def grade(
 # ------------------------------ STATS -------------------------------
 @app.command()
 def stats(
-    input_csv: str = typer.Argument(..., help="Results CSV (from 'grade')"),
+    input_csv: str = typer.Argument(..., help="Results CSV (from 'score')"),
     output_csv: str = typer.Option("results_with_stats.csv", "--output-csv", "-o", help="Augmented CSV with summary rows"),
     item_pattern: str = typer.Option(r"^Q\d+$", "--item-pattern", help="Regex for item columns (default: ^Q\\d+$). Example: '^Q\\d+$'"),
     percent: bool = typer.Option(True, "--percent/--proportion", help="Report difficulty as percent (0-100) (default) or proportion (0-1)"),

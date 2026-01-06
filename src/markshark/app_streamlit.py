@@ -134,14 +134,14 @@ def _zip_dir_to_bytes(dir_path: Path) -> bytes:
 # image_url = "https://github.com/navarrew/markshark/blob/main/images/shark.png" 
 # st.sidebar.image(image_url, caption="MarkShark Logo", use_column_width=True)
 st.sidebar.title("MarkShark 1.0")
-page = st.sidebar.radio("Select below", ["1) Align scans", "2) Grade", "3) Stats", "4) Config visualizer", "5) Help"])
+page = st.sidebar.radio("Select below", ["1) Align scans", "2) Score", "3) Stats", "4) Config visualizer", "5) Help"])
 
 # Initialize / show working directory selector
 _init_workdir()
 
 # ===================== 1) ALIGN SCANS =====================
 if page.startswith("1"):
-    st.header("Align raw student scans to your template")
+    st.header("Align raw scans to your template bubblesheet")
 
     # Top-of-page controls and status
     top_col1, top_col2 = st.columns([1, 3])
@@ -246,11 +246,11 @@ if page.startswith("1"):
 
 # ===================== 2) SCORE =====================
 elif page.startswith("2"):
-    st.header("Score/grade aligned scans")
+    st.header("Score aligned scans")
     # Top-of-page controls and status
     top_col1, top_col2 = st.columns([1, 3])
     with top_col1:
-        run_score_clicked = st.button("Score/Grade")
+        run_score_clicked = st.button("Score")
     with top_col2:
         score_status = st.empty()  # all errors/updates will appear here
 
@@ -258,9 +258,9 @@ elif page.startswith("2"):
 
     colA, colB = st.columns(2)
     with colA:
-        aligned = _tempfile_from_uploader("Aligned scans PDF", "grade_pdf", types=("pdf",))
-        config = _tempfile_from_uploader("Config (YAML)", "grade_cfg", types=("yaml","yml"))
-        key_txt = _tempfile_from_uploader("Key TXT (optional)", "grade_key", types=("txt",))
+        aligned = _tempfile_from_uploader("Aligned scans PDF", "score_pdf", types=("pdf",))
+        config = _tempfile_from_uploader("Config (YAML)", "score_cfg", types=("yaml","yml"))
+        key_txt = _tempfile_from_uploader("Key TXT (optional)", "score_key", types=("txt",))
     with colB:
         out_csv_name = st.text_input("Output results CSV", value="results.csv")
         scored_pdf_name = st.text_input("Annotated scored PDF filename", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "out_pdf", "scored_scans.pdf")))
@@ -282,7 +282,7 @@ elif page.startswith("2"):
             out_dir = Path(tempfile.mkdtemp(prefix="score_", dir=str(base)))
             out_csv = out_dir / out_csv_name
             args = [
-                "grade",
+                "score",
                 str(aligned),
                 "--config", str(config),
                 "--out-csv", str(out_csv),
@@ -333,7 +333,7 @@ elif page.startswith("3"):
     st.header("Item/exam statistics")
     colA, colB = st.columns(2)
     with colA:
-        in_csv = _tempfile_from_uploader("Results CSV (from grade)", "stats_csv", types=("csv",))
+        in_csv = _tempfile_from_uploader("Results CSV (from score)", "stats_csv", types=("csv",))
         out_csv_name = st.text_input("Augmented CSV name", value="results_with_stats.csv")
         item_report_name = st.text_input("Item report CSV", value="item_analysis.csv")
         exam_stats_name = st.text_input("Exam stats CSV", value="exam_stats.csv")
@@ -437,11 +437,11 @@ If the GUI is missing something, the CLI is always the single source of truth.
 """)
 
     st.subheader("Show CLI help")
-    topic = st.selectbox("Help topic", ["markshark", "align", "grade", "stats", "visualize"], index=0)
+    topic = st.selectbox("Help topic", ["markshark", "align", "score", "stats", "visualize"], index=0)
     help_args = {
         "markshark": ["--help"],
         "align": ["align", "--help"],
-        "grade": ["grade", "--help"],
+        "score": ["score", "--help"],
         "stats": ["stats", "--help"],
         "visualize": ["visualize", "--help"],
     }

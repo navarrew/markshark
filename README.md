@@ -227,7 +227,7 @@ markshark stats results.csv
 ## License
 
 **MarkShark — the open-source bubble hunter**  
-Copyright © 2025 William Navarre, University of Toronto  
+Copyright © 2026 William Navarre, University of Toronto  
 Licensed under the **GNU Affero General Public License v3 (AGPL-3.0)**.
 
 You may use, modify, and redistribute this software for **academic, research, and open-source** purposes, provided derivative works remain open-source under the same license.
