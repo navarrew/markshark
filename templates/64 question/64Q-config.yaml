@@ -11,8 +11,8 @@ last_name_layout:
   x_bottomright: 0.7641
   y_bottomright: 0.5601
   radius_pct: 0.008
-  questions: 27            # synonymous with rows (letters incl. leading space)
-  choices: 14              # synonymous with columns (positions)
+  numrows: 27            # synonymous with rows (letters incl. leading space)
+  numcols: 14              # synonymous with columns (positions)
   bubble_shape: circle
   selection_axis: col
   labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -23,8 +23,8 @@ first_name_layout:
   x_bottomright: 0.9375
   y_bottomright: 0.5601
   radius_pct: 0.008
-  questions: 27
-  choices: 5
+  numrows: 27
+  numcols: 5
   bubble_shape: circle
   selection_axis: col
   labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -38,8 +38,8 @@ id_layout:
   x_bottomright: 0.3208
   y_bottomright: 0.5601
   radius_pct: 0.008
-  questions: 10           # rows 10
-  choices: 10             # 10 digit positions
+  numrows: 10           # rows 10
+  numcols: 10             # 10 digit positions
   bubble_shape: circle
   selection_axis: col
   labels: "0123456789"
@@ -53,8 +53,8 @@ version_layout:
   x_bottomright: 0.3063
   y_bottomright: 0.3185
   radius_pct: 0.008
-  questions: 1
-  choices: 4
+  numrows: 1
+  numcols: 4
   bubble_shape: circle
   selection_axis: row
   labels: "ABCD"
@@ -68,8 +68,8 @@ answer_layouts:
     x_bottomright: 0.2373
     y_bottomright: 0.9127
     radius_pct: 0.008
-    questions: 16
-    choices: 5
+    numrows: 16
+    numcols: 5
     bubble_shape: circle
     selection_axis: row
     labels: "ABCDE"
@@ -79,8 +79,8 @@ answer_layouts:
     x_bottomright: 0.4728
     y_bottomright: 0.9127
     radius_pct: 0.008
-    questions: 16
-    choices: 5
+    numrows: 16
+    numcols: 5
     bubble_shape: circle
     selection_axis: row
     labels: "ABCDE"
@@ -90,8 +90,8 @@ answer_layouts:
     x_bottomright: 0.7084
     y_bottomright: 0.9127
     radius_pct: 0.008
-    questions: 16
-    choices: 5
+    numrows: 16
+    numcols: 5
     bubble_shape: circle
     selection_axis: row
     labels: "ABCDE"
@@ -101,8 +101,8 @@ answer_layouts:
     x_bottomright: 0.9439
     y_bottomright: 0.9127
     radius_pct: 0.008
-    questions: 16
-    choices: 5
+    numrows: 16
+    numcols: 5
     bubble_shape: circle
     selection_axis: row
     labels: "ABCDE"

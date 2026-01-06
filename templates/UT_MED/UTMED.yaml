@@ -11,8 +11,8 @@ last_name_layout:
   x_bottomright: 0.5012
   y_bottomright: 0.6159
   radius_pct: 0.008
-  questions: 27            # synonymous with rows (letters incl. leading space)
-  choices: 15              # synonymous with columns (positions)
+  numrows: 27            # synonymous with rows (letters incl. leading space)
+  numcols: 15              # synonymous with columns (positions)
   bubble_shape: circle
   selection_axis: col
   labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -23,8 +23,8 @@ first_name_layout:
   x_bottomright: 0.6787
   y_bottomright: 0.615
   radius_pct: 0.008
-  questions: 27
-  choices: 5
+  numrows: 27
+  numcols: 5
   bubble_shape: circle
   selection_axis: col
   labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -38,8 +38,8 @@ id_layout:
   x_bottomright: 0.4556
   y_bottomright: 0.8445
   radius_pct: 0.008
-  questions: 10           # rows 10
-  choices: 10             # 10 digit positions (col)
+  numrows: 10           # rows 10
+  numcols: 10             # 10 digit positions (col)
   bubble_shape: circle
   selection_axis: col
   labels: "0123456789"
@@ -53,8 +53,8 @@ version_layout:
   x_bottomright: 0.4556
   y_bottomright: 0.8445
   radius_pct: 0.008
-  questions: 10            #one column of 10 letters
-  choices: 1
+  numrows: 10            #one column of 10 letters
+  numcols: 1
   bubble_shape: circle
   selection_axis: col
   labels: "ABCDEFGHIJ"
@@ -68,8 +68,8 @@ answer_layouts:
     x_bottomright: 0.9198
     y_bottomright: 0.9467
     radius_pct: 0.008
-    questions: 48
-    choices: 5
+    numrows: 48
+    numcols: 5
     bubble_shape: circle
     selection_axis: row
     labels: "ABCDE"

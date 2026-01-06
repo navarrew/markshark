@@ -105,7 +105,7 @@ def _annotate_names_ids(
         centers = grid_centers_axis_mode(
             layout.x_topleft, layout.y_topleft,
             layout.x_bottomright, layout.y_bottomright,
-            layout.questions, layout.choices
+            layout.numrows, layout.numcols
         )
         rois = centers_to_circle_rois(centers, W, H, layout.radius_pct)
         scores = roi_fill_scores(gray, rois, inner_radius_ratio=0.70, blur_ksize=5)
@@ -202,27 +202,27 @@ box_top_extra: Optional[int] = None,
         centers = grid_centers_axis_mode(
             layout.x_topleft, layout.y_topleft,
             layout.x_bottomright, layout.y_bottomright,
-            layout.questions, layout.choices
+            layout.numrows, layout.numcols
         )
         rois = centers_to_circle_rois(centers, W, H, layout.radius_pct)
-        M = _rowwise_scores(gray, rois, layout.questions, layout.choices, fixed_thresh=fixed_thresh,)
-        choice_labels = list(layout.labels) if layout.labels else [chr(ord("A") + i) for i in range(layout.choices)]
+        M = _rowwise_scores(gray, rois, layout.numrows, layout.numcols, fixed_thresh=fixed_thresh,)
+        choice_labels = list(layout.labels) if layout.labels else [chr(ord("A") + i) for i in range(layout.numcols)]
 
-        for r in range(layout.questions):
+        for r in range(layout.numrows):
             row_scores = M[r]
             order = np.argsort(row_scores)[::-1]
             best = int(order[0])
             best_val = float(row_scores[best])
-            second_val = float(row_scores[order[1]]) if layout.choices > 1 else 0.0
+            second_val = float(row_scores[order[1]]) if layout.numcols > 1 else 0.0
             is_blank = best_val < min_fill
-            is_multi = (not is_blank) and (layout.choices > 1) and (second_val > top2_ratio * best_val)
+            is_multi = (not is_blank) and (layout.numcols > 1) and (second_val > top2_ratio * best_val)
 
             key_char = key_seq[q_global] if key_seq and q_global < len(key_seq) else None
             answer_row_blank = bool(is_blank and key_char and (key_char in choice_labels))
 
             # Optional row-level boxes, draw these before circles and text
             if (is_multi and box_multi) or (answer_row_blank and box_blank_answer_row):
-                row_rois = rois[r * layout.choices:(r + 1) * layout.choices]
+                row_rois = rois[r * layout.numcols:(r + 1) * layout.numcols]
                 x0 = min(x for x, y, w, h in row_rois)
                 y0 = min(y for x, y, w, h in row_rois)
                 x1 = max(x + w for x, y, w, h in row_rois)
@@ -239,8 +239,8 @@ box_top_extra: Optional[int] = None,
                     cv2.rectangle(out, (x0, y0), (x1, y1), box_color_blank_answer_row, int(box_thickness), lineType=cv2.LINE_AA)
 
 
-            for c in range(layout.choices):
-                x, y, w, h = rois[r * layout.choices + c]
+            for c in range(layout.numcols):
+                x, y, w, h = rois[r * layout.numcols + c]
                 cx, cy = x + w // 2, y + h // 2
                 radius = min(w, h) // 2
 
@@ -332,7 +332,7 @@ def score_pdf(
     pages = IO.load_pages(input_path, dpi=dpi, renderer=pdf_renderer)
     key: Optional[List[str]] = load_key_txt(key_txt) if key_txt else None
 
-    total_q = sum(a.questions for a in cfg.answer_layouts)
+    total_q = sum(a.numrows for a in cfg.answer_layouts)
     q_out = len(key) if key else total_q
     q_out = max(0, min(q_out, total_q))
 

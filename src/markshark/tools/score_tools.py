@@ -11,7 +11,7 @@ This module implements:
 
 Conventions:
 - Layout coordinates are normalized fractions of width/height (0..1).
-- A layout grid is always shaped (rows=layout.questions, cols=layout.choices).
+- A layout grid is always shaped (rows=layout.numrows, cols=layout.numcols).
 - `selection_axis == "row"`: select one column per row (typical for answers).
 - `selection_axis == "col"`: select one row per column (typical for names/ID).
 """
@@ -44,7 +44,7 @@ def grid_centers_axis_mode(*args, **kwargs) -> List[Tuple[float, float]]:
             w=<int>, h=<int>,                 # accepted but not used
             x0_pct=<float>, y0_pct=<float>,
             x1_pct=<float>, y1_pct=<float>,
-            questions=<int>, choices=<int>,
+            numrows=<int>, numcols=<int>,
             axis=<str>,                       # accepted but not used for geometry
         )
 
@@ -61,12 +61,12 @@ def grid_centers_axis_mode(*args, **kwargs) -> List[Tuple[float, float]]:
         y0 = kwargs.get("y0_pct", kwargs.get("y_tl", kwargs.get("y_topleft")))
         x1 = kwargs.get("x1_pct", kwargs.get("x_br", kwargs.get("x_bottomright")))
         y1 = kwargs.get("y1_pct", kwargs.get("y_br", kwargs.get("y_bottomright")))
-        rows = kwargs.get("questions", kwargs.get("rows"))
-        cols = kwargs.get("choices", kwargs.get("cols"))
+        rows = kwargs.get("numrows", kwargs.get("rows", kwargs.get("questions")))
+        cols = kwargs.get("numcols", kwargs.get("cols", kwargs.get("choices")))
         if x0 is None or y0 is None or x1 is None or y1 is None or rows is None or cols is None:
             raise TypeError(
                 "grid_centers_axis_mode missing required args. Provide either 6 positional args or keyword args: "
-                "x0_pct,y0_pct,x1_pct,y1_pct,questions,choices."
+                "x0_pct,y0_pct,x1_pct,y1_pct,numrows,numcols."
             )
 
     rows_i = int(rows)
@@ -284,7 +284,7 @@ def calibrate_fixed_thresh_for_page(
 
     # Build one combined ROI list for all answer layouts, and per-row slices.
     rois_all: List[Tuple[int, int, int, int]] = []
-    row_groups: List[Tuple[int, int]] = []  # (start_index, choices)
+    row_groups: List[Tuple[int, int]] = []  # (start_index, numcols)
 
     def _layout_rois(layout: GridLayout) -> List[Tuple[int, int, int, int]]:
         x0 = getattr(layout, "x0_pct", getattr(layout, "x_topleft"))
@@ -295,7 +295,7 @@ def calibrate_fixed_thresh_for_page(
             w=W, h=H,
             x0_pct=float(x0), y0_pct=float(y0),
             x1_pct=float(x1), y1_pct=float(y1),
-            questions=int(layout.questions), choices=int(layout.choices),
+            numrows=int(layout.numrows), numcols=int(layout.numcols),
             axis=str(layout.selection_axis),
         )
         return centers_to_circle_rois(centers, W, H, float(layout.radius_pct))
@@ -306,9 +306,9 @@ def calibrate_fixed_thresh_for_page(
         base = len(rois_all)
         rois = _layout_rois(layout)
         rois_all.extend(rois)
-        # Row-major ordering: each row is a contiguous run of length layout.choices
-        for r in range(int(layout.questions)):
-            row_groups.append((base + r * int(layout.choices), int(layout.choices)))
+        # Row-major ordering: each row is a contiguous run of length layout.numcols
+        for r in range(int(layout.numrows)):
+            row_groups.append((base + r * int(layout.numrows), int(layout.numcols)))
 
     stats_default: Dict[str, float] = {
         "q": float("nan"),
@@ -575,8 +575,8 @@ def decode_layout(
         y0_pct=y0,
         x1_pct=x1,
         y1_pct=y1,
-        questions=layout.questions,
-        choices=layout.choices,
+        numrows=layout.numrows,
+        numcols=layout.numcols,
         axis=layout.selection_axis,
     )
 
@@ -584,9 +584,9 @@ def decode_layout(
     scores = roi_fill_scores(gray, rois, fixed_thresh=fixed_thresh)
 
     if layout.selection_axis == "row":
-        picked = select_per_row(scores, layout.questions, layout.choices, min_fill, top2_ratio, min_score)
+        picked = select_per_row(scores, layout.numrows, layout.numcols, min_fill, top2_ratio, min_score)
     else:
-        picked = select_per_col(scores, layout.questions, layout.choices, min_fill, top2_ratio, min_score)
+        picked = select_per_col(scores, layout.numrows, layout.numcols, min_fill, top2_ratio, min_score)
 
     return picked, rois, scores
 
@@ -718,13 +718,13 @@ def process_page_all(
             min_score=min_score,
             fixed_thresh=fixed_thresh,
         )
-        choice_labels = list(layout.labels) if layout.labels else [chr(ord("A") + k) for k in range(layout.choices)]
+        choice_labels = list(layout.labels) if layout.labels else [chr(ord("A") + k) for k in range(layout.numcols)]
         if layout.selection_axis == "row":
             answers.extend(
                 scores_to_labels_row(
                     scores,
-                    layout.questions,
-                    layout.choices,
+                    layout.numrows,
+                    layout.numcols,
                     choice_labels,
                     min_fill=min_fill,
                     top2_ratio=top2_ratio,
@@ -732,6 +732,6 @@ def process_page_all(
                 )
             )
         else:
-            answers.extend(indices_to_labels_row(picked, layout.choices, choice_labels))
+            answers.extend(indices_to_labels_row(picked, layout.numcols, choice_labels))
 
     return info, answers

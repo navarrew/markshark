@@ -10,13 +10,13 @@ Each bubble block in the config defines:
   x_bottomright:  normalized X of the bottom-right bubble center
   y_bottomright:  normalized Y of the bottom-right bubble center
   radius_pct:     bubble radius as fraction of image width
-  questions:      number of rows (vertical count)
-  choices:        number of columns (horizontal count)
+  numrows:      number of rows (vertical count)
+  numcols:        number of columns (horizontal count)
   bubble_shape:   "circle" (optional, default "circle")
-  labels:         optional string giving the symbols in the ROWS (length == questions)
+  labels:         optional string giving the symbols in the ROWS (length == numrows)
                   e.g., " ABCDEFGHIJKLMNOPQRSTUVWXYZ" for name rows,
                         "0123456789" for ID rows,
-                        "ABCD" for version rows (if questions==4).
+                        "ABCD" for version rows (if numrows==4).
   selection_axis: "row" or "col"
                   - "row": select one column per row (answers, version-as-row)
                   - "col": select one row per column (names, ID)
@@ -29,8 +29,8 @@ answer_layouts:
     x_bottomright: 0.9227
     y_bottomright: 0.2458
     radius_pct: 0.008
-    questions: 16
-    choices: 5
+    numrows: 16
+    numcols: 5
     bubble_shape: circle
     selection_axis: row      # pick A..E per question row
     labels: ABCDE            # optional (auto A..E if omitted)
@@ -41,8 +41,8 @@ last_name_layout:
   x_bottomright: 0.5690
   y_bottomright: 0.7693
   radius_pct: 0.008
-  questions: 27
-  choices: 14
+  numrows: 27
+  numcols: 14
   selection_axis: col       # pick a letter (row) per column (position)
   labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # rows = 27
 
@@ -52,8 +52,8 @@ id_layout:
   x_bottomright: 0.5690
   y_bottomright: 0.3255
   radius_pct: 0.008
-  questions: 10
-  choices: 10
+  numrows: 10
+  numcols: 10
   selection_axis: col
   labels: "0123456789"
 
@@ -63,8 +63,8 @@ version_layout:               # one row, 4 columns horizontally (A-D)
   x_bottomright: 0.3286
   y_bottomright: 0.3092
   radius_pct: 0.008
-  questions: 1
-  choices: 4
+  numrows: 1
+  numcols: 4
   selection_axis: row        # one row → pick one column
   labels: "ABCD"
 """
@@ -84,10 +84,10 @@ class GridLayout:
     x_bottomright: float
     y_bottomright: float
     radius_pct: float
-    questions: int
-    choices: int
+    numrows: int
+    numcols: int
     bubble_shape: str = "circle"
-    labels: Optional[str] = None       # symbols across ROWS (length == questions), optional
+    labels: Optional[str] = None       # symbols across ROWS (length == numrows), optional
     selection_axis: str = "row"        # "row" or "col"
 
 
@@ -99,7 +99,7 @@ class Config:
     first_name_layout: GridLayout | None = None
     id_layout: GridLayout | None = None
     version_layout: GridLayout | None = None
-    total_questions: int | None = None
+    total_numrows: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +108,7 @@ def _parse_layout(name: str, section: Dict[str, Any]) -> GridLayout:
     required = [
         "x_topleft", "y_topleft",
         "x_bottomright", "y_bottomright",
-        "radius_pct", "questions", "choices",
+        "radius_pct", "numrows", "numcols",
     ]
     missing = [k for k in required if k not in section]
     if missing:
@@ -121,13 +121,13 @@ def _parse_layout(name: str, section: Dict[str, Any]) -> GridLayout:
     labels = section.get("labels")
     # NEW: validate against the axis we select on
     if labels is not None:
-        questions = int(section["questions"])
-        choices   = int(section["choices"])
-        expected  = choices if selection_axis == "row" else questions
+        numrows = int(section["numrows"])
+        numcols   = int(section["numcols"])
+        expected  = numcols if selection_axis == "row" else numrows
         if len(labels) != expected:
             raise ValueError(
                 f"Layout '{name}': labels length ({len(labels)}) must equal "
-                f"{'choices' if selection_axis=='row' else 'questions'} ({expected})."
+                f"{'numcols' if selection_axis=='row' else 'numrows'} ({expected})."
             )
 
     return GridLayout(
@@ -137,8 +137,8 @@ def _parse_layout(name: str, section: Dict[str, Any]) -> GridLayout:
         x_bottomright=float(section["x_bottomright"]),
         y_bottomright=float(section["y_bottomright"]),
         radius_pct=float(section["radius_pct"]),
-        questions=int(section["questions"]),
-        choices=int(section["choices"]),
+        numrows=int(section["numrows"]),
+        numcols=int(section["numcols"]),
         bubble_shape=section.get("bubble_shape", "circle"),
         labels=labels,
         selection_axis=selection_axis,
@@ -154,8 +154,8 @@ def load_config(path: str) -> Config:
     answer_layouts: List[GridLayout] = []
     for i, block in enumerate(answer_layouts_data):
         # default labels for answers if omitted
-        if "labels" not in block and "choices" in block:
-            ch = int(block["choices"])
+        if "labels" not in block and "numcols" in block:
+            ch = int(block["numcols"])
             block["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
         if "selection_axis" not in block:
             block["selection_axis"] = "row"
@@ -176,13 +176,13 @@ def load_config(path: str) -> Config:
                 cfg_dict.setdefault("labels", "0123456789")
             elif opt_name == "version_layout":
                 cfg_dict.setdefault("selection_axis", "row")
-                # if choices present and labels omitted, auto ABCD...
-                if "labels" not in cfg_dict and "choices" in cfg_dict:
-                    ch = int(cfg_dict["choices"])
+                # if numcols present and labels omitted, auto ABCD...
+                if "labels" not in cfg_dict and "numcols" in cfg_dict:
+                    ch = int(cfg_dict["numcols"])
                     cfg_dict["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
             setattr(cfg, opt_name, _parse_layout(opt_name, cfg_dict))
 
-    cfg.total_questions = data.get("total_questions")
+    cfg.total_numrows = data.get("total_numrows")
     return cfg
 
 
@@ -197,8 +197,8 @@ def dump_config(cfg: Config, path: str) -> None:
             "x_bottomright": gl.x_bottomright,
             "y_bottomright": gl.y_bottomright,
             "radius_pct": gl.radius_pct,
-            "questions": gl.questions,
-            "choices": gl.choices,
+            "numrows": gl.numrows,
+            "numcols": gl.numcols,
             "bubble_shape": gl.bubble_shape,
             "selection_axis": gl.selection_axis,
         }
@@ -215,8 +215,8 @@ def dump_config(cfg: Config, path: str) -> None:
         if layout is not None:
             data[opt_name] = layout_to_dict(layout)
 
-    if cfg.total_questions is not None:
-        data["total_questions"] = cfg.total_questions
+    if cfg.total_numrows is not None:
+        data["total_numrows"] = cfg.total_numrows
 
     with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False)
