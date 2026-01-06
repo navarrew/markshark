@@ -270,6 +270,14 @@ elif page.startswith("2"):
         dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1)
         st.markdown("---")
         st.markdown("Adjustments if scoring isn't working well")
+        auto_thresh = st.checkbox(
+            "Auto tune gray sensitivity per page",
+            value=bool(_dflt(SCORING_DEFAULTS, "auto_calibrate_thresh", True)),
+        )
+        verbose_thresh = st.checkbox(
+            "Show threshold calibration logs",
+            value=bool(_dflt(SCORING_DEFAULTS, "verbose_calibration", False)),
+        )
         fixed_thresh = st.text_input("Gray sensitivity (1-255: higher number = more sensitive to lighter shades)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "fixed_thresh", "")))
         min_fill = st.text_input("Minimum bubble area filled", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", "")))
         min_score = st.text_input("Minimum fill area difference between top two filled bubbles", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_score", "")))
@@ -300,6 +308,10 @@ elif page.startswith("2"):
                 args += ["--annotate-all-cells"]
             if label_density:
                 args += ["--label-density"]
+            if not auto_thresh:
+                args += ["--no-auto-thresh"]
+            if verbose_thresh:
+                args += ["--verbose-thresh"]
             # Optional scoring thresholds (only pass if user provided)
             if fixed_thresh.strip():
                 args += ["--fixed-thresh", fixed_thresh.strip()]

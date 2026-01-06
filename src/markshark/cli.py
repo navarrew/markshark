@@ -136,7 +136,16 @@ def score(
         Increase to require higher confidence in filled bubbles; decrease to accept lower scores."""
     ),
     fixed_thresh: Optional[int] = typer.Option(None, "--fixed-thresh", help=f"default {SCORING_DEFAULTS.fixed_thresh}"),
-    # (annotation flags you already added can stay)
+    auto_thresh: bool = typer.Option(
+        SCORING_DEFAULTS.auto_calibrate_thresh,
+        "--auto-thresh/--no-auto-thresh",
+        help="Auto tune fixed_thresh per page when --fixed-thresh is omitted",
+    ),
+    verbose_calibration: bool = typer.Option(
+        SCORING_DEFAULTS.verbose_calibration,
+        "--verbose-thresh",
+        help="Print per-page threshold calibration diagnostics",
+    ),    # (annotation flags you already added can stay)
 ):
     """
     Grade aligned scans using axis-based config.
@@ -152,7 +161,9 @@ def score(
             min_fill=min_fill if min_fill is not None else SCORING_DEFAULTS.min_fill,
             top2_ratio=top2_ratio if top2_ratio is not None else SCORING_DEFAULTS.top2_ratio,
             min_score=min_score if min_score is not None else SCORING_DEFAULTS.min_score,
-            fixed_thresh=fixed_thresh if fixed_thresh is not None else SCORING_DEFAULTS.fixed_thresh,
+            fixed_thresh=SCORING_DEFAULTS.fixed_thresh,
+            auto_calibrate_thresh=auto_thresh,
+            verbose_calibration=verbose_calibration,
         )
 
         score_pdf(
@@ -161,11 +172,14 @@ def score(
             out_csv=out_csv,
             key_txt=key_txt,
             out_annotated_dir=out_annotated_dir,
+            out_pdf=out_pdf,
             dpi=dpi,
             min_fill=scoring.min_fill,
             top2_ratio=scoring.top2_ratio,
             min_score=scoring.min_score,
-            fixed_thresh=scoring.fixed_thresh,
+            fixed_thresh=fixed_thresh,
+            auto_calibrate_thresh=scoring.auto_calibrate_thresh,
+            verbose_calibration=scoring.verbose_calibration,
             annotate_all_cells=annotate_all_cells,
             label_density=label_density,
         )

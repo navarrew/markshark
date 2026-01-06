@@ -28,7 +28,9 @@ class ScoringDefaults:
 
     # Global binarization threshold (only used when bin_method == "global") for gray pixels
     fixed_thresh: int = 180
-
+    # Per-page auto calibration for lightly marked sheets
+    auto_calibrate_thresh: bool = True
+    verbose_calibration: bool = False
     #Default output names and directories for scoring.
     out_pdf: str = "scored_scans.pdf"
     out_pdf_dir: Optional[str] = None  # None means "same directory as out_csv"

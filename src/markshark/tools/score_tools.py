@@ -222,6 +222,178 @@ def roi_fill_scores(
     return scores
 
 
+
+
+# ------------------------------------------------------------------------------
+# Per-page fixed_thresh calibration
+# ------------------------------------------------------------------------------
+
+def calibrate_fixed_thresh_for_page(
+    img_bgr: np.ndarray,
+    cfg: Config,
+    *,
+    fixed_thresh_center: Optional[int] = None,
+    fixed_thresh_spread: int = 50,
+    fixed_thresh_step: int = 5,
+    top2_ratio: float = 0.80,
+    min_gap: float = 0.07,
+    min_rows: int = 10,
+    verbose: bool = False,
+) -> Tuple[int, Dict[str, float]]:
+    """
+    Choose a per-page fixed_thresh value that maximizes separation between
+    "winner" bubbles and "non-winner" bubbles on that page.
+
+    This is intended to handle students who mark lightly (winner scores drift
+    down toward the printed-circle baseline) by increasing fixed_thresh only
+    when it improves winner versus non-winner separation.
+
+    Strategy:
+      - Use answer layouts with selection_axis == "row" only.
+      - For each candidate fixed_thresh, compute per-row best and second-best.
+      - Keep rows that look like a clear single selection (second/best <= top2_ratio
+        and best-second >= min_gap).
+      - Objective Q = P10(best_scores) - P90(nonwinner_scores).
+      - Pick fixed_thresh with the largest Q.
+
+    Returns:
+      (best_fixed_thresh, stats_dict)
+
+    stats_dict keys:
+      - q: separation score used for selection (higher is better)
+      - rows_used: number of rows used in calibration
+      - winners_p10: P10(best_scores) for chosen threshold
+      - nonwinners_p90: P90(nonwinner_scores) for chosen threshold
+    """
+    import sys
+
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    H, W = gray.shape[:2]
+
+    if fixed_thresh_center is None:
+        fixed_thresh_center = int(SCORING_DEFAULTS.fixed_thresh)
+
+    lo = max(0, int(fixed_thresh_center) - int(fixed_thresh_spread))
+    hi = min(255, int(fixed_thresh_center) + int(fixed_thresh_spread))
+    step = max(1, int(fixed_thresh_step))
+
+    candidates = list(range(lo, hi + 1, step))
+    if fixed_thresh_center not in candidates:
+        candidates.append(int(fixed_thresh_center))
+        candidates = sorted(set(candidates))
+
+    # Build one combined ROI list for all answer layouts, and per-row slices.
+    rois_all: List[Tuple[int, int, int, int]] = []
+    row_groups: List[Tuple[int, int]] = []  # (start_index, choices)
+
+    def _layout_rois(layout: GridLayout) -> List[Tuple[int, int, int, int]]:
+        x0 = getattr(layout, "x0_pct", getattr(layout, "x_topleft"))
+        y0 = getattr(layout, "y0_pct", getattr(layout, "y_topleft"))
+        x1 = getattr(layout, "x1_pct", getattr(layout, "x_bottomright"))
+        y1 = getattr(layout, "y1_pct", getattr(layout, "y_bottomright"))
+        centers = grid_centers_axis_mode(
+            w=W, h=H,
+            x0_pct=float(x0), y0_pct=float(y0),
+            x1_pct=float(x1), y1_pct=float(y1),
+            questions=int(layout.questions), choices=int(layout.choices),
+            axis=str(layout.selection_axis),
+        )
+        return centers_to_circle_rois(centers, W, H, float(layout.radius_pct))
+
+    for layout in (cfg.answer_layouts or []):
+        if str(getattr(layout, "selection_axis", "row")).lower() != "row":
+            continue
+        base = len(rois_all)
+        rois = _layout_rois(layout)
+        rois_all.extend(rois)
+        # Row-major ordering: each row is a contiguous run of length layout.choices
+        for r in range(int(layout.questions)):
+            row_groups.append((base + r * int(layout.choices), int(layout.choices)))
+
+    stats_default: Dict[str, float] = {
+        "q": float("nan"),
+        "rows_used": 0.0,
+        "winners_p10": float("nan"),
+        "nonwinners_p90": float("nan"),
+    }
+
+    if not rois_all or not row_groups:
+        if verbose:
+            print("[CALIBRATE] no usable answer layouts for calibration, using center fixed_thresh", file=sys.stderr)
+        return int(fixed_thresh_center), stats_default
+
+    best_thresh = int(fixed_thresh_center)
+    best_q = -1e9
+    best_stats = dict(stats_default)
+
+    for th in candidates:
+        scores = roi_fill_scores(gray, rois_all, fixed_thresh=int(th))
+
+        winners: List[float] = []
+        nonwinners: List[float] = []
+
+        for start, choices in row_groups:
+            row = scores[start : start + choices]
+            if not row:
+                continue
+
+            best_idx = int(np.argmax(row))
+            best_val = float(row[best_idx])
+
+            # Find second best
+            if choices >= 2:
+                # small list, so sort is fine
+                order = np.argsort(row)[::-1]
+                second_val = float(row[int(order[1])])
+            else:
+                second_val = 0.0
+
+            if best_val <= 0.0:
+                continue
+
+            ratio = (second_val / best_val) if best_val > 1e-9 else 1.0
+            gap = best_val - second_val
+
+            if ratio <= float(top2_ratio) and gap >= float(min_gap):
+                winners.append(best_val)
+                for j, v in enumerate(row):
+                    if j != best_idx:
+                        nonwinners.append(float(v))
+
+        if len(winners) < int(min_rows) or len(nonwinners) < int(min_rows):
+            continue
+
+        w_p10 = float(np.percentile(winners, 10))
+        n_p90 = float(np.percentile(nonwinners, 90))
+        q = w_p10 - n_p90
+
+        # Tie-breaker: prefer thresholds closer to the center value.
+        if (q > best_q) or (abs(q - best_q) < 1e-12 and abs(int(th) - int(fixed_thresh_center)) < abs(best_thresh - int(fixed_thresh_center))):
+            best_q = q
+            best_thresh = int(th)
+            best_stats = {
+                "q": float(q),
+                "rows_used": float(len(winners)),
+                "winners_p10": float(w_p10),
+                "nonwinners_p90": float(n_p90),
+            }
+
+    if verbose:
+        if best_q <= -1e8:
+            print(f"[CALIBRATE] insufficient confident rows, using center fixed_thresh={fixed_thresh_center}", file=sys.stderr)
+        else:
+            print(
+                f"[CALIBRATE] fixed_thresh={best_thresh} q={best_stats['q']:.4f} rows_used={int(best_stats['rows_used'])} "
+                f"winners_p10={best_stats['winners_p10']:.3f} nonwinners_p90={best_stats['nonwinners_p90']:.3f}",
+                file=sys.stderr,
+            )
+
+    if best_q <= -1e8:
+        return int(fixed_thresh_center), stats_default
+
+    return int(best_thresh), best_stats
+
+
 def _pick_single_from_scores(
     best_first: np.ndarray,
     min_fill: float = SCORING_DEFAULTS.min_fill,

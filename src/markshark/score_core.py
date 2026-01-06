@@ -34,7 +34,8 @@ from .tools.score_tools import (
     load_key_txt,
     grid_centers_axis_mode,
     centers_to_circle_rois,
-    roi_fill_scores
+    roi_fill_scores,
+    calibrate_fixed_thresh_for_page
 )
 
 
@@ -314,6 +315,8 @@ def score_pdf(
     annotate_all_cells: bool = False,
     label_density: bool = False,
     pdf_renderer: str = "auto",
+    auto_calibrate_thresh: bool = True,
+    verbose_calibration: bool = False,
 ) -> str:
     
     """
@@ -375,8 +378,16 @@ def score_pdf(
             outputcsv.writerow(key_row)
 
         for page_idx, img_bgr in enumerate(pages, start=1):
+            # Per-page calibration for lightly marked sheets
+            page_fixed_thresh = fixed_thresh
+            if fixed_thresh is None and auto_calibrate_thresh:
+                page_fixed_thresh, _calib_stats = calibrate_fixed_thresh_for_page(
+                    img_bgr,
+                    cfg,
+                    verbose=verbose_calibration,
+                )
             # Decode all fields using the shared axis-mode pipeline
-            info, answers = process_page_all(img_bgr, cfg, min_fill=min_fill, top2_ratio=top2_ratio, min_score=min_score, fixed_thresh=fixed_thresh,)
+            info, answers = process_page_all(img_bgr, cfg, min_fill=min_fill, top2_ratio=top2_ratio, min_score=min_score, fixed_thresh=page_fixed_thresh,)
 
             # Limit answers to the Qs we output (based on key length if present)
             answers_out = answers[:q_out]
@@ -439,7 +450,7 @@ def score_pdf(
                     min_fill=min_fill,
                     top2_ratio=top2_ratio,
                     min_score=min_score,
-                    fixed_thresh=fixed_thresh,
+                    fixed_thresh=page_fixed_thresh,
                     annotation_defaults=ANNOTATION_DEFAULTS,
                 )
                 if out_annotated_dir:
