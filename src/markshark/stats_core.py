@@ -1,3 +1,9 @@
+r"""
+MarkShark
+stats_core.py
+Append item statistics to a multiple-choice results CSV produced by score_core.py
+
+"""
 
 from typing import Optional
 from .tools.stats_tools import run as _run_stats
