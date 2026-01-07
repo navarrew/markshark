@@ -134,7 +134,7 @@ def _zip_dir_to_bytes(dir_path: Path) -> bytes:
 # image_url = "https://github.com/navarrew/markshark/blob/main/images/shark.png" 
 # st.sidebar.image(image_url, caption="MarkShark Logo", use_column_width=True)
 st.sidebar.title("MarkShark 1.0")
-page = st.sidebar.radio("Select below", ["1) Align scans", "2) Score", "3) Stats", "4) Config visualizer", "5) Help"])
+page = st.sidebar.radio("Select below", ["1) Align scans", "2) Score", "3) Stats", "4) Bblmap visualizer", "5) Help"])
 
 # Initialize / show working directory selector
 _init_workdir()
@@ -259,7 +259,7 @@ elif page.startswith("2"):
     colA, colB = st.columns(2)
     with colA:
         aligned = _tempfile_from_uploader("Aligned scans PDF", "score_pdf", types=("pdf",))
-        config = _tempfile_from_uploader("Config (YAML)", "score_cfg", types=("yaml","yml"))
+        config = _tempfile_from_uploader("Bubblemap (YAML)", "score_cfg", types=("yaml","yml"))
         key_txt = _tempfile_from_uploader("Key TXT (optional)", "score_key", types=("txt",))
     with colB:
         out_csv_name = st.text_input("Output results CSV", value="results.csv")
@@ -284,7 +284,7 @@ elif page.startswith("2"):
         top2_ratio = st.text_input("Minimum area fill ratio between 1st and 2nd most filled bubble", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", "")))
     if run_score_clicked:
         if not aligned or not config:
-            st.error("Please upload aligned PDF and config.")
+            st.error("Please upload aligned PDF and bubblemap.")
         else:
             base = WORKDIR or Path(os.getcwd())
             out_dir = Path(tempfile.mkdtemp(prefix="score_", dir=str(base)))
@@ -400,13 +400,13 @@ elif page.startswith("3"):
                 except Exception as e:
                     st.error(str(e))
 
-# ===================== 4) VISUALIZE CONFIG =====================
+# ===================== 4) VISUALIZE BUBBLEMAP ====================
 elif page.startswith("4"):
-    st.header("View your config.yaml on your template")
+    st.header("View your bubblemap.yaml on your template")
     colA, colB = st.columns(2)
     with colA:
         pdf = _tempfile_from_uploader("Template or aligned PDF (single page preferred)", "viz_pdf", types=("pdf",))
-        config = _tempfile_from_uploader("Config (YAML)", "viz_cfg", types=("yaml","yml"))
+        config = _tempfile_from_uploader("Bubblemap (YAML)", "viz_cfg", types=("yaml","yml"))
     with colB:
         out_image_name = st.text_input("Output image name", value="config_overlay.png")
         dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=300, step=1)
