@@ -38,13 +38,13 @@ Make sure you install required dependencies (**OpenCV**, **Typer**, **Streamlit*
 
 # Using MarkShark
 
-## Step 1 – Make Your Bubble Sheet
+## Step 1 – Make Your Master Bubble Sheet
 
 ### Create your bubble sheet (the exam form)
 
 Start by making a bubble sheet and saving it as a **PDF file**.
 
-- You can use the ready-made templates (and their corresponding config files) in the **`bubble forms`** folder.  
+- You can use the ready-made templates (and their corresponding config files) in the **`templates`** folder.  
 - You can freely modify these templates for your own use.  
 - To design your own sheet, use any drawing or layout program that exports to PDF.  
   - **Affinity Designer** (similar to Adobe Illustrator) works well.  
@@ -63,9 +63,9 @@ We recommend adding **ARUCO markers**—small black-and-white squares in the cor
 
 ---
 
-## Step 2 – Make a configuration file for your bubble sheet
+## Step 2 – Make a bubblemap file for your bubble sheet
 
-The configuration file is like a **map** that tells MarkShark where the important areas are located on your sheet including:
+The bubblemap that tells MarkShark where the important areas are located on your sheet including:
 - student ID bubbles  
 - answer bubbles  
 - name boxes, etc.
@@ -75,7 +75,7 @@ The configuration file is in YAML format and you only need to make it once and c
 > **Tip:** It's worth putting in some time to make sure your map fits well to your master bubble sheet.  If the zones in the config file don’t line up with the printed bubbles, grading will fail or be inaccurate.
 
 **To check and adjust your config file:**
-- Use MarkShark’s **visualizer** function to preview how your `config.yaml` zones align with your template.  
+- Use MarkShark’s **visualizer** function to preview how your `bubblemap.yaml` zones align with your template.  
 - Adjust coordinates and re-test until everything matches cleanly.
 
 ---
@@ -111,7 +111,7 @@ Even high-quality scans are often slightly misaligned. Pre-aligning them ensures
 
 ## Step 5 – Score
 
-1. Run the **`grade`** function on the aligned PDF in a directory containing your `key.txt` and `config.yaml`.  
+1. Run the **`score`** function on the aligned PDF in a directory containing your `key.txt` and `config.yaml`.  
 2. MarkShark outputs a **CSV file** with each student’s answers and final score.  
 3. Optionally, export an **annotated PDF** showing which bubbles were recognized.  
    - This is useful for debugging alignment or fill-threshold issues.
@@ -142,9 +142,9 @@ Even high-quality scans are often slightly misaligned. Pre-aligning them ensures
 
 ---
 
-## Using the Visualizer to Build Your Config File
+## Using the Visualizer to Build Your Bubblemap File
 
-Config files use **YAML** format.  
+Bubblemap files use **YAML** format.  
 The visualizer overlays your configuration zones on the sheet, helping you fine-tune coordinates.
 
 ---
@@ -166,7 +166,7 @@ All results are written to a CSV file, ready for analysis.
 
 ## Analyzing Results with `stats`
 
-The **`stats`** module processes the CSV output from `grade`, computes exam- and item-level metrics, and generates CSV summaries and plots.
+The **`stats`** module processes the CSV output from `score`, computes exam- and item-level metrics, and generates CSV summaries and plots.
 
 ### Usage
 
