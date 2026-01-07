@@ -135,6 +135,7 @@ annotate_all_cells: bool,
 min_fill: float,
 top2_ratio: float,
 min_score: float,
+answers_for_annotation: Optional[List[Optional[str]]] = None,
 fixed_thresh: Optional[int] = None,
 color_correct=None,
 color_incorrect=None,
@@ -142,6 +143,10 @@ color_blank=None,
 color_blank_answer_row=None,
 color_multi=None,
 thickness: Optional[int] = None,
+pct_fill_font_color=None,
+pct_fill_font_scale=None,
+pct_fill_font_thickness=None,
+pct_fill_font_position=None,
 annotation_defaults: Optional[AnnotationDefaults] = None,
 box_multi: Optional[bool] = None,
 box_blank_answer_row: Optional[bool] = None,
@@ -179,6 +184,16 @@ box_top_extra: Optional[int] = None,
     if thickness is None:
         thickness = ad.thickness_answers
 
+    # Resolve annotation defaults
+    if pct_fill_font_color is None:
+        pct_fill_font_color  = getattr(ad, "pct_fill_font_color", (255, 0, 255))
+    if pct_fill_font_scale is None:
+        pct_fill_font_scale = getattr(ad, "pct_fill_font_scale", 0.5)
+    if pct_fill_font_thickness is None:
+        pct_fill_font_thickness = getattr(ad, "pct_fill_font_thickness", 1)
+    if pct_fill_font_position is None:
+        pct_fill_font_position = getattr(ad, "pct_fill_font_position", 5)
+
     # Row box defaults
     if box_multi is None:
         box_multi = getattr(ad, "box_multi", False)
@@ -207,6 +222,7 @@ box_top_extra: Optional[int] = None,
         rois = centers_to_circle_rois(centers, W, H, layout.radius_pct)
         M = _rowwise_scores(gray, rois, layout.numrows, layout.numcols, fixed_thresh=fixed_thresh,)
         choice_labels = list(layout.labels) if layout.labels else [chr(ord("A") + i) for i in range(layout.numcols)]
+        label_to_idx = {str(lab).strip().upper(): i for i, lab in enumerate(choice_labels)}
 
         for r in range(layout.numrows):
             row_scores = M[r]
@@ -216,6 +232,36 @@ box_top_extra: Optional[int] = None,
             second_val = float(row_scores[order[1]]) if layout.numcols > 1 else 0.0
             is_blank = best_val < min_fill
             is_multi = (not is_blank) and (layout.numcols > 1) and (second_val > top2_ratio * best_val)
+
+            # If available, drive annotation from the same scoring decisions used for the CSV.
+            # This prevents borderline cases being labeled blank in the CSV but shown as selected in the PDF overlay.
+            selected_labels = []  # type: List[str]
+            selected_idx = set()
+
+            if answers_for_annotation is not None and q_global < len(answers_for_annotation):
+                ans = answers_for_annotation[q_global]
+                if ans is None or ans == "":
+                    is_blank, is_multi = True, False
+                else:
+                    ans_str = str(ans).strip().upper()
+                    if "," in ans_str:
+                        is_blank, is_multi = False, True
+                        selected_labels = [p.strip() for p in ans_str.split(",") if p.strip()]
+                    else:
+                        is_blank, is_multi = False, False
+                        selected_labels = [ans_str]
+
+                for lab in selected_labels:
+                    if lab in label_to_idx:
+                        selected_idx.add(label_to_idx[lab])
+
+            # Fallback: if we did not map any selected labels, use local score winners.
+            if not selected_idx:
+                if is_multi and layout.numcols > 1:
+                    selected_idx = {best, int(order[1])}
+                elif not is_blank:
+                    selected_idx = {best}
+
 
             key_char = key_seq[q_global] if key_seq and q_global < len(key_seq) else None
             answer_row_blank = bool(is_blank and key_char and (key_char in choice_labels))
@@ -244,7 +290,7 @@ box_top_extra: Optional[int] = None,
                 cx, cy = x + w // 2, y + h // 2
                 radius = min(w, h) // 2
 
-                draw_this = annotate_all_cells or (c == best) or is_blank or is_multi
+                draw_this = annotate_all_cells or (c in selected_idx) or is_blank or is_multi
                 if not draw_this:
                     continue
 
@@ -254,11 +300,20 @@ box_top_extra: Optional[int] = None,
                     col = color_multi
                 else:
                     if key_char:
-                        col = color_correct if (choice_labels[c] == key_char and c == best) else (
-                            color_incorrect if c == best else (200, 200, 200)
+                        is_selected = c in selected_idx
+
+                        selected_single = None
+                        if selected_labels and len(selected_labels) == 1:
+                            selected_single = selected_labels[0]
+                        elif (not selected_labels) and (not is_blank) and (not is_multi) and len(selected_idx) == 1:
+                            only_idx = next(iter(selected_idx))
+                            selected_single = str(choice_labels[only_idx]).strip().upper()
+
+                        col = color_correct if (is_selected and selected_single == key_char) else (
+                            color_incorrect if is_selected else (200, 200, 200)
                         )
                     else:
-                        col = (0, 200, 200) if c == best else (200, 200, 200)
+                        col = (0, 200, 200) if (c in selected_idx) else (200, 200, 200)
 
                 cv2.circle(out, (cx, cy), radius, col, thickness, lineType=cv2.LINE_AA)
 
@@ -274,22 +329,26 @@ box_top_extra: Optional[int] = None,
                     # Put text above the circle
                     text = f"{pct}"
                     font = cv2.FONT_HERSHEY_SIMPLEX
-                    font_scale = 0.3
-                    text_thickness = 1
                 
-                    (tw, th), baseline = cv2.getTextSize(text, font, font_scale, text_thickness)
+                    (tw, th), baseline = cv2.getTextSize(text, font, pct_fill_font_scale, 
+                    pct_fill_font_thickness)
                 
-                    gap = 5  # pixels above circle
+                    # this formula sets text baseline position above or below circle
+                    # pct_fill_font_position values correspond to pixels.
+                    # these values should be set in the defaults.py script
+                    # a value of zero puts the text right on top of the circle
+                    # negative values pull the text into the circle.
+                    # positive values push the text farther above the circle
                     tx = cx - tw // 2
-                    ty = cy - radius - gap  # baseline position above circle
+                    ty = cy - radius - pct_fill_font_position  
                 
                     # Keep text inside the image bounds
                     tx = max(0, min(tx, W - tw - 1))
                     ty = max(th + 1, ty)  # avoid going off the top
                 
                     cv2.putText(out, text, (tx, ty),
-                                font, font_scale, (255, 0, 255),
-                                text_thickness, cv2.LINE_AA)
+                                font, pct_fill_font_scale, pct_fill_font_color,
+                                pct_fill_font_thickness, cv2.LINE_AA)
 
             q_global += 1
 
@@ -445,6 +504,7 @@ def score_pdf(
                     vis,
                     cfg,
                     key_out,
+                    answers_for_annotation=answers,
                     label_density=label_density,
                     annotate_all_cells=annotate_all_cells,
                     min_fill=min_fill,

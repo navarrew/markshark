@@ -12,7 +12,7 @@ It supports command-line and GUI modes, and outputs annotated images, CSV result
 
 ---
 
-![OMR pipeline](images/pipeline.jpeg)
+![OMR pipeline](images/processmap.png)
 
 ---
 
