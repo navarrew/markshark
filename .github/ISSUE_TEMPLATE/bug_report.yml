@@ -1,0 +1,51 @@
+# .github/ISSUE_TEMPLATE/bug_report.yml
+name: Bug report
+description: Report something that is broken
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the bug clearly.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Provide minimal steps, commands, or files involved.
+      placeholder: |
+        1. Run...
+        2. With config...
+        3. Observe...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Python version, MarkShark version, install method.
+      placeholder: |
+        - OS:
+        - Python:
+        - MarkShark:
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or traceback
+      render: shell
+    validations:
+      required: false
