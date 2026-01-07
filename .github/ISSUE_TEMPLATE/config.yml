@@ -1,0 +1,6 @@
+# .github/ISSUE_TEMPLATE/config.yml
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and support
+    url: https://github.com/navarrew/markshark/discussions
+    about: Please use Discussions for how to questions and general support.
