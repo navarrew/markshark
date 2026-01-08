@@ -1,0 +1,69 @@
+title: "Question: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for usage questions and troubleshooting. If you believe you found a bug, consider opening an Issue instead.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do?
+      description: Describe the goal, not only the command you ran.
+      placeholder: "I am trying to score a multi-page PDF of bubble sheets and..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command or steps you ran
+      description: Paste the exact CLI command, or the Streamlit choices.
+      render: shell
+      placeholder: |
+        markshark score aligned_scans.pdf --bubblemap my_map.yaml --key keys.txt
+    validations:
+      required: false
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened?
+      description: Include any error messages, and what output files were produced.
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Python, MarkShark version, install method.
+      placeholder: |
+        - OS:
+        - Python:
+        - MarkShark version:
+        - Install method (pip, conda, etc):
+    validations:
+      required: false
+
+  - type: textarea
+    id: files
+    attributes:
+      label: Inputs involved
+      description: Describe the PDF type, scanner, DPI, bubblemap, and whether ArUco markers are present.
+      placeholder: |
+        - Input PDF pages:
+        - Scan DPI:
+        - Bubble sheet template:
+        - Bubblemap:
+        - Markers (ArUco): yes/no
+    validations:
+      required: false
