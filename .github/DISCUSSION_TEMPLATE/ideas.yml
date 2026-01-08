@@ -1,0 +1,67 @@
+title: "Idea: "
+labels: ["idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for early feature ideas, design options, and open questions. If you already know the “definition of done”, open an Issue.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What user pain does this address?
+      placeholder: "Instructors need to support Version A and Version B keys automatically because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed approach
+      description: Your preferred design, even if rough.
+      placeholder: |
+        Example: allow a keys file with blocks starting with @A, @B, then auto-detect version from a version bubble.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - scoring
+        - alignment
+        - bubblemap
+        - keys
+        - UX / Streamlit
+        - packaging / install
+        - docs
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches could work?
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: What would success look like?
+      description: Bullet list of acceptance criteria, if you can.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes and links
+    validations:
+      required: false
