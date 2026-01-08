@@ -1,0 +1,37 @@
+title: "Announcement: "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version or date
+      placeholder: "v0.4.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One paragraph summary of what changed and who it affects.
+    validations:
+      required: true
+
+  - type: textarea
+    id: highlights
+    attributes:
+      label: Highlights
+      description: Bullet list of the most important changes.
+      placeholder: |
+        - Added ...
+        - Improved ...
+        - Fixed ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: upgrade
+    attributes:
+      label: Upgrade notes
+      description: Breaking changes, migrations, deprecations.
+    validations:
+      required: false
