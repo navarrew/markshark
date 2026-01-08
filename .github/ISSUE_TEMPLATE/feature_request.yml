@@ -1,0 +1,41 @@
+# .github/ISSUE_TEMPLATE/feature_request.yml
+name: Feature request
+description: Propose an improvement or new capability
+labels: ["type:enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What user pain or limitation does this address?
+      placeholder: "Today, MarkShark cannot..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Optional, share your preferred implementation direction.
+      placeholder: "Idea: detect version by..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Bullet list of what must be true for this to be considered done.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes, edge cases, related issues
+      description: Links, screenshots, tests, constraints, or follow ups.
+    validations:
+      required: false

@@ -1,4 +1,4 @@
-# MarkSharkOMR
+# MarkSharkOMR - in development
 ## A fast, accurate, customizable, open-source test bubble sheet scanner
 
 MarkSharkOMR is a versatile and fast tool to **visualize, grade, and analyze bubble-sheet exams**.
