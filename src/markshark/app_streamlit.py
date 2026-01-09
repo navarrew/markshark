@@ -259,7 +259,7 @@ elif page.startswith("2"):
     colA, colB = st.columns(2)
     with colA:
         aligned = _tempfile_from_uploader("Aligned scans PDF", "score_pdf", types=("pdf",))
-        config = _tempfile_from_uploader("Bubblemap (YAML)", "score_cfg", types=("yaml","yml"))
+        bublmap = _tempfile_from_uploader("Bubblemap (YAML)", "score_cfg", types=("yaml","yml"))
         key_txt = _tempfile_from_uploader("Key TXT (optional)", "score_key", types=("txt",))
     with colB:
         out_csv_name = st.text_input("Output results CSV", value="results.csv")
@@ -283,7 +283,7 @@ elif page.startswith("2"):
         min_score = st.text_input("Minimum fill area difference between top two filled bubbles", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_score", "")))
         top2_ratio = st.text_input("Minimum area fill ratio between 1st and 2nd most filled bubble", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", "")))
     if run_score_clicked:
-        if not aligned or not config:
+        if not aligned or not bublmap:
             st.error("Please upload aligned PDF and bubblemap.")
         else:
             base = WORKDIR or Path(os.getcwd())
@@ -292,7 +292,7 @@ elif page.startswith("2"):
             args = [
                 "score",
                 str(aligned),
-                "--config", str(config),
+                "--bublmap", str(bublmap),
                 "--out-csv", str(out_csv),
                 "--dpi", str(int(dpi)),
             ]
@@ -406,14 +406,14 @@ elif page.startswith("4"):
     colA, colB = st.columns(2)
     with colA:
         pdf = _tempfile_from_uploader("Template or aligned PDF (single page preferred)", "viz_pdf", types=("pdf",))
-        config = _tempfile_from_uploader("Bubblemap (YAML)", "viz_cfg", types=("yaml","yml"))
+        bublmap = _tempfile_from_uploader("Bubblemap (YAML)", "viz_cfg", types=("yaml","yml"))
     with colB:
-        out_image_name = st.text_input("Output image name", value="config_overlay.png")
+        out_image_name = st.text_input("Output image name", value="bubblemap_overlay.png")
         dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=300, step=1)
 
     if st.button("Render overlay"):
-        if not pdf or not config:
-            st.error("Please upload a PDF and a config.")
+        if not pdf or not bublmap:
+            st.error("Please upload a PDF and a bubblemap.")
         else:
             base = WORKDIR or Path(os.getcwd())
             out_dir = Path(tempfile.mkdtemp(prefix="viz_", dir=str(base)))
@@ -421,7 +421,7 @@ elif page.startswith("4"):
             args = [
                 "visualize",
                 str(pdf),
-                "--config", str(config),
+                "--bublmap", str(bublmap),
                 "--out-image", str(out_img),
                 "--dpi", str(int(dpi)),
             ]
@@ -441,9 +441,9 @@ else:
     st.markdown("""
 **Typical workflow**
 1. Align scans (raw student scans PDF + template PDF) to create an aligned PDF
-2. Grade the aligned PDF (aligned PDF + config YAML, optional key.txt) to get results.csv
+2. Grade the aligned PDF (aligned PDF + bubblemap YAML, optional key.txt) to get results.csv
 3. Compute stats from results.csv (item analysis, KR-20, plots)
-4. (Optional) Visualize your config overlay to verify bubble ROI placement
+4. (Optional) Visualize your bubblemap overlay to verify bubble ROI placement
 
 If the GUI is missing something, the CLI is always the single source of truth.
 """)

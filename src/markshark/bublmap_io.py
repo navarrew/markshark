@@ -1,10 +1,10 @@
 """
 MarkShark
-config_io.py
+bublmap_io.py
 ------------
-Axis-based YAML configuration loader for MarkShark OMR.
+Axis-based YAML bubblemap loader for MarkShark OMR.
 
-Each bubble block in the config defines:
+Each bubble block in the bubblemap defines:
   x_topleft:      normalized X of the top-left bubble center   (0..1)
   y_topleft:      normalized Y of the top-left bubble center   (0..1)
   x_bottomright:  normalized X of the bottom-right bubble center
@@ -92,8 +92,8 @@ class GridLayout:
 
 
 @dataclass
-class Config:
-    """Top-level configuration object."""
+class Bubblemap:
+    """Top-level bubblemap configuration object."""
     answer_layouts: List[GridLayout]
     last_name_layout: GridLayout | None = None
     first_name_layout: GridLayout | None = None
@@ -144,8 +144,8 @@ def _parse_layout(name: str, section: Dict[str, Any]) -> GridLayout:
         selection_axis=selection_axis,
     )
 
-def load_config(path: str) -> Config:
-    """Load and validate a bubble-OMR configuration YAML file."""
+def load_bublmap(path: str) -> Bubblemap:
+    """Load and validate a Bubblemap YAML file."""
     import io
     with io.open(path, "r", encoding="utf-8", errors="replace") as f:
         data = yaml.safe_load(f)
@@ -161,34 +161,34 @@ def load_config(path: str) -> Config:
             block["selection_axis"] = "row"
         answer_layouts.append(_parse_layout(f"answers_{i+1}", block))
 
-    cfg = Config(answer_layouts=answer_layouts)
+    bmap = Bubblemap(answer_layouts=answer_layouts)
 
     # Optional other layouts
     for opt_name in ["last_name_layout", "first_name_layout", "id_layout", "version_layout"]:
         if opt_name in data:
-            cfg_dict = dict(data[opt_name])  # shallow copy
+            bmap_dict = dict(data[opt_name])  # shallow copy
             # sensible defaults if omitted
             if opt_name in ("last_name_layout", "first_name_layout"):
-                cfg_dict.setdefault("selection_axis", "col")
-                cfg_dict.setdefault("labels", " ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+                bmap_dict.setdefault("selection_axis", "col")
+                bmap_dict.setdefault("labels", " ABCDEFGHIJKLMNOPQRSTUVWXYZ")
             elif opt_name == "id_layout":
-                cfg_dict.setdefault("selection_axis", "col")
-                cfg_dict.setdefault("labels", "0123456789")
+                bmap_dict.setdefault("selection_axis", "col")
+                bmap_dict.setdefault("labels", "0123456789")
             elif opt_name == "version_layout":
-                cfg_dict.setdefault("selection_axis", "row")
+                bmap_dict.setdefault("selection_axis", "row")
                 # if numcols present and labels omitted, auto ABCD...
-                if "labels" not in cfg_dict and "numcols" in cfg_dict:
-                    ch = int(cfg_dict["numcols"])
-                    cfg_dict["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
-            setattr(cfg, opt_name, _parse_layout(opt_name, cfg_dict))
+                if "labels" not in bmap_dict and "numcols" in bmap_dict:
+                    ch = int(bmap_dict["numcols"])
+                    bmap_dict["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
+            setattr(bmap, opt_name, _parse_layout(opt_name, bmap_dict))
 
-    cfg.total_numrows = data.get("total_numrows")
-    return cfg
+    bmap.total_numrows = data.get("total_numrows")
+    return bmap
 
 
 # ---------------------------------------------------------------------------
 
-def dump_config(cfg: Config, path: str) -> None:
+def dump_bublmap(bmap: Config, path: str) -> None:
     """Write a Config back to YAML (useful for debugging)."""
     def layout_to_dict(gl: GridLayout) -> Dict[str, Any]:
         out = {
@@ -207,16 +207,16 @@ def dump_config(cfg: Config, path: str) -> None:
         return out
 
     data: Dict[str, Any] = {
-        "answer_layouts": [layout_to_dict(a) for a in cfg.answer_layouts]
+        "answer_layouts": [layout_to_dict(a) for a in bmap.answer_layouts]
     }
 
     for opt_name in ["last_name_layout", "first_name_layout", "id_layout", "version_layout"]:
-        layout = getattr(cfg, opt_name)
+        layout = getattr(bmap, opt_name)
         if layout is not None:
             data[opt_name] = layout_to_dict(layout)
 
-    if cfg.total_numrows is not None:
-        data["total_numrows"] = cfg.total_numrows
+    if bmap.total_numrows is not None:
+        data["total_numrows"] = bmap.total_numrows
 
     with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False)

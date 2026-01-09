@@ -7,7 +7,7 @@ import numpy as np
 
 if TYPE_CHECKING:
     # Only for type hints, avoids runtime import cost/cycles
-    from ..config_io import GridLayout
+    from ..bublmap_io import GridLayout
 
 
 def grid_centers_axis_mode(
@@ -22,7 +22,7 @@ def grid_centers_axis_mode(
     Return normalized (x, y) centers for a questions x choices grid, by linear
     interpolation between the top-left and bottom-right bubble centers.
 
-    Coordinates are normalized fractions (0..1) in the config coordinate system.
+    Coordinates are normalized fractions (0..1) in the bublmap coordinate system.
     """
     centers: List[Tuple[float, float]] = []
     q_den = max(1, questions - 1)
@@ -47,7 +47,7 @@ def centers_to_radius_px(
     """
     Convert normalized centers to pixel centers, and return a pixel radius.
 
-    radius_pct is interpreted as a fraction of image width (consistent with config).
+    radius_pct is interpreted as a fraction of image width (consistent with bublmap).
     """
     r_px = max(1, int(round(radius_pct * img_w)))
     pts_px: List[Tuple[int, int]] = []

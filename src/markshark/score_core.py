@@ -27,7 +27,7 @@ from .defaults import (
     resolve_scored_pdf_path,
 )
 
-from .config_io import load_config, Config, GridLayout
+from .bublmap_io import load_bublmap, Bubblemap, GridLayout
 from .tools import io_pages as IO
 from .tools.score_tools import (
     process_page_all,
@@ -71,7 +71,7 @@ def _rowwise_scores(
 
 def _annotate_names_ids(
     img_bgr: np.ndarray,
-    cfg: Config,
+    bmap: Bubblemap,
     label_density: bool,
     color_zone=None,
     text_color=None,
@@ -119,7 +119,7 @@ def _annotate_names_ids(
                             cv2.FONT_HERSHEY_SIMPLEX, float(font_scale), text_color, int(label_thickness), cv2.LINE_AA)
 
     for attr in ("last_name_layout", "first_name_layout", "id_layout"):
-        lay = getattr(cfg, attr, None)
+        lay = getattr(bmap, attr, None)
         if isinstance(lay, GridLayout):
             draw_layout(lay)
 
@@ -128,7 +128,7 @@ def _annotate_names_ids(
 
 def _annotate_answers(
 img_bgr: np.ndarray,
-cfg: Config,
+bmap: Bubblemap,
 key_letters: Optional[List[str]],
 label_density: bool,
 annotate_all_cells: bool,
@@ -213,7 +213,7 @@ box_top_extra: Optional[int] = None,
     q_global = 0
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
 
-    for layout in cfg.answer_layouts:
+    for layout in bmap.answer_layouts:
         centers = grid_centers_axis_mode(
             layout.x_topleft, layout.y_topleft,
             layout.x_bottomright, layout.y_bottomright,
@@ -361,7 +361,7 @@ box_top_extra: Optional[int] = None,
 
 def score_pdf(
     input_path: str,
-    config_path: str,
+    bublmap_path: str,
     out_csv: str,
     min_fill: float,
     top2_ratio: float,
@@ -387,11 +387,11 @@ def score_pdf(
       - If a key is provided, a KEY row is written under the header.
       - Annotated images combine blue name/ID overlays and answer overlays.
     """
-    cfg: Config = load_config(config_path)
+    bmap: Bubblemap = load_bublmap(bublmap_path)
     pages = IO.load_pages(input_path, dpi=dpi, renderer=pdf_renderer)
     key: Optional[List[str]] = load_key_txt(key_txt) if key_txt else None
 
-    total_q = sum(a.numrows for a in cfg.answer_layouts)
+    total_q = sum(a.numrows for a in bmap.answer_layouts)
     q_out = len(key) if key else total_q
     q_out = max(0, min(q_out, total_q))
 
@@ -442,11 +442,11 @@ def score_pdf(
             if fixed_thresh is None and auto_calibrate_thresh:
                 page_fixed_thresh, _calib_stats = calibrate_fixed_thresh_for_page(
                     img_bgr,
-                    cfg,
+                    bmap,
                     verbose=verbose_calibration,
                 )
             # Decode all fields using the shared axis-mode pipeline
-            info, answers = process_page_all(img_bgr, cfg, min_fill=min_fill, top2_ratio=top2_ratio, min_score=min_score, fixed_thresh=page_fixed_thresh,)
+            info, answers = process_page_all(img_bgr, bmap, min_fill=min_fill, top2_ratio=top2_ratio, min_score=min_score, fixed_thresh=page_fixed_thresh,)
 
             # Limit answers to the Qs we output (based on key length if present)
             answers_out = answers[:q_out]
@@ -496,13 +496,13 @@ def score_pdf(
             if out_annotated_dir or out_pdf_path:
                 vis = _annotate_names_ids(
                     img_bgr,
-                    cfg,
+                    bmap,
                     label_density=label_density,
                     annotation_defaults=ANNOTATION_DEFAULTS,
                 )
                 vis = _annotate_answers(
                     vis,
-                    cfg,
+                    bmap,
                     key_out,
                     answers_for_annotation=answers,
                     label_density=label_density,

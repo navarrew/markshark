@@ -9,7 +9,7 @@ import typer
 from rich import print as rprint
 
 # Config loader that supports a YAML (.yaml/.yml) formatted map of the bubble sheet
-from .config_io import load_config
+from .bublmap_io import load_bublmap
 
 from .defaults import (
     SCORING_DEFAULTS,
@@ -22,7 +22,7 @@ from .defaults import (
 )
 # Core modules
 from .align_core import align_pdf_scans
-from .visualize_core import overlay_config
+from .visualize_core import overlay_bublmap
 from .score_core import score_pdf
 from .tools import stats_tools as stats_mod  # has run(...)
 
@@ -82,24 +82,24 @@ def align(
 @app.command()
 def visualize(
     input_pdf: str = typer.Argument(..., help="An aligned page PDF or template PDF"),
-    config: str = typer.Option(..., "--config", "-c", help="Config file (.yaml/.yml)"),
-    out_image: str = typer.Option("config_overlay.png", "--out-image", "-o", help="Output overlay image (png/jpg/pdf)"),
+    bublmap: str = typer.Option(..., "--bublmap", "-m", help="Bubblemap file (.yaml/.yml)"),
+    out_image: str = typer.Option("bubblemap_overlay.png", "--out-image", "-o", help="Output overlay image (png/jpg/pdf)"),
     pdf_renderer: str = typer.Option("auto", "--pdf-renderer", help="PDF renderer: auto|fitz|pdf2image"),
     dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Render DPI"),
 ):
     """
-    Overlay the config bubble zones on top of a PDF page to verify placement.
+    Overlay the bublmap bubble zones on top of a PDF page to verify placement.
     """
     try:
-        overlay_config(
-            config_path=config,
+        overlay_bublmap(
+            bublmap_path=bublmap,
             input_path=input_pdf,
             out_image=out_image,
             dpi=dpi,
             pdf_renderer=pdf_renderer,
         )
     except Exception as e:
-        rprint(f"[red]Visualization failed for {config}:[/red] {e}")
+        rprint(f"[red]Visualization failed for {bublmap}:[/red] {e}")
         raise typer.Exit(code=2)
 
     rprint(f"[green]Wrote:[/green] {out_image}")
@@ -109,7 +109,7 @@ def visualize(
 @app.command()
 def score(
     input_pdf: str = typer.Argument(..., help="Aligned scans PDF"),
-    config: str = typer.Option(..., "--config", "-c", help="Config file (.yaml/.yml)"),
+    bublmap: str = typer.Option(..., "--bublmap", "-c", help="Bubblemap file (.yaml/.yml)"),
     key_txt: Optional[str] = typer.Option(None, "--key-txt", "-k",
         help="Answer key file (A/B/C/... one per line). If provided, only first len(key) questions are scored."),
     out_csv: str = typer.Option("results.csv", "--out-csv", "-o", help="Output CSV of per-student results"),
@@ -148,12 +148,12 @@ def score(
     ),    # (annotation flags you already added can stay)
 ):
     """
-    Grade aligned scans using axis-based config.
+    Grade aligned scans using axis-based bublmap.
     """
     try:
-        _ = load_config(config)
+        _ = load_bublmap(bublmap)
     except Exception as e:
-        rprint(f"[red]Failed to load config {config}:[/red] {e}")
+        rprint(f"[red]Failed to load bublmap {bublmap}:[/red] {e}")
         raise typer.Exit(code=2)
 
     try:
@@ -168,7 +168,7 @@ def score(
 
         score_pdf(
             input_path=input_pdf,
-            config_path=config,
+            bublmap_path=bublmap,
             out_csv=out_csv,
             key_txt=key_txt,
             out_annotated_dir=out_annotated_dir,

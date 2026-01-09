@@ -3,10 +3,10 @@
 """
 MarkShark
 visualize_core.py
-Visualize OMR bubble positions from an axis-based config.
+Visualize OMR bubble positions from an axis-based bubblemap.
 
 Exports:
-  - overlay_config(config_path, input_path, out_image, dpi=300, color=(0,255,0), thickness=2, pdf_renderer="auto") -> str
+  - overlay_bublmap(bublmap_path, input_path, out_image, dpi=300, color=(0,255,0), thickness=2, pdf_renderer="auto") -> str
 
 Notes:
   - If input_path is a PDF, the first page is used.
@@ -21,7 +21,7 @@ from typing import Tuple
 import cv2
 import numpy as np
 
-from .config_io import load_config, Config
+from .bublmap_io import load_bublmap, Bubblemap
 from .tools.visualizer_tools import draw_layout_circles
 from .tools import io_pages as IO
 
@@ -34,8 +34,8 @@ def _load_input_image(path: str, dpi: int = 300, pdf_renderer: str = "auto") -> 
     return pages[0]
 
 
-def overlay_config(
-    config_path: str,
+def overlay_bublmap(
+    bublmap_path: str,
     input_path: str,
     out_image: str,
     dpi: int = 300,
@@ -44,23 +44,23 @@ def overlay_config(
     pdf_renderer: str = "auto",  #options: 'auto', 'fitz', or 'pdf2image'
 ) -> str:
     """
-    Load an axis-mode YAML config and draw all bubble circles on the input image/PDF.
+    Load an axis-mode YAML bublmap and draw all bubble circles on the input image/PDF.
 
     Returns:
         out_image (string path), after writing.
         
     
     """
-    cfg: Config = load_config(config_path)
+    bmap: Config = load_bublmap(bublmap_path)
     img = _load_input_image(input_path, dpi=dpi, pdf_renderer=pdf_renderer)
 
     # Answer blocks
-    for layout in cfg.answer_layouts:
+    for layout in bmap.answer_layouts:
         draw_layout_circles(img, layout, color=color, thickness=thickness)
 
     # Optional blocks: last/first name, ID, version
     for opt in ("last_name_layout", "first_name_layout", "id_layout", "version_layout"):
-        lay = getattr(cfg, opt, None)
+        lay = getattr(bmap, opt, None)
         if lay is not None:
             draw_layout_circles(img, lay, color=color, thickness=thickness)
 

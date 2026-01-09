@@ -23,7 +23,7 @@ from typing import Iterable, List, Optional, Tuple, Dict
 import cv2
 import numpy as np
 
-from ..config_io import Config, GridLayout
+from ..bublmap_io import Bubblemap, GridLayout
 from ..defaults import SCORING_DEFAULTS
 
 
@@ -230,7 +230,7 @@ def roi_fill_scores(
 
 def calibrate_fixed_thresh_for_page(
     img_bgr: np.ndarray,
-    cfg: Config,
+    bmap: Bubblemap,
     *,
     fixed_thresh_center: Optional[int] = None,
     fixed_thresh_spread: int = 50,
@@ -300,7 +300,7 @@ def calibrate_fixed_thresh_for_page(
         )
         return centers_to_circle_rois(centers, W, H, float(layout.radius_pct))
 
-    for layout in (cfg.answer_layouts or []):
+    for layout in (bmap.answer_layouts or []):
         if str(getattr(layout, "selection_axis", "row")).lower() != "row":
             continue
         base = len(rois_all)
@@ -643,7 +643,7 @@ def score_against_key(selections: List[Optional[str]], key: List[str]) -> Tuple[
 
 def process_page_all(
     img_bgr: np.ndarray,
-    cfg: Config,
+    bmap: Bubblemap,
     *,
     min_fill: float = SCORING_DEFAULTS.min_fill,
     top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
@@ -655,61 +655,61 @@ def process_page_all(
 
     info = {"last_name": "", "first_name": "", "student_id": "", "version": ""}
 
-    if cfg.last_name_layout:
+    if bmap.last_name_layout:
         picked, _, _ = decode_layout(
             gray,
-            cfg.last_name_layout,
+            bmap.last_name_layout,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_score=min_score,
             fixed_thresh=fixed_thresh,
         )
         info["last_name"] = indices_to_text_col(
-            picked, cfg.last_name_layout.labels or " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            picked, bmap.last_name_layout.labels or " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         ).strip()
 
-    if cfg.first_name_layout:
+    if bmap.first_name_layout:
         picked, _, _ = decode_layout(
             gray,
-            cfg.first_name_layout,
+            bmap.first_name_layout,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_score=min_score,
             fixed_thresh=fixed_thresh,
         )
         info["first_name"] = indices_to_text_col(
-            picked, cfg.first_name_layout.labels or " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            picked, bmap.first_name_layout.labels or " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         ).strip()
 
-    if cfg.id_layout:
+    if bmap.id_layout:
         picked, _, _ = decode_layout(
             gray,
-            cfg.id_layout,
+            bmap.id_layout,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_score=min_score,
             fixed_thresh=fixed_thresh,
         )
-        info["student_id"] = indices_to_text_col(picked, cfg.id_layout.labels or "0123456789").strip()
+        info["student_id"] = indices_to_text_col(picked, bmap.id_layout.labels or "0123456789").strip()
 
-    if cfg.version_layout:
+    if bmap.version_layout:
         picked, _, _ = decode_layout(
             gray,
-            cfg.version_layout,
+            bmap.version_layout,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_score=min_score,
             fixed_thresh=fixed_thresh,
         )
-        if cfg.version_layout.selection_axis == "row":
+        if bmap.version_layout.selection_axis == "row":
             idx = picked[0] if picked else None
-            labels = list(cfg.version_layout.labels or "ABCD")
+            labels = list(bmap.version_layout.labels or "ABCD")
             info["version"] = labels[idx] if idx is not None and 0 <= idx < len(labels) else ""
         else:
-            info["version"] = indices_to_text_col(picked, cfg.version_layout.labels or "ABCD").strip()
+            info["version"] = indices_to_text_col(picked, bmap.version_layout.labels or "ABCD").strip()
 
     answers: List[Optional[str]] = []
-    for layout in cfg.answer_layouts:
+    for layout in bmap.answer_layouts:
         picked, _, scores = decode_layout(
             gray,
             layout,
