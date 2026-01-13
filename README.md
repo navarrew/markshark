@@ -2,7 +2,8 @@
 ## A fast, accurate, customizable, open-source test bubble sheet scanner
 
 MarkSharkOMR is a versatile and fast tool to **grade, and analyze your own bubble-sheet exams**.
-![logo](images/shark.png)
+
+![MarkShark Logo](images/shark.png)
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
