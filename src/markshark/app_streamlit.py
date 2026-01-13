@@ -39,36 +39,102 @@ def _dflt(obj, attr: str, fallback):
 # --------------------- Working directory handling ---------------------
 WORKDIR: Path | None = None
 
+def _safe_list_subdirs(p: Path, max_entries: int = 300) -> list[Path]:
+    try:
+        subdirs = [x for x in p.iterdir() if x.is_dir()]
+        subdirs.sort(key=lambda x: x.name.lower())
+        return subdirs[:max_entries]
+    except Exception:
+        return []
+
 def _init_workdir() -> Path:
     """
     Initialize and display a working-directory selector.
 
     Default: the directory you launched `streamlit run` from (os.getcwd()).
     User can override via a text box in the sidebar.
+    Also provides a click-to-browse folder picker (in-app), since Streamlit
+    cannot open a native OS folder dialog by default.
     """
     global WORKDIR
 
-    # default is the launch directory
-    default_dir = Path(os.getcwd())
+    default_dir = Path(os.getcwd()).expanduser()
 
-    # seed session_state if first run
+    # Seed session_state on first run
     if "workdir" not in st.session_state:
         st.session_state["workdir"] = str(default_dir)
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("Working directory")
 
+    # 1) Typed input
     dir_str = st.sidebar.text_input(
         "Set directory for output/temp files",
         value=st.session_state["workdir"],
+        help="Type/paste a path, or use Browse below to select a folder.",
     )
-
-    # update state if user changed it
     if dir_str:
         st.session_state["workdir"] = dir_str
 
-    WORKDIR = Path(st.session_state["workdir"]).expanduser()
+    # 2) In-app folder browser state
+    if "workdir_browse_cursor" not in st.session_state:
+        st.session_state["workdir_browse_cursor"] = str(default_dir)
+
+    typed_path = Path(st.session_state["workdir"]).expanduser()
+
+    # If typed workdir is valid, keep browse cursor aligned to it.
+    if typed_path.exists() and typed_path.is_dir():
+        st.session_state["workdir_browse_cursor"] = str(typed_path)
+
+    with st.sidebar.expander("Browse for folder", expanded=False):
+        cursor = Path(st.session_state["workdir_browse_cursor"]).expanduser()
+
+        if not cursor.exists() or not cursor.is_dir():
+            cursor = default_dir
+            st.session_state["workdir_browse_cursor"] = str(cursor)
+
+        st.caption(f"Browsing: `{cursor}`")
+
+        cols = st.columns(2)
+        if cols[0].button("Up one level", use_container_width=True, key="workdir_up"):
+            st.session_state["workdir_browse_cursor"] = str(cursor.parent)
+            st.rerun()
+
+        if cols[1].button("Use this folder", use_container_width=True, key="workdir_use_this"):
+            st.session_state["workdir"] = str(cursor)
+            st.rerun()
+
+        subdirs = _safe_list_subdirs(cursor)
+        if not subdirs:
+            st.info("No subfolders found here (or access is restricted).")
+        else:
+            choices = ["./ (this folder)"] + [p.name for p in subdirs]
+            pick = st.selectbox("Select a subfolder", choices, key="workdir_pick")
+
+            if st.button("Enter selected folder", use_container_width=True, key="workdir_enter"):
+                new_cursor = cursor if pick == "./ (this folder)" else (cursor / pick)
+                st.session_state["workdir_browse_cursor"] = str(new_cursor)
+                st.rerun()
+
+    # 3) Validate typed path and warn if needed (but keep your create-if-missing behavior)
+    typed_path = Path(st.session_state["workdir"]).expanduser()
+    if typed_path.exists() and not typed_path.is_dir():
+        st.sidebar.warning(
+            "The path you entered exists but is not a directory (it looks like a file). "
+            "Please choose a folder path instead."
+        )
+
+    # If it does not exist, warn that it will be created.
+    # If it exists and is a directory, no warning needed.
+    if not typed_path.exists():
+        st.sidebar.warning(
+            "This folder does not exist yet. MarkShark will create it when you run a job (and it will be used for outputs)."
+        )
+
+    # Finalize WORKDIR and create it (current behavior)
+    WORKDIR = typed_path
     WORKDIR.mkdir(parents=True, exist_ok=True)
+
     st.sidebar.caption(f"Currently using: {WORKDIR}")
     return WORKDIR
     
@@ -133,7 +199,7 @@ def _zip_dir_to_bytes(dir_path: Path) -> bytes:
 # --------------------- Sidebar ---------------------
 # image_url = "https://github.com/navarrew/markshark/blob/main/images/shark.png" 
 # st.sidebar.image(image_url, caption="MarkShark Logo", use_column_width=True)
-st.sidebar.title("MarkShark 1.0")
+st.sidebar.title("MarkShark Beta")
 page = st.sidebar.radio("Select below", ["1) Align scans", "2) Score", "3) Stats", "4) Bblmap visualizer", "5) Help"])
 
 # Initialize / show working directory selector

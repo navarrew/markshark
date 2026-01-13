@@ -23,7 +23,7 @@ from typing import Iterable, List, Optional, Tuple, Dict
 import cv2
 import numpy as np
 
-from ..bublmap_io import Bubblemap, GridLayout
+from .bubblemap_io import Bubblemap, GridLayout
 from ..defaults import SCORING_DEFAULTS
 
 

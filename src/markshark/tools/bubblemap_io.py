@@ -99,7 +99,7 @@ class Bubblemap:
     first_name_layout: GridLayout | None = None
     id_layout: GridLayout | None = None
     version_layout: GridLayout | None = None
-    total_numrows: int | None = None
+    total_questions: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +182,7 @@ def load_bublmap(path: str) -> Bubblemap:
                     bmap_dict["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
             setattr(bmap, opt_name, _parse_layout(opt_name, bmap_dict))
 
-    bmap.total_numrows = data.get("total_numrows")
+    bmap.total_questions = data.get("total_questions")
     return bmap
 
 
@@ -215,8 +215,8 @@ def dump_bublmap(bmap: Config, path: str) -> None:
         if layout is not None:
             data[opt_name] = layout_to_dict(layout)
 
-    if bmap.total_numrows is not None:
-        data["total_numrows"] = bmap.total_numrows
+    if bmap.total_questions is not None:
+        data["total_questions"] = bmap.total_questions
 
     with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False)

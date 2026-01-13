@@ -9,7 +9,7 @@ import typer
 from rich import print as rprint
 
 # Config loader that supports a YAML (.yaml/.yml) formatted map of the bubble sheet
-from .bublmap_io import load_bublmap
+from .tools.bubblemap_io import load_bublmap
 
 from .defaults import (
     SCORING_DEFAULTS,

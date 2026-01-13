@@ -27,7 +27,7 @@ from .defaults import (
     resolve_scored_pdf_path,
 )
 
-from .bublmap_io import load_bublmap, Bubblemap, GridLayout
+from .tools.bubblemap_io import load_bublmap, Bubblemap, GridLayout
 from .tools import io_pages as IO
 from .tools.score_tools import (
     process_page_all,

@@ -21,7 +21,7 @@ from typing import Tuple
 import cv2
 import numpy as np
 
-from .bublmap_io import load_bublmap, Bubblemap
+from .tools.bubblemap_io import load_bublmap, Bubblemap
 from .tools.visualizer_tools import draw_layout_circles
 from .tools import io_pages as IO
 
