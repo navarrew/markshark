@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+"""
+MarkShark
+align_core.py  —  MarkShark bubblesheet alignment engine
+"""
+
 import os
 import sys
 from types import SimpleNamespace

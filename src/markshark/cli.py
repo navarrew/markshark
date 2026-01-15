@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+"""
+MarkShark
+cli.py  —  MarkShark command line engine
+"""
+
 from __future__ import annotations
 
 import sys

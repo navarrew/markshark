@@ -8,6 +8,7 @@ This module implements:
 - Page binarization and per-ROI fill scoring.
 - Simple decision rules to select a single bubble per row or per column.
 - Helpers to decode text/ID layouts and answer layouts from an aligned page.
+- Multi-version key loading and version detection (NEW)
 
 Conventions:
 - Layout coordinates are normalized fractions of width/height (0..1).
@@ -19,6 +20,7 @@ Conventions:
 from __future__ import annotations
 
 from typing import Iterable, List, Optional, Tuple, Dict
+import re
 
 import cv2
 import numpy as np
@@ -308,7 +310,7 @@ def calibrate_fixed_thresh_for_page(
         rois_all.extend(rois)
         # Row-major ordering: each row is a contiguous run of length layout.numcols
         for r in range(int(layout.numrows)):
-            row_groups.append((base + r * int(layout.numrows), int(layout.numcols)))
+            row_groups.append((base + r * int(layout.numcols), int(layout.numcols)))
 
     stats_default: Dict[str, float] = {
         "q": float("nan"),
@@ -394,38 +396,84 @@ def calibrate_fixed_thresh_for_page(
     return int(best_thresh), best_stats
 
 
+# ------------------------------------------------------------------------------
+# Bubble selection (per-row or per-column)
+# ------------------------------------------------------------------------------
+
 def _pick_single_from_scores(
-    best_first: np.ndarray,
+    scores: np.ndarray,
+    min_fill: float,
+    top2_ratio: float,
+    min_score: float,
+) -> Optional[int]:
+    """Pick a single bubble index from a row/col, or None if unclear."""
+    if scores.size == 0:
+        return None
+    
+    sorted_idx = np.argsort(scores)[::-1]
+    best_idx = int(sorted_idx[0])
+    best_val = float(scores[best_idx])
+    
+    # Reject if too light
+    if best_val < min_fill:
+        return None
+    
+    # Check for ties
+    if scores.size > 1:
+        second_val = float(scores[sorted_idx[1]])
+        if second_val > top2_ratio * best_val:
+            return None  # ambiguous
+        if 100.0 * (best_val - second_val) < min_score:
+            return None  # too close
+    
+    return best_idx
+
+
+def select_per_row(
+    scores: List[float],
+    rows: int,
+    cols: int,
     min_fill: float = SCORING_DEFAULTS.min_fill,
     top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
     min_score: float = SCORING_DEFAULTS.min_score,
-) -> Optional[int]:
-    """Pick a single winner index from a 1D vector of scores.
+) -> List[Optional[int]]:
+    """For each row, pick one column index or None."""
+    arr = np.asarray(scores, dtype=float)
+    if arr.size != int(rows) * int(cols):
+        raise ValueError(f"scores length {arr.size} != rows*cols {rows*cols}")
 
-    Returns None for blank or ambiguous (multi-mark) cases.
-    """
-    if best_first.size == 0:
-        return None
-
-    order = np.argsort(best_first)[::-1]
-    best_idx = int(order[0])
-    top = float(best_first[best_idx])
-    second = float(best_first[int(order[1])]) if best_first.size > 1 else 0.0
-
-    # Blank rule: require a minimum absolute fill
-    if top < (float(min_fill)):
-        return None
-
-    # Separation between best bubble and second best bubble rules
-    sep_score = (top - second) * 100.0           # absolute gap in percentage points between top and next best
-    sep_ratio_ok = (second <= top * float(top2_ratio))  # ratio separation between top and next best bubbles
-
-    if (sep_score >= float(min_score)) or sep_ratio_ok:
-        return best_idx
-
-    return None
+    picked: List[Optional[int]] = []
+    cols_i = int(cols)
+    for r in range(int(rows)):
+        row_slice = arr[r * cols_i : (r + 1) * cols_i]
+        picked.append(_pick_single_from_scores(row_slice, min_fill, top2_ratio, min_score))
+    return picked
 
 
+def select_per_col(
+    scores: List[float],
+    rows: int,
+    cols: int,
+    min_fill: float = SCORING_DEFAULTS.min_fill,
+    top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
+    min_score: float = SCORING_DEFAULTS.min_score,
+) -> List[Optional[int]]:
+    """For each column, pick one row index or None."""
+    arr = np.asarray(scores, dtype=float)
+    if arr.size != int(rows) * int(cols):
+        raise ValueError(f"scores length {arr.size} != rows*cols {rows*cols}")
+
+    picked: List[Optional[int]] = []
+    cols_i = int(cols)
+    for c in range(cols_i):
+        col_slice = arr[c::cols_i]
+        picked.append(_pick_single_from_scores(col_slice, min_fill, top2_ratio, min_score))
+    return picked
+
+
+# ------------------------------------------------------------------------------
+# Helper for scores_to_labels_row (used in annotation)
+# ------------------------------------------------------------------------------
 
 def scores_to_labels_row(
     scores: List[float],
@@ -504,49 +552,6 @@ def scores_to_labels_row(
     return out
 
 
-
-def select_per_row(
-    scores: List[float],
-    rows: int,
-    cols: int,
-    min_fill: float = SCORING_DEFAULTS.min_fill,
-    top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
-    min_score: float = SCORING_DEFAULTS.min_score,
-) -> List[Optional[int]]:
-    """For each row, pick one column index or None."""
-    arr = np.asarray(scores, dtype=float)
-    if arr.size != int(rows) * int(cols):
-        raise ValueError(f"scores length {arr.size} != rows*cols {rows*cols}")
-
-    picked: List[Optional[int]] = []
-    cols_i = int(cols)
-    for r in range(int(rows)):
-        row_slice = arr[r * cols_i : (r + 1) * cols_i]
-        picked.append(_pick_single_from_scores(row_slice, min_fill, top2_ratio, min_score))
-    return picked
-
-
-def select_per_col(
-    scores: List[float],
-    rows: int,
-    cols: int,
-    min_fill: float = SCORING_DEFAULTS.min_fill,
-    top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
-    min_score: float = SCORING_DEFAULTS.min_score,
-) -> List[Optional[int]]:
-    """For each column, pick one row index or None."""
-    arr = np.asarray(scores, dtype=float)
-    if arr.size != int(rows) * int(cols):
-        raise ValueError(f"scores length {arr.size} != rows*cols {rows*cols}")
-
-    picked: List[Optional[int]] = []
-    cols_i = int(cols)
-    for c in range(cols_i):
-        col_slice = arr[c::cols_i]
-        picked.append(_pick_single_from_scores(col_slice, min_fill, top2_ratio, min_score))
-    return picked
-
-
 # ------------------------------------------------------------------------------
 # Zone decoding
 # ------------------------------------------------------------------------------
@@ -619,15 +624,222 @@ def indices_to_text_col(picked: List[Optional[int]], row_labels: str) -> str:
 
 
 # ------------------------------------------------------------------------------
-# Key handling & scoring
+# Multi-version key handling (NEW)
+# ------------------------------------------------------------------------------
+
+def load_multi_version_keys(path: str) -> Dict[str, List[str]]:
+    """
+    Load a multi-version answer key file.
+    
+    Format:
+        #A
+        C,E,C,B,D,B,C,B,D,A...
+        #B
+        E,C,D,A,B,D,B,C,E,C...
+        #1
+        D,E,A,C,B,E,D,C,A,B...
+    
+    Rules:
+    - Version identifier: # followed by version name (strip whitespace)
+    - Answer line: comma-separated letters (strip whitespace, convert to uppercase)
+    - Comments: lines starting with ## or # followed by space
+    - Blank lines ignored
+    
+    Returns:
+        Dict mapping version names (e.g., "A", "B", "1") to list of answer letters
+    """
+    keys: Dict[str, List[str]] = {}
+    current_version: Optional[str] = None
+    
+    with open(path, "r", encoding="utf-8") as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            
+            # Skip blank lines
+            if not line:
+                continue
+            
+            # Skip comment lines (## or # followed by space)
+            if line.startswith("##") or (line.startswith("# ") and len(line) > 2):
+                continue
+            
+            # Version identifier line
+            if line.startswith("#"):
+                version_name = line[1:].strip().upper()
+                if not version_name:
+                    raise ValueError(f"Line {line_num}: Empty version identifier")
+                current_version = version_name
+                if current_version in keys:
+                    raise ValueError(f"Line {line_num}: Duplicate version '{current_version}'")
+                keys[current_version] = []
+                continue
+            
+            # Answer line
+            if current_version is None:
+                raise ValueError(
+                    f"Line {line_num}: Answer line found before any version identifier. "
+                    f"Expected a line like '#A' first."
+                )
+            
+            # Parse comma-separated answers
+            answers = [a.strip().upper() for a in line.split(",") if a.strip()]
+            
+            if not answers:
+                raise ValueError(f"Line {line_num}: Empty answer line for version '{current_version}'")
+            
+            # Validate: all answers should be single letters
+            for ans in answers:
+                if len(ans) != 1 or not ans.isalpha():
+                    raise ValueError(
+                        f"Line {line_num}: Invalid answer '{ans}' (must be single letter)"
+                    )
+            
+            # Append to current version (allows multi-line keys if needed)
+            keys[current_version].extend(answers)
+    
+    if not keys:
+        raise ValueError(f"No valid version keys found in {path}")
+    
+    # Validate all versions have same number of questions
+    key_lengths = {ver: len(ans) for ver, ans in keys.items()}
+    if len(set(key_lengths.values())) > 1:
+        length_str = ", ".join(f"{ver}: {n}" for ver, n in key_lengths.items())
+        raise ValueError(f"Version keys have different lengths: {length_str}")
+    
+    return keys
+
+
+def detect_version_from_bubble(
+    img_bgr: np.ndarray,
+    bmap: Bubblemap,
+    *,
+    min_fill: float = SCORING_DEFAULTS.min_fill,
+    top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
+    min_score: float = SCORING_DEFAULTS.min_score,
+    fixed_thresh: Optional[int] = None,
+) -> Tuple[str, bool]:
+    """
+    Detect the exam version from the version_layout bubbles.
+    
+    Returns:
+        (version_string, is_confident)
+        
+        - version_string: "A", "B", "C", etc. or "" if unclear
+        - is_confident: True if version was clearly marked, False if ambiguous
+    """
+    if not bmap.version_layout:
+        return "", False
+    
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    
+    picked, _, scores = decode_layout(
+        gray,
+        bmap.version_layout,
+        min_fill=min_fill,
+        top2_ratio=top2_ratio,
+        min_score=min_score,
+        fixed_thresh=fixed_thresh,
+    )
+    
+    labels = list(bmap.version_layout.labels or "ABCD")
+    
+    # For row-based version selection (typical)
+    if bmap.version_layout.selection_axis == "row":
+        if not picked or picked[0] is None:
+            return "", False
+        idx = picked[0]
+        if 0 <= idx < len(labels):
+            return labels[idx], True
+        return "", False
+    
+    # For column-based (unusual but supported)
+    version_str = indices_to_text_col(picked, bmap.version_layout.labels or "ABCD").strip()
+    return version_str, bool(version_str)
+
+
+def score_against_multi_keys(
+    student_answers: List[Optional[str]],
+    version: str,
+    keys_dict: Dict[str, List[str]],
+) -> Tuple[int, int, str]:
+    """
+    Score student answers against the appropriate version key.
+    
+    Args:
+        student_answers: List of student's answers (can contain None or multi-marks like "A,B")
+        version: Version identifier ("A", "B", etc.)
+        keys_dict: Dict mapping versions to answer keys
+    
+    Returns:
+        (correct_count, total_questions, version_used)
+        
+        - version_used may differ from input version if auto-detection was used
+    """
+    # If version not found, try auto-detection by scoring against all versions
+    if version not in keys_dict:
+        if not keys_dict:
+            return 0, len(student_answers), ""
+        
+        # Try all versions and use the one with highest score
+        best_version = ""
+        best_score = -1
+        
+        for ver, key in keys_dict.items():
+            correct = 0
+            total = min(len(student_answers), len(key))
+            for ans, k in zip(student_answers[:total], key[:total]):
+                if ans and ans == k:
+                    correct += 1
+            if correct > best_score:
+                best_score = correct
+                best_version = ver
+        
+        version = best_version + "*"  # Mark as auto-detected
+    
+    # Score against the selected version
+    key = keys_dict.get(version.rstrip("*"), [])
+    total = min(len(student_answers), len(key))
+    correct = 0
+    
+    for ans, k in zip(student_answers[:total], key[:total]):
+        # Only count single-mark answers
+        if ans is None or ans == "":
+            continue
+        if "," in ans:  # Multi-mark
+            continue
+        if ans == k:
+            correct += 1
+    
+    return correct, total, version
+
+
+# ------------------------------------------------------------------------------
+# Backward compatibility wrappers
 # ------------------------------------------------------------------------------
 
 def load_key_txt(path: str) -> List[str]:
-    """Load an answer key from a text file, one letter per line."""
-    with open(path, "r", encoding="utf-8") as f:
-        raw = f.read()
-    chars = [c for c in raw if c.isalpha()]
-    return [c.upper() for c in chars]
+    """
+    Load answer key(s) from a text file.
+    
+    Supports both formats:
+    - Legacy: one letter per line (returns as single-version key)
+    - New: multi-version format with #Version headers
+    
+    Returns single key list for backward compatibility.
+    If multi-version file, returns first version found.
+    """
+    try:
+        # Try loading as multi-version first
+        keys_dict = load_multi_version_keys(path)
+        # Return first version for backward compatibility
+        first_version = sorted(keys_dict.keys())[0]
+        return keys_dict[first_version]
+    except ValueError:
+        # Fall back to legacy format (one letter per line)
+        with open(path, "r", encoding="utf-8") as f:
+            raw = f.read()
+        chars = [c for c in raw if c.isalpha()]
+        return [c.upper() for c in chars]
 
 
 def score_against_key(selections: List[Optional[str]], key: List[str]) -> Tuple[int, int]:
@@ -693,20 +905,15 @@ def process_page_all(
         info["student_id"] = indices_to_text_col(picked, bmap.id_layout.labels or "0123456789").strip()
 
     if bmap.version_layout:
-        picked, _, _ = decode_layout(
-            gray,
-            bmap.version_layout,
+        version_str, confident = detect_version_from_bubble(
+            img_bgr, bmap,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_score=min_score,
             fixed_thresh=fixed_thresh,
         )
-        if bmap.version_layout.selection_axis == "row":
-            idx = picked[0] if picked else None
-            labels = list(bmap.version_layout.labels or "ABCD")
-            info["version"] = labels[idx] if idx is not None and 0 <= idx < len(labels) else ""
-        else:
-            info["version"] = indices_to_text_col(picked, bmap.version_layout.labels or "ABCD").strip()
+        info["version"] = version_str
+        info["version_confident"] = confident
 
     answers: List[Optional[str]] = []
     for layout in bmap.answer_layouts:

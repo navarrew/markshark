@@ -4,8 +4,9 @@ MarkShark
 score_core.py  —  Axis-based MarkShark grading engine
 
 Features:
+ - Multi-version exam support (NEW)
  - CSV includes: correct, incorrect, blank, multi, percent
- - KEY row written below header (when a key is provided)
+ - KEY row(s) written below header (when key(s) provided)
  - Annotated PNGs:
      * Names/ID: blue circles, optional white % text
      * Answers: green=correct, red=incorrect, grey=blank, orange=multi
@@ -16,7 +17,7 @@ Features:
 from __future__ import annotations
 import os
 import csv
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict
 
 import numpy as np
 import cv2
@@ -32,10 +33,12 @@ from .tools import io_pages as IO
 from .tools.score_tools import (
     process_page_all,
     load_key_txt,
+    load_multi_version_keys,
+    score_against_multi_keys,
     grid_centers_axis_mode,
     centers_to_circle_rois,
     roi_fill_scores,
-    calibrate_fixed_thresh_for_page
+    calibrate_fixed_thresh_for_page,
 )
 
 
@@ -317,12 +320,6 @@ box_top_extra: Optional[int] = None,
 
                 cv2.circle(out, (cx, cy), radius, col, thickness, lineType=cv2.LINE_AA)
 
-                #here we add the text for the density of the pencil marks in the bubble
-#                 if label_density:
-#                     pct = int(round(100 * row_scores[c]))
-#                     cv2.putText(out, f"{pct}", (cx - 8, cy + 5),
-#                                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 255), 1, cv2.LINE_AA)
-
                 if label_density:
                     pct = int(round(100 * row_scores[c]))
                 
@@ -380,25 +377,49 @@ def score_pdf(
     
     """
     Grade a PDF or image stack using axis-based geometry.
+    
+    NEW: Multi-version exam support!
 
     Behavior:
+      - Detects version from version_layout bubbles
+      - Loads multi-version keys if key file contains #Version headers
+      - Scores each student against their version's key
       - If key is provided: limit output columns and scoring to first len(key) questions.
       - CSV includes metrics: correct, incorrect, blank, multi, percent.
-      - If a key is provided, a KEY row is written under the header.
+      - KEY row(s) written under header (one per version).
       - Annotated images combine blue name/ID overlays and answer overlays.
     """
     bmap: Bubblemap = load_bublmap(bublmap_path)
     pages = IO.load_pages(input_path, dpi=dpi, renderer=pdf_renderer)
-    key: Optional[List[str]] = load_key_txt(key_txt) if key_txt else None
+    
+    # Try loading multi-version keys, fall back to single version
+    keys_dict: Optional[Dict[str, List[str]]] = None
+    single_key: Optional[List[str]] = None
+    
+    if key_txt:
+        try:
+            keys_dict = load_multi_version_keys(key_txt)
+        except Exception:
+            # Fall back to single-version key
+            single_key = load_key_txt(key_txt)
+            if single_key:
+                keys_dict = {"A": single_key}  # Default to version A
 
     total_q = sum(a.numrows for a in bmap.answer_layouts)
-    q_out = len(key) if key else total_q
+    
+    if keys_dict:
+        # Use length of first version key
+        first_version = sorted(keys_dict.keys())[0]
+        q_out = len(keys_dict[first_version])
+    else:
+        q_out = total_q
+    
     q_out = max(0, min(q_out, total_q))
 
     # Make the CSV header
     header = ["Version", "Page", "LastName", "FirstName", "StudentID"]
 
-    if key:
+    if keys_dict:
         header += ["Correct", "Incorrect", "Blank", "Multi", "Percent"]
     else:
         header += ["Blank"]
@@ -429,12 +450,16 @@ def score_pdf(
             pdf_writer = IO.PdfPageWriter(out_pdf_path, dpi=dpi)
         except Exception:
             pdf_writer = None
+            
     with open(out_csv, "w", newline="", encoding="utf-8") as f:
         outputcsv = csv.writer(f)
         outputcsv.writerow(header)
-        if key:
-            key_row = ["", "0", "KEY", "KEY", "KEY"] + ["", "", "", "", ""] + key[:q_out] 
-            outputcsv.writerow(key_row)
+        
+        # Write KEY row(s) - one per version if multi-version
+        if keys_dict:
+            for ver in sorted(keys_dict.keys()):
+                key_row = [ver, "0", "KEY", "KEY", "KEY"] + ["", "", "", "", ""] + keys_dict[ver][:q_out]
+                outputcsv.writerow(key_row)
 
         for page_idx, img_bgr in enumerate(pages, start=1):
             # Per-page calibration for lightly marked sheets
@@ -446,44 +471,57 @@ def score_pdf(
                     verbose=verbose_calibration,
                 )
             # Decode all fields using the shared axis-mode pipeline
-            info, answers = process_page_all(img_bgr, bmap, min_fill=min_fill, top2_ratio=top2_ratio, min_score=min_score, fixed_thresh=page_fixed_thresh,)
+            info, answers = process_page_all(
+                img_bgr, bmap,
+                min_fill=min_fill,
+                top2_ratio=top2_ratio,
+                min_score=min_score,
+                fixed_thresh=page_fixed_thresh,
+            )
 
             # Limit answers to the Qs we output (based on key length if present)
             answers_out = answers[:q_out]
             answers_csv = [a if a is not None else "" for a in answers_out]
 
+            # Get detected version
+            student_version = info.get("version", "")
+            
             # Metrics
             blanks = sum(1 for a in answers_out if (a is None or a == ""))
             multi = sum(1 for a in answers_out if (isinstance(a, str) and "," in a))
             correct = incorrect = 0
+            percent = 0.0
+            version_used = student_version
+            key_out = None
 
-            if key:
-                key_out = key[:q_out]
-                for a, k in zip(answers_out, key_out):
-                    # Only score single-mark answers against the key.
-                    if a is None or a == "":
-                        continue
-                    if isinstance(a, str) and "," in a:
-                        continue
-                    if a == k:
-                        correct += 1
-                    else:
-                        incorrect += 1
-                percent = (100.0 * correct / max(1, len(key_out)))
-            else:
-                key_out = None
-                percent = 0.0
-
-# Compose CSV row
+            if keys_dict:
+                # Multi-version scoring
+                correct, total_scored, version_used = score_against_multi_keys(
+                    answers_out,
+                    student_version,
+                    keys_dict,
+                )
+                
+                # Count incorrect (total scored - blanks - multi - correct)
+                answered_single = sum(1 for a in answers_out if a and "," not in a)
+                incorrect = answered_single - correct
+                
+                percent = (100.0 * correct / max(1, total_scored))
+                
+                # Get the key for annotation
+                key_version = version_used.rstrip("*")
+                key_out = keys_dict.get(key_version, [])[:q_out]
+            
+            # Compose CSV row
             row = [
-                info.get("version", ""),
+                version_used,
                 str(page_idx),
                 info.get("last_name", ""),
                 info.get("first_name", ""),
                 info.get("student_id", ""),
             ] 
 
-            if key:
+            if keys_dict:
                 row += [str(correct), str(incorrect), str(blanks), str(multi), f"{percent:.1f}"]
             else:
                 row += [str(blanks)]
@@ -521,6 +559,7 @@ def score_pdf(
                         pdf_writer.add_page(vis)
                     else:
                         annotated_pages.append(vis)
+                        
     if out_pdf_path:
         if pdf_writer is not None:
             pdf_writer.close(save=True)
