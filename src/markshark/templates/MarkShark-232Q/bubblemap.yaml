@@ -4,10 +4,10 @@
 
 
 metadata:
-  display_name: "MarkShark 232 Question Template"
-  description: "232 questions, 5 choices (A-E)"
+  display_name: "MarkShark Double Test"
+  description: "128 questions, 5 choices (A-E)"
   pages: 2
-  total_questions: 232
+  total_questions: 128
   alignment:
     aruco:
       enabled: true
@@ -19,22 +19,22 @@ page_1:
 # Name blocks (select one row per column)
 # -----------------------------
   last_name_layout:
-    x_topleft: 0.3924
-    y_topleft: 0.1051
-    x_bottomright: 0.7527
-    y_bottomright: 0.5249
+    x_topleft: 0.3837
+    y_topleft: 0.1167
+    x_bottomright: 0.7641
+    y_bottomright: 0.5601
     radius_pct: 0.008
-    numrows: 27            # synonymous with rows (letters incl. leading space)
-    numcols: 14              # synonymous with columns (positions)
+    numrows: 27
+    numcols: 14
     bubble_shape: circle
     selection_axis: col
     labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-  
+
   first_name_layout:
-    x_topleft: 0.8029
-    y_topleft: 0.1051
-    x_bottomright: 0.9138
-    y_bottomright: 0.5249
+    x_topleft: 0.8205
+    y_topleft: 0.1167
+    x_bottomright: 0.9375
+    y_bottomright: 0.5601
     radius_pct: 0.008
     numrows: 27
     numcols: 5
@@ -46,10 +46,10 @@ page_1:
 # Student ID (select one row per column)
 # -----------------------------
   id_layout:
-    x_topleft: 0.0940
-    y_topleft: 0.1050
-    x_bottomright: 0.3435
-    y_bottomright: 0.2505
+    x_topleft: 0.0608
+    y_topleft: 0.4061
+    x_bottomright: 0.3208
+    y_bottomright: 0.5601
     radius_pct: 0.008
     numrows: 10           # rows 10
     numcols: 10             # 10 digit positions
@@ -61,10 +61,10 @@ page_1:
 # Test version (select one column in a single row)
 # -----------------------------
   version_layout:
-    x_topleft: 0.2453
-    y_topleft: 0.4178
-    x_bottomright: 0.3206
-    y_bottomright: 0.4178
+    x_topleft: 0.2271
+    y_topleft: 0.3182
+    x_bottomright: 0.3063
+    y_bottomright: 0.3185
     radius_pct: 0.008
     numrows: 1
     numcols: 4
@@ -76,91 +76,91 @@ page_1:
 # Answer blocks (select one column per row)
 # -----------------------------
   answer_layouts:
-    - x_topleft: 0.1311
-      y_topleft: 0.5592
-      x_bottomright: 0.2607
-      y_bottomright: 0.9301
+    - x_topleft: 0.0906
+      y_topleft: 0.6030
+      x_bottomright: 0.2373
+      y_bottomright: 0.9127
       radius_pct: 0.008
-      numrows: 20
+      numrows: 16
       numcols: 5
       bubble_shape: circle
       selection_axis: row
       labels: "ABCDE"
       
-    - x_topleft: 0.3425
-      y_topleft: 0.5592
-      x_bottomright: 0.4720
-      y_bottomright: 0.9301
+    - x_topleft: 0.3262
+      y_topleft: 0.6030
+      x_bottomright: 0.4728
+      y_bottomright: 0.9127
       radius_pct: 0.008
-      numrows: 20
+      numrows: 16
       numcols: 5
       bubble_shape: circle
       selection_axis: row
       labels: "ABCDE"
   
-    - x_topleft: 0.5538
-      y_topleft: 0.5592
-      x_bottomright: 0.6834
-      y_bottomright: 0.9301
+    - x_topleft: 0.5612
+      y_topleft: 0.6030
+      x_bottomright: 0.7084
+      y_bottomright: 0.9127
       radius_pct: 0.008
-      numrows: 20
+      numrows: 16
       numcols: 5
       bubble_shape: circle
       selection_axis: row
       labels: "ABCDE"
   
-    - x_topleft: 0.7651
-      y_topleft: 0.5592
-      x_bottomright: 0.8947
-      y_bottomright: 0.9301
+    - x_topleft: 0.7973
+      y_topleft: 0.6030
+      x_bottomright: 0.9439
+      y_bottomright: 0.9127
       radius_pct: 0.008
-      numrows: 20
+      numrows: 16
       numcols: 5
       bubble_shape: circle
       selection_axis: row
       labels: "ABCDE"
-
+      
 page_2:
   answer_layouts:
-    - x_topleft: 0.1311
-      y_topleft: 0.5592
-      x_bottomright: 0.2607
-      y_bottomright: 0.9301
+    - x_topleft: 0.0906
+      y_topleft: 0.6030
+      x_bottomright: 0.2373
+      y_bottomright: 0.9127
       radius_pct: 0.008
-      numrows: 20
+      numrows: 16
       numcols: 5
       bubble_shape: circle
       selection_axis: row
       labels: "ABCDE"
       
-    - x_topleft: 0.3425
-      y_topleft: 0.5592
-      x_bottomright: 0.4720
-      y_bottomright: 0.9301
+    - x_topleft: 0.3262
+      y_topleft: 0.6030
+      x_bottomright: 0.4728
+      y_bottomright: 0.9127
       radius_pct: 0.008
-      numrows: 20
+      numrows: 16
       numcols: 5
       bubble_shape: circle
       selection_axis: row
       labels: "ABCDE"
   
-    - x_topleft: 0.5538
-      y_topleft: 0.5592
-      x_bottomright: 0.6834
-      y_bottomright: 0.9301
+    - x_topleft: 0.5612
+      y_topleft: 0.6030
+      x_bottomright: 0.7084
+      y_bottomright: 0.9127
       radius_pct: 0.008
-      numrows: 20
+      numrows: 16
       numcols: 5
       bubble_shape: circle
       selection_axis: row
       labels: "ABCDE"
   
-    - x_topleft: 0.7651
-      y_topleft: 0.5592
-      x_bottomright: 0.8947
-      y_bottomright: 0.9301
+    - x_topleft: 0.7973
+      y_topleft: 0.6030
+      x_bottomright: 0.9439
+      y_bottomright: 0.9127
       radius_pct: 0.008
-      numrows: 20
+      numrows: 16
       numcols: 5
       bubble_shape: circle
       selection_axis: row
