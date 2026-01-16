@@ -28,7 +28,7 @@ from .defaults import (
     resolve_scored_pdf_path,
 )
 
-from .tools.bubblemap_io import load_bublmap, Bubblemap, GridLayout
+from .tools.bubblemap_io import load_bublmap, Bubblemap, GridLayout, PageLayout
 from .tools import io_pages as IO
 from .tools.score_tools import (
     process_page_all,
@@ -67,6 +67,115 @@ def _rowwise_scores(
         fixed_thresh=fixed_thresh,
     )
     return [flat[r * cols:(r + 1) * cols] for r in range(rows)]
+
+# ----------------------------
+# Multi-page support helper
+# ----------------------------
+
+def _process_single_page(
+    img_bgr: np.ndarray,
+    page_layout: 'PageLayout',
+    *,
+    min_fill: float,
+    top2_ratio: float,
+    min_score: float,
+    fixed_thresh: Optional[int] = None,
+) -> Tuple[dict, List[Optional[str]]]:
+    """
+    Process a single page using a specific PageLayout from a multi-page bubblemap.
+    Returns (info_dict, answers_list) for this page only.
+    """
+    from .tools.score_tools import decode_layout, indices_to_text_col
+    
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    
+    info = {"last_name": "", "first_name": "", "student_id": "", "version": ""}
+    
+    # Decode name/ID from this page (if layouts are present)
+    if page_layout.last_name_layout:
+        picked, _, _ = decode_layout(
+            gray,
+            page_layout.last_name_layout,
+            min_fill=min_fill,
+            top2_ratio=top2_ratio,
+            min_score=min_score,
+            fixed_thresh=fixed_thresh,
+        )
+        info["last_name"] = indices_to_text_col(
+            picked, page_layout.last_name_layout.labels or " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        ).strip()
+    
+    if page_layout.first_name_layout:
+        picked, _, _ = decode_layout(
+            gray,
+            page_layout.first_name_layout,
+            min_fill=min_fill,
+            top2_ratio=top2_ratio,
+            min_score=min_score,
+            fixed_thresh=fixed_thresh,
+        )
+        info["first_name"] = indices_to_text_col(
+            picked, page_layout.first_name_layout.labels or " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        ).strip()
+    
+    if page_layout.id_layout:
+        picked, _, _ = decode_layout(
+            gray,
+            page_layout.id_layout,
+            min_fill=min_fill,
+            top2_ratio=top2_ratio,
+            min_score=min_score,
+            fixed_thresh=fixed_thresh,
+        )
+        info["student_id"] = indices_to_text_col(
+            picked, page_layout.id_layout.labels or "0123456789"
+        ).strip()
+    
+    if page_layout.version_layout:
+        # Version detection (usually only on page 1)
+        picked, _, _ = decode_layout(
+            gray,
+            page_layout.version_layout,
+            min_fill=min_fill,
+            top2_ratio=top2_ratio,
+            min_score=min_score,
+            fixed_thresh=fixed_thresh,
+        )
+        if picked and len(picked) > 0 and picked[0] is not None:
+            labels = page_layout.version_layout.labels or "ABCD"
+            info["version"] = labels[picked[0]] if picked[0] < len(labels) else ""
+    
+    # Decode answers from this page
+    answers: List[Optional[str]] = []
+    for layout in page_layout.answer_layouts:
+        picked, _, scores = decode_layout(
+            gray,
+            layout,
+            min_fill=min_fill,
+            top2_ratio=top2_ratio,
+            min_score=min_score,
+            fixed_thresh=fixed_thresh,
+        )
+        choice_labels = list(layout.labels) if layout.labels else [chr(ord("A") + k) for k in range(layout.numcols)]
+        if layout.selection_axis == "row":
+            from .tools.score_tools import scores_to_labels_row
+            answers.extend(
+                scores_to_labels_row(
+                    scores,
+                    layout.numrows,
+                    layout.numcols,
+                    choice_labels,
+                    min_fill=min_fill,
+                    top2_ratio=top2_ratio,
+                    min_score=min_score,
+                )
+            )
+        else:
+            from .tools.score_tools import indices_to_labels_row
+            answers.extend(indices_to_labels_row(picked, layout.numcols, choice_labels))
+    
+    return info, answers
+
 
 # ----------------------------
 # Annotation helpers
@@ -228,6 +337,11 @@ box_top_extra: Optional[int] = None,
         label_to_idx = {str(lab).strip().upper(): i for i, lab in enumerate(choice_labels)}
 
         for r in range(layout.numrows):
+            # Skip annotation for questions beyond the answer key length
+            if answers_for_annotation is not None and q_global >= len(answers_for_annotation):
+                q_global += 1
+                continue
+            
             row_scores = M[r]
             order = np.argsort(row_scores)[::-1]
             best = int(order[0])
@@ -378,9 +492,13 @@ def score_pdf(
     """
     Grade a PDF or image stack using axis-based geometry.
     
+    NEW: Multi-page bubble sheet support!
     NEW: Multi-version exam support!
 
     Behavior:
+      - Supports single-page or multi-page bubble sheets
+      - For multi-page: processes pages in groups (page 1+2 = student 1, page 3+4 = student 2, etc.)
+      - Name/ID taken from page 1, answers combined from all pages
       - Detects version from version_layout bubbles
       - Loads multi-version keys if key file contains #Version headers
       - Scores each student against their version's key
@@ -388,6 +506,7 @@ def score_pdf(
       - CSV includes metrics: correct, incorrect, blank, multi, percent.
       - KEY row(s) written under header (one per version).
       - Annotated images combine blue name/ID overlays and answer overlays.
+      - Page column shows "1-2" for 2-page sheets, "1" for single-page
     """
     bmap: Bubblemap = load_bublmap(bublmap_path)
     pages = IO.load_pages(input_path, dpi=dpi, renderer=pdf_renderer)
@@ -405,7 +524,11 @@ def score_pdf(
             if single_key:
                 keys_dict = {"A": single_key}  # Default to version A
 
-    total_q = sum(a.numrows for a in bmap.answer_layouts)
+    # Calculate total questions across all pages
+    total_q = sum(
+        sum(layout.numrows for layout in page.answer_layouts)
+        for page in bmap.pages
+    )
     
     if keys_dict:
         # Use length of first version key
@@ -461,104 +584,313 @@ def score_pdf(
                 key_row = [ver, "0", "KEY", "KEY", "KEY"] + ["", "", "", "", ""] + keys_dict[ver][:q_out]
                 outputcsv.writerow(key_row)
 
-        for page_idx, img_bgr in enumerate(pages, start=1):
-            # Per-page calibration for lightly marked sheets
-            page_fixed_thresh = fixed_thresh
-            if fixed_thresh is None and auto_calibrate_thresh:
-                page_fixed_thresh, _calib_stats = calibrate_fixed_thresh_for_page(
-                    img_bgr,
-                    bmap,
-                    verbose=verbose_calibration,
-                )
-            # Decode all fields using the shared axis-mode pipeline
-            info, answers = process_page_all(
-                img_bgr, bmap,
-                min_fill=min_fill,
-                top2_ratio=top2_ratio,
-                min_score=min_score,
-                fixed_thresh=page_fixed_thresh,
-            )
-
-            # Limit answers to the Qs we output (based on key length if present)
-            answers_out = answers[:q_out]
-            answers_csv = [a if a is not None else "" for a in answers_out]
-
-            # Get detected version
-            student_version = info.get("version", "")
+        # Determine if multi-page mode
+        pages_per_student = bmap.num_pages
+        is_multipage = pages_per_student > 1
+        
+        if is_multipage:
+            # MULTI-PAGE MODE: Process pages in groups
+            num_students = len(pages) // pages_per_student
             
-            # Metrics
-            blanks = sum(1 for a in answers_out if (a is None or a == ""))
-            multi = sum(1 for a in answers_out if (isinstance(a, str) and "," in a))
-            correct = incorrect = 0
-            percent = 0.0
-            version_used = student_version
-            key_out = None
-
-            if keys_dict:
-                # Multi-version scoring
-                correct, total_scored, version_used = score_against_multi_keys(
-                    answers_out,
-                    student_version,
-                    keys_dict,
+            # Check for incomplete students (odd number of pages)
+            if len(pages) % pages_per_student != 0:
+                raise ValueError(
+                    f"ERROR: Input PDF has {len(pages)} pages, but template expects {pages_per_student} pages per student. "
+                    f"Expected a multiple of {pages_per_student} pages (got {len(pages) % pages_per_student} extra pages). "
+                    f"Please check your scans - each student should have exactly {pages_per_student} pages."
                 )
-                
-                # Count incorrect (total scored - blanks - multi - correct)
-                answered_single = sum(1 for a in answers_out if a and "," not in a)
-                incorrect = answered_single - correct
-                
-                percent = (100.0 * correct / max(1, total_scored))
-                
-                # Get the key for annotation
-                key_version = version_used.rstrip("*")
-                key_out = keys_dict.get(key_version, [])[:q_out]
             
-            # Compose CSV row
-            row = [
-                version_used,
-                str(page_idx),
-                info.get("last_name", ""),
-                info.get("first_name", ""),
-                info.get("student_id", ""),
-            ] 
-
-            if keys_dict:
-                row += [str(correct), str(incorrect), str(blanks), str(multi), f"{percent:.1f}"]
-            else:
-                row += [str(blanks)]
-
-            row += answers_csv
-            
-            outputcsv.writerow(row)
-
-            # Annotated image: names/IDs in blue (with optional %), then answers overlay
-            if out_annotated_dir or out_pdf_path:
-                vis = _annotate_names_ids(
-                    img_bgr,
-                    bmap,
-                    label_density=label_density,
-                    annotation_defaults=ANNOTATION_DEFAULTS,
-                )
-                vis = _annotate_answers(
-                    vis,
-                    bmap,
-                    key_out,
-                    answers_for_annotation=answers,
-                    label_density=label_density,
-                    annotate_all_cells=annotate_all_cells,
+            for student_idx in range(num_students):
+                # Get all pages for this student
+                start_page_idx = student_idx * pages_per_student
+                student_pages = pages[start_page_idx:start_page_idx + pages_per_student]
+                
+                # Process each page and collect data
+                all_answers = []
+                student_info = {}
+                page_thresholds = []
+                annotated_images = []
+                
+                for page_num, img_bgr in enumerate(student_pages, start=1):
+                    page_layout = bmap.get_page(page_num)
+                    
+                    # Per-page calibration
+                    page_fixed_thresh = fixed_thresh
+                    if fixed_thresh is None and auto_calibrate_thresh:
+                        # Use page 1 layout for calibration reference
+                        calib_page = bmap.get_page(1)
+                        if calib_page:
+                            # Create temp bmap-like object for calibration
+                            temp_bmap = type('TempBmap', (object,), {
+                                'answer_layouts': calib_page.answer_layouts,
+                                'last_name_layout': calib_page.last_name_layout,
+                                'first_name_layout': calib_page.first_name_layout,
+                                'id_layout': calib_page.id_layout,
+                            })()
+                            page_fixed_thresh, _calib_stats = calibrate_fixed_thresh_for_page(
+                                img_bgr,
+                                temp_bmap,
+                                verbose=verbose_calibration,
+                            )
+                    
+                    page_thresholds.append(page_fixed_thresh)
+                    
+                    # Process this page
+                    info, answers = _process_single_page(
+                        img_bgr, page_layout,
+                        min_fill=min_fill,
+                        top2_ratio=top2_ratio,
+                        min_score=min_score,
+                        fixed_thresh=page_fixed_thresh,
+                    )
+                    
+                    # Take student info from page 1
+                    if page_num == 1:
+                        student_info = info
+                    
+                    # Accumulate all answers
+                    all_answers.extend(answers)
+                
+                # Limit answers to key length
+                answers_out = all_answers[:q_out]
+                answers_csv = [a if a is not None else "" for a in answers_out]
+                
+                # Get detected version
+                student_version = student_info.get("version", "")
+                
+                # Metrics
+                blanks = sum(1 for a in answers_out if (a is None or a == ""))
+                multi = sum(1 for a in answers_out if (isinstance(a, str) and "," in a))
+                correct = incorrect = 0
+                percent = 0.0
+                version_used = student_version
+                key_out = None
+                
+                if keys_dict:
+                    # Multi-version scoring
+                    correct, total_scored, version_used = score_against_multi_keys(
+                        answers_out,
+                        student_version,
+                        keys_dict,
+                    )
+                    
+                    # Count incorrect
+                    answered_single = sum(1 for a in answers_out if a and "," not in a)
+                    incorrect = answered_single - correct
+                    
+                    percent = (100.0 * correct / max(1, total_scored))
+                    
+                    # Get the key for annotation
+                    key_version = version_used.rstrip("*")
+                    key_out = keys_dict.get(key_version, [])[:q_out]
+                
+                # Compose CSV row - Page column shows "1-2" for multi-page
+                page_range = f"1-{pages_per_student}" if pages_per_student > 1 else "1"
+                row = [
+                    version_used,
+                    page_range,
+                    student_info.get("last_name", ""),
+                    student_info.get("first_name", ""),
+                    student_info.get("student_id", ""),
+                ]
+                
+                if keys_dict:
+                    row += [str(correct), str(incorrect), str(blanks), str(multi), f"{percent:.1f}"]
+                else:
+                    row += [str(blanks)]
+                
+                row += answers_csv
+                
+                outputcsv.writerow(row)
+                
+                # Annotate all pages for this student
+                if out_annotated_dir or out_pdf_path:
+                    for page_num, img_bgr in enumerate(student_pages, start=1):
+                        page_layout = bmap.get_page(page_num)
+                        
+                        if page_layout is None:
+                            raise ValueError(f"Could not get layout for page {page_num}")
+                        
+                        # DEBUG: Verify we have the right page
+                        num_answer_layouts_this_page = len(page_layout.answer_layouts)
+                        if verbose_calibration:
+                            print(f"  Annotating page {page_num} with {num_answer_layouts_this_page} answer layout(s)")
+                            if num_answer_layouts_this_page > 0:
+                                first_layout = page_layout.answer_layouts[0]
+                                print(f"    First layout coords: ({first_layout.x_topleft:.4f}, {first_layout.y_topleft:.4f}) to ({first_layout.x_bottomright:.4f}, {first_layout.y_bottomright:.4f})")
+                                print(f"    First layout: {first_layout.numrows} rows × {first_layout.numcols} cols")
+                        
+                        page_fixed_thresh = page_thresholds[page_num - 1]
+                        
+                        # Get answers for this page only
+                        # Calculate which answers belong to this page
+                        answers_before_page = sum(
+                            sum(layout.numrows for layout in bmap.get_page(p).answer_layouts)
+                            for p in range(1, page_num)
+                        )
+                        answers_in_page = sum(layout.numrows for layout in page_layout.answer_layouts)
+                        
+                        # For annotation, we need the answers specific to THIS page
+                        # Slice from all_answers to get just this page's answers
+                        page_answers = all_answers[answers_before_page:answers_before_page + answers_in_page]
+                        
+                        # Limit to key length - only annotate answers that are within the key
+                        # But we need to account for the offset
+                        if q_out > answers_before_page:
+                            # Some or all of this page's questions are within the key
+                            page_answers_limit = min(answers_in_page, q_out - answers_before_page)
+                            page_answers_out = page_answers[:page_answers_limit]
+                        else:
+                            # This entire page is beyond the key length
+                            page_answers_out = []
+                        
+                        # Annotate with name/ID zones
+                        # Create a proper Bubblemap-like object from PageLayout
+                        temp_bmap_names = type('TempBmap', (object,), {
+                            'last_name_layout': page_layout.last_name_layout,
+                            'first_name_layout': page_layout.first_name_layout,
+                            'id_layout': page_layout.id_layout,
+                        })()
+                        
+                        vis = _annotate_names_ids(
+                            img_bgr,
+                            temp_bmap_names,
+                            label_density=label_density,
+                            annotation_defaults=ANNOTATION_DEFAULTS,
+                        )
+                        
+                        # Annotate with answer zones
+                        # Create a proper Bubblemap-like object from PageLayout
+                        temp_bmap_answers = type('TempBmap', (object,), {
+                            'answer_layouts': page_layout.answer_layouts,
+                        })()
+                        
+                        vis = _annotate_answers(
+                            vis,
+                            temp_bmap_answers,
+                            key_out[answers_before_page:answers_before_page + answers_in_page] if key_out else None,
+                            answers_for_annotation=page_answers_out,
+                            label_density=label_density,
+                            annotate_all_cells=annotate_all_cells,
+                            min_fill=min_fill,
+                            top2_ratio=top2_ratio,
+                            min_score=min_score,
+                            fixed_thresh=page_fixed_thresh,
+                            annotation_defaults=ANNOTATION_DEFAULTS,
+                        )
+                        
+                        # Save annotated page
+                        if out_annotated_dir:
+                            actual_page_num = start_page_idx + page_num
+                            out_png = os.path.join(out_annotated_dir, f"page_{actual_page_num:03d}_overlay.png")
+                            cv2.imwrite(out_png, vis)
+                        
+                        if out_pdf_path:
+                            if pdf_writer is not None:
+                                pdf_writer.add_page(vis)
+                            else:
+                                annotated_pages.append(vis)
+        
+        else:
+            # SINGLE-PAGE MODE: Original logic (unchanged)
+            for page_idx, img_bgr in enumerate(pages, start=1):
+                # Per-page calibration for lightly marked sheets
+                page_fixed_thresh = fixed_thresh
+                if fixed_thresh is None and auto_calibrate_thresh:
+                    page_fixed_thresh, _calib_stats = calibrate_fixed_thresh_for_page(
+                        img_bgr,
+                        bmap,
+                        verbose=verbose_calibration,
+                    )
+                # Decode all fields using the shared axis-mode pipeline
+                info, answers = process_page_all(
+                    img_bgr, bmap,
                     min_fill=min_fill,
                     top2_ratio=top2_ratio,
                     min_score=min_score,
                     fixed_thresh=page_fixed_thresh,
-                    annotation_defaults=ANNOTATION_DEFAULTS,
                 )
-                if out_annotated_dir:
-                    out_png = os.path.join(out_annotated_dir, f"page_{page_idx:03d}_overlay.png")
-                    cv2.imwrite(out_png, vis)
-                if out_pdf_path:
-                    if pdf_writer is not None:
-                        pdf_writer.add_page(vis)
-                    else:
-                        annotated_pages.append(vis)
+
+                # Limit answers to the Qs we output (based on key length if present)
+                answers_out = answers[:q_out]
+                answers_csv = [a if a is not None else "" for a in answers_out]
+
+                # Get detected version
+                student_version = info.get("version", "")
+                
+                # Metrics
+                blanks = sum(1 for a in answers_out if (a is None or a == ""))
+                multi = sum(1 for a in answers_out if (isinstance(a, str) and "," in a))
+                correct = incorrect = 0
+                percent = 0.0
+                version_used = student_version
+                key_out = None
+
+                if keys_dict:
+                    # Multi-version scoring
+                    correct, total_scored, version_used = score_against_multi_keys(
+                        answers_out,
+                        student_version,
+                        keys_dict,
+                    )
+                    
+                    # Count incorrect (total scored - blanks - multi - correct)
+                    answered_single = sum(1 for a in answers_out if a and "," not in a)
+                    incorrect = answered_single - correct
+                    
+                    percent = (100.0 * correct / max(1, total_scored))
+                    
+                    # Get the key for annotation
+                    key_version = version_used.rstrip("*")
+                    key_out = keys_dict.get(key_version, [])[:q_out]
+                
+                # Compose CSV row
+                row = [
+                    version_used,
+                    str(page_idx),
+                    info.get("last_name", ""),
+                    info.get("first_name", ""),
+                    info.get("student_id", ""),
+                ] 
+
+                if keys_dict:
+                    row += [str(correct), str(incorrect), str(blanks), str(multi), f"{percent:.1f}"]
+                else:
+                    row += [str(blanks)]
+
+                row += answers_csv
+                
+                outputcsv.writerow(row)
+
+                # Annotated image: names/IDs in blue (with optional %), then answers overlay
+                if out_annotated_dir or out_pdf_path:
+                    vis = _annotate_names_ids(
+                        img_bgr,
+                        bmap,
+                        label_density=label_density,
+                        annotation_defaults=ANNOTATION_DEFAULTS,
+                    )
+                    vis = _annotate_answers(
+                        vis,
+                        bmap,
+                        key_out,
+                        answers_for_annotation=answers_out,  # Only annotate questions in the key
+                        label_density=label_density,
+                        annotate_all_cells=annotate_all_cells,
+                        min_fill=min_fill,
+                        top2_ratio=top2_ratio,
+                        min_score=min_score,
+                        fixed_thresh=page_fixed_thresh,
+                        annotation_defaults=ANNOTATION_DEFAULTS,
+                    )
+                    if out_annotated_dir:
+                        out_png = os.path.join(out_annotated_dir, f"page_{page_idx:03d}_overlay.png")
+                        cv2.imwrite(out_png, vis)
+                    if out_pdf_path:
+                        if pdf_writer is not None:
+                            pdf_writer.add_page(vis)
+                        else:
+                            annotated_pages.append(vis)
                         
     if out_pdf_path:
         if pdf_writer is not None:

@@ -217,6 +217,23 @@ def apply_annotation_overrides(**kwargs) -> AnnotationDefaults:
     
     
 # ---------------------------
+# Template management
+# ---------------------------
+@dataclass(frozen=True)
+class TemplateDefaults:
+    """Template directory and discovery settings."""
+    # Default templates directory (can be overridden by MARKSHARK_TEMPLATES_DIR env var)
+    templates_dir: Optional[str] = None  # None means auto-detect (package dir or cwd/templates)
+    # Whether to auto-discover templates on startup
+    auto_discover: bool = True
+
+TEMPLATE_DEFAULTS = TemplateDefaults()
+
+def apply_template_overrides(**kwargs) -> TemplateDefaults:
+    return _dc_replace(TEMPLATE_DEFAULTS, **kwargs)
+
+
+# ---------------------------
 # Convenience: compile all knobs into a single object if desired
 # ---------------------------
 @dataclass(frozen=True)
@@ -228,13 +245,14 @@ class AllDefaults:
     feat: FeatureParams = FEAT_DEFAULTS
     matching: MatchParams = MATCH_DEFAULTS
     render: RenderParams = RENDER_DEFAULTS
+    template: TemplateDefaults = TEMPLATE_DEFAULTS
 
 ALL_DEFAULTS = AllDefaults()
 
 
 __all__ = [
-    "ScoringDefaults", "AlignDefaults", "EstParams", "FeatureParams", "MatchParams", "RenderParams", "AllDefaults", "AnnotationDefaults",
-    "SCORING_DEFAULTS", "ALIGN_DEFAULTS", "EST_DEFAULTS", "FEAT_DEFAULTS", "MATCH_DEFAULTS", "RENDER_DEFAULTS", "ALL_DEFAULTS", "ANNOTATION_DEFAULTS",
+    "ScoringDefaults", "AlignDefaults", "EstParams", "FeatureParams", "MatchParams", "RenderParams", "AllDefaults", "AnnotationDefaults", "TemplateDefaults",
+    "SCORING_DEFAULTS", "ALIGN_DEFAULTS", "EST_DEFAULTS", "FEAT_DEFAULTS", "MATCH_DEFAULTS", "RENDER_DEFAULTS", "ALL_DEFAULTS", "ANNOTATION_DEFAULTS", "TEMPLATE_DEFAULTS",
     "apply_scoring_overrides", "apply_align_overrides", "apply_est_overrides", "apply_feat_overrides", "apply_match_overrides", "apply_render_overrides",
-    "apply_annotation_overrides", "resolve_scored_pdf_path",
+    "apply_annotation_overrides", "apply_template_overrides", "resolve_scored_pdf_path",
 ]

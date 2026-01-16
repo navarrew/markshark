@@ -16,6 +16,7 @@ from rich import print as rprint
 
 # Config loader that supports a YAML (.yaml/.yml) formatted map of the bubble sheet
 from .tools.bubblemap_io import load_bublmap
+from .template_manager import TemplateManager, list_available_templates, get_template_by_name
 
 from .defaults import (
     SCORING_DEFAULTS,
@@ -254,6 +255,160 @@ def stats(
     if item_report_csv:
         rprint(f"[green]Item report:[/green] {item_report_csv}")
 
+
+
+# ------------------------------- TEMPLATES -------------------------------
+@app.command()
+def templates(
+    templates_dir: Optional[str] = typer.Option(None, "--templates-dir", "-d", help="Custom templates directory (default: auto-detect)"),
+    create_example: bool = typer.Option(False, "--create-example", help="Create an example template structure"),
+    validate: bool = typer.Option(False, "--validate", help="Validate all templates"),
+):
+    """
+    List available bubble sheet templates.
+    """
+    try:
+        manager = TemplateManager(templates_dir)
+        rprint(f"[cyan]Templates directory:[/cyan] {manager.templates_dir}")
+        rprint()
+        
+        if create_example:
+            example_dir = manager.create_example_template()
+            rprint(f"[green]Created example template at:[/green] {example_dir}")
+            rprint("[yellow]Note:[/yellow] You'll need to add actual PDF and populate the YAML with bubble coordinates.")
+            return
+        
+        templates = manager.scan_templates()
+        
+        if not templates:
+            rprint("[yellow]No templates found.[/yellow]")
+            rprint("Create a template directory with:")
+            rprint("  - templates/your_template_name/master_template.pdf")
+            rprint("  - templates/your_template_name/bubblemap.yaml")
+            return
+        
+        rprint(f"[cyan]Found {len(templates)} template(s):[/cyan]")
+        rprint()
+        
+        for template in templates:
+            rprint(f"[bold]{template.display_name}[/bold]")
+            rprint(f"  ID: {template.template_id}")
+            if template.description:
+                rprint(f"  Description: {template.description}")
+            if template.num_questions:
+                rprint(f"  Questions: {template.num_questions}")
+            if template.num_choices:
+                rprint(f"  Choices: {template.num_choices}")
+            rprint(f"  PDF: {template.template_pdf_path}")
+            rprint(f"  YAML: {template.bubblemap_yaml_path}")
+            
+            if validate:
+                is_valid, errors = manager.validate_template(template)
+                if is_valid:
+                    rprint(f"  [green]✓ Valid[/green]")
+                else:
+                    rprint(f"  [red]✗ Invalid:[/red]")
+                    for error in errors:
+                        rprint(f"    - {error}")
+            rprint()
+            
+    except Exception as e:
+        rprint(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=2)
+
+
+# ------------------------------- QUICK-GRADE -------------------------------
+@app.command()
+def quick_grade(
+    input_pdf: str = typer.Argument(..., help="Raw student scans PDF"),
+    template_id: str = typer.Option(..., "--template", "-t", help="Template ID or display name (use 'markshark templates' to list)"),
+    key_txt: Optional[str] = typer.Option(None, "--key-txt", "-k", help="Answer key file (optional)"),
+    out_csv: str = typer.Option("quick_grade_results.csv", "--out-csv", "-o", help="Output CSV of results"),
+    out_pdf: str = typer.Option("quick_grade_annotated.pdf", "--out-pdf", help="Output annotated PDF"),
+    out_dir: Optional[str] = typer.Option(None, "--out-dir", help="Output directory (default: same as out_csv)"),
+    dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Render DPI"),
+    templates_dir: Optional[str] = typer.Option(None, "--templates-dir", help="Custom templates directory"),
+    # Alignment options
+    align_method: str = typer.Option("auto", "--align-method", help="Alignment method: auto|aruco|feature"),
+    min_markers: int = typer.Option(ALIGN_DEFAULTS.min_aruco, "--min-markers", help="Min ArUco markers to accept"),
+    # Scoring options
+    min_fill: Optional[float] = typer.Option(None, "--min-fill", help=f"Min fill threshold (default: {SCORING_DEFAULTS.min_fill})"),
+    top2_ratio: Optional[float] = typer.Option(None, "--top2-ratio", help=f"Top2 ratio (default: {SCORING_DEFAULTS.top2_ratio})"),
+    min_score: Optional[float] = typer.Option(None, "--min-score", help=f"Min score (default: {SCORING_DEFAULTS.min_score})"),
+    annotate_all_cells: bool = typer.Option(False, "--annotate-all-cells", help="Draw every bubble in each row"),
+    label_density: bool = typer.Option(False, "--label-density", help="Overlay % fill text"),
+    auto_thresh: bool = typer.Option(SCORING_DEFAULTS.auto_calibrate_thresh, "--auto-thresh/--no-auto-thresh", help="Auto-calibrate threshold"),
+):
+    """
+    Quick grade: align + score in one command using a template.
+    """
+    try:
+        # Get template
+        template = get_template_by_name(template_id, templates_dir)
+        if not template:
+            rprint(f"[red]Template not found:[/red] {template_id}")
+            rprint("[yellow]Available templates:[/yellow]")
+            manager = TemplateManager(templates_dir)
+            for t in manager.scan_templates():
+                rprint(f"  - {t.display_name} (ID: {t.template_id})")
+            raise typer.Exit(code=2)
+        
+        rprint(f"[cyan]Using template:[/cyan] {template.display_name}")
+        
+        # Determine output directory
+        if out_dir is None:
+            out_dir = str(Path(out_csv).parent) if Path(out_csv).parent != Path('.') else "."
+        
+        out_dir_path = Path(out_dir)
+        out_dir_path.mkdir(parents=True, exist_ok=True)
+        
+        # Step 1: Align
+        rprint("[cyan]Step 1/2: Aligning scans...[/cyan]")
+        aligned_pdf = out_dir_path / "aligned_scans.pdf"
+        
+        align_out = align_pdf_scans(
+            input_pdf=input_pdf,
+            template=str(template.template_pdf_path),
+            out_pdf=str(aligned_pdf),
+            dpi=dpi,
+            align_method=align_method,
+            min_markers=min_markers,
+        )
+        rprint(f"[green]✓ Alignment complete:[/green] {aligned_pdf}")
+        
+        # Step 2: Score
+        rprint("[cyan]Step 2/2: Scoring sheets...[/cyan]")
+        
+        scoring = apply_scoring_overrides(
+            min_fill=min_fill if min_fill is not None else SCORING_DEFAULTS.min_fill,
+            top2_ratio=top2_ratio if top2_ratio is not None else SCORING_DEFAULTS.top2_ratio,
+            min_score=min_score if min_score is not None else SCORING_DEFAULTS.min_score,
+            auto_calibrate_thresh=auto_thresh,
+        )
+        
+        score_pdf(
+            input_path=str(aligned_pdf),
+            bublmap_path=str(template.bubblemap_yaml_path),
+            out_csv=out_csv,
+            key_txt=key_txt,
+            out_pdf=out_pdf,
+            dpi=dpi,
+            min_fill=scoring.min_fill,
+            top2_ratio=scoring.top2_ratio,
+            min_score=scoring.min_score,
+            auto_calibrate_thresh=scoring.auto_calibrate_thresh,
+            annotate_all_cells=annotate_all_cells,
+            label_density=label_density,
+        )
+        
+        rprint(f"[green]✅ Quick grade complete![/green]")
+        rprint(f"[green]Results:[/green] {out_csv}")
+        rprint(f"[green]Annotated PDF:[/green] {out_pdf}")
+        rprint(f"[green]Aligned scans:[/green] {aligned_pdf}")
+        
+    except Exception as e:
+        rprint(f"[red]Quick grade failed:[/red] {e}")
+        raise typer.Exit(code=2)
 
 
 # ------------------------------- GUI ---------------------------------

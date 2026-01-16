@@ -26,9 +26,12 @@ try:
         EST_DEFAULTS,
         ALIGN_DEFAULTS,
         RENDER_DEFAULTS,
+        TEMPLATE_DEFAULTS,
     )
+    from markshark.template_manager import TemplateManager, BubbleSheetTemplate
 except Exception:  # pragma: no cover
-    SCORING_DEFAULTS = FEAT_DEFAULTS = MATCH_DEFAULTS = EST_DEFAULTS = ALIGN_DEFAULTS = RENDER_DEFAULTS = None
+    SCORING_DEFAULTS = FEAT_DEFAULTS = MATCH_DEFAULTS = EST_DEFAULTS = ALIGN_DEFAULTS = RENDER_DEFAULTS = TEMPLATE_DEFAULTS = None
+    TemplateManager = BubbleSheetTemplate = None
 
 def _dflt(obj, attr: str, fallback):
     """Best-effort defaults helper when markshark.defaults is unavailable."""
@@ -48,94 +51,106 @@ def _safe_list_subdirs(p: Path, max_entries: int = 300) -> list[Path]:
         return []
 
 def _init_workdir() -> Path:
-    """
-    Initialize and display a working-directory selector.
-
-    Default: the directory you launched `streamlit run` from (os.getcwd()).
-    User can override via a text box in the sidebar.
-    Also provides a click-to-browse folder picker (in-app), since Streamlit
-    cannot open a native OS folder dialog by default.
-    """
     global WORKDIR
-
     default_dir = Path(os.getcwd()).expanduser()
 
-    # Seed session_state on first run
     if "workdir" not in st.session_state:
         st.session_state["workdir"] = str(default_dir)
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("Working directory")
 
-    # 1) Typed input
+    # Text input with better help text
     dir_str = st.sidebar.text_input(
-        "Set directory for output/temp files",
+        "Working directory path",
         value=st.session_state["workdir"],
-        help="Type/paste a path, or use Browse below to select a folder.",
+        help="💡 Tip: Copy/paste a path, or use the folder browser below",
     )
     if dir_str:
         st.session_state["workdir"] = dir_str
 
-    # 2) In-app folder browser state
-    if "workdir_browse_cursor" not in st.session_state:
-        st.session_state["workdir_browse_cursor"] = str(default_dir)
-
-    typed_path = Path(st.session_state["workdir"]).expanduser()
-
-    # If typed workdir is valid, keep browse cursor aligned to it.
-    if typed_path.exists() and typed_path.is_dir():
-        st.session_state["workdir_browse_cursor"] = str(typed_path)
-
-    with st.sidebar.expander("Browse for folder", expanded=False):
+    # Simplified browser with common locations
+    with st.sidebar.expander("📁 Browse for folder", expanded=False):
+        # Quick access to common locations
+        st.caption("**Quick locations:**")
+        col1, col2 = st.columns(2)
+        
+        if col1.button("🏠 Home", use_container_width=True):
+            st.session_state["workdir"] = str(Path.home())
+            st.rerun()
+        
+        if col2.button("💼 Desktop", use_container_width=True):
+            desktop = Path.home() / "Desktop"
+            if desktop.exists():
+                st.session_state["workdir"] = str(desktop)
+                st.rerun()
+        
+        col3, col4 = st.columns(2)
+        
+        if col3.button("📄 Documents", use_container_width=True):
+            docs = Path.home() / "Documents"
+            if docs.exists():
+                st.session_state["workdir"] = str(docs)
+                st.rerun()
+        
+        if col4.button("⬇️ Downloads", use_container_width=True):
+            downloads = Path.home() / "Downloads"
+            if downloads.exists():
+                st.session_state["workdir"] = str(downloads)
+                st.rerun()
+        
+        st.divider()
+        
+        # Current location browser
+        if "workdir_browse_cursor" not in st.session_state:
+            st.session_state["workdir_browse_cursor"] = st.session_state["workdir"]
+        
         cursor = Path(st.session_state["workdir_browse_cursor"]).expanduser()
-
+        
         if not cursor.exists() or not cursor.is_dir():
             cursor = default_dir
             st.session_state["workdir_browse_cursor"] = str(cursor)
-
-        st.caption(f"Browsing: `{cursor}`")
-
+        
+        st.caption(f"**Current location:**")
+        st.code(str(cursor), language=None)
+        
+        # Navigation buttons
         cols = st.columns(2)
-        if cols[0].button("Up one level", use_container_width=True, key="workdir_up"):
+        if cols[0].button("⬆️ Up one level", use_container_width=True):
             st.session_state["workdir_browse_cursor"] = str(cursor.parent)
             st.rerun()
-
-        if cols[1].button("Use this folder", use_container_width=True, key="workdir_use_this"):
+        
+        if cols[1].button("✅ Use this folder", use_container_width=True, type="primary"):
             st.session_state["workdir"] = str(cursor)
             st.rerun()
-
-        subdirs = _safe_list_subdirs(cursor)
-        if not subdirs:
-            st.info("No subfolders found here (or access is restricted).")
+        
+        # Subdirectories list
+        subdirs = _safe_list_subdirs(cursor) or []
+        subdirs = [d for d in subdirs if not d.name.startswith(".")]
+        if subdirs:
+            st.caption("**Subfolders:**")
+            for subdir in subdirs[:15]:  # Limit to 10 for cleaner UI
+                
+                if st.button(f"📁 {subdir.name}", use_container_width=True, key=f"nav_{subdir.name}"):
+                    st.session_state["workdir_browse_cursor"] = str(subdir)
+                    st.rerun()
+            
+            if len(subdirs) > 15:
+                st.caption(f"... and {len(subdirs) - 15} more folders")
         else:
-            choices = ["./ (this folder)"] + [p.name for p in subdirs]
-            pick = st.selectbox("Select a subfolder", choices, key="workdir_pick")
+            st.info("No subfolders here")
 
-            if st.button("Enter selected folder", use_container_width=True, key="workdir_enter"):
-                new_cursor = cursor if pick == "./ (this folder)" else (cursor / pick)
-                st.session_state["workdir_browse_cursor"] = str(new_cursor)
-                st.rerun()
-
-    # 3) Validate typed path and warn if needed (but keep your create-if-missing behavior)
+    # Validation
     typed_path = Path(st.session_state["workdir"]).expanduser()
-    if typed_path.exists() and not typed_path.is_dir():
-        st.sidebar.warning(
-            "The path you entered exists but is not a directory (it looks like a file). "
-            "Please choose a folder path instead."
-        )
-
-    # If it does not exist, warn that it will be created.
-    # If it exists and is a directory, no warning needed.
     if not typed_path.exists():
-        st.sidebar.warning(
-            "This folder does not exist yet. MarkShark will create it when you run a job (and it will be used for outputs)."
-        )
+        st.sidebar.warning("⚠️ This folder doesn't exist yet. It will be created when needed.")
+    elif not typed_path.is_dir():
+        st.sidebar.error("❌ This path is not a folder!")
 
-    # Finalize WORKDIR and create it (current behavior)
     WORKDIR = typed_path
     WORKDIR.mkdir(parents=True, exist_ok=True)
-
-    st.sidebar.caption(f"Currently using: {WORKDIR}")
+    
+    st.sidebar.success(f"✅ Using: `{WORKDIR.name}`")
     return WORKDIR
     
     
@@ -200,13 +215,210 @@ def _zip_dir_to_bytes(dir_path: Path) -> bytes:
 # image_url = "https://github.com/navarrew/markshark/blob/main/images/shark.png" 
 # st.sidebar.image(image_url, caption="MarkShark Logo", use_column_width=True)
 st.sidebar.title("MarkShark Beta")
-page = st.sidebar.radio("Select below", ["1) Align scans", "2) Score", "3) Stats", "4) Bblmap visualizer", "5) Help"])
+page = st.sidebar.radio("Select below", [
+    "0) Quick grade (Align + Score)",
+    "1) Align scans",
+    "2) Score",
+    "3) Stats",
+    "4) Bblmap visualizer",
+    "5) Template manager",
+    "6) Help"
+])
 
 # Initialize / show working directory selector
 _init_workdir()
 
+# ===================== 0) QUICK GRADE (UNIFIED WORKFLOW) =====================
+if page.startswith("0"):
+    st.header("Quick Grade: Align + Score in One Step")
+    st.markdown("""
+    Upload your **scanned answer sheets** and **answer key**, select a template, and MarkShark will:
+    1. Align the scans to the template
+    2. Score them automatically
+    """)
+    
+    # Top-of-page controls
+    top_col1, top_col2 = st.columns([1, 3])
+    with top_col1:
+        run_quick_grade = st.button("Run Quick Grade", type="primary")
+    with top_col2:
+        quick_status = st.empty()
+    
+    st.divider()
+    
+    # Initialize template manager
+    template_manager = None
+    if TemplateManager is not None:
+        try:
+            templates_dir = _dflt(TEMPLATE_DEFAULTS, "templates_dir", None)
+            template_manager = TemplateManager(templates_dir)
+        except Exception as e:
+            st.warning(f"Could not initialize template manager: {e}")
+    
+    colA, colB = st.columns(2)
+    with colA:
+        st.subheader("Inputs")
+        scans = _tempfile_from_uploader("Scanned answer sheets (PDF)", "quick_scans", types=("pdf",))
+        key_txt = _tempfile_from_uploader("Answer key (TXT)", "quick_key", types=("txt",))
+        
+        # Template selection
+        st.markdown("---")
+        st.subheader("Template Selection")
+        
+        template_choice = None
+        custom_template_pdf = None
+        custom_bublmap = None
+        
+        if template_manager is not None:
+            templates = template_manager.scan_templates()
+            
+            if templates:
+                template_names = ["(Upload custom files)"] + [str(t) for t in templates]
+                selected_name = st.selectbox("Select bubble sheet template", template_names)
+                
+                if selected_name != "(Upload custom files)":
+                    # Find the selected template
+                    for t in templates:
+                        if str(t) == selected_name:
+                            template_choice = t
+                            break
+                    
+                    if template_choice:
+                        st.success(f"Using template: **{template_choice.display_name}**")
+                        if template_choice.num_questions:
+                            st.caption(f"Questions: {template_choice.num_questions} | Choices: {template_choice.num_choices or 'N/A'}")
+            else:
+                st.info("No templates found. Upload custom files below or add templates to the templates directory.")
+        
+        # Custom upload option
+        if template_choice is None:
+            st.markdown("**Upload custom template files:**")
+            custom_template_pdf = _tempfile_from_uploader("Master template PDF", "quick_template_pdf", types=("pdf",))
+            custom_bublmap = _tempfile_from_uploader("Bubblemap YAML", "quick_bubblemap", types=("yaml", "yml"))
+    
+    with colB:
+        st.subheader("Options")
+        
+        # Output names
+        out_csv_name = st.text_input("Results CSV name", value="quick_grade_results.csv")
+        out_pdf_name = st.text_input("Annotated PDF name", value="quick_grade_annotated.pdf")
+        
+        st.markdown("---")
+        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 300)), step=1)
+        
+        # Scoring options
+        with st.expander("Scoring options", expanded=False):
+            annotate_all = st.checkbox("Annotate all bubbles", value=True)
+            label_density = st.checkbox("Show % fill labels", value=True)
+            auto_thresh = st.checkbox("Auto-calibrate threshold", value=_dflt(SCORING_DEFAULTS, "auto_calibrate_thresh", True))
+            verbose_thresh = st.checkbox("Verbose threshold calibration", value=True)
+            
+            min_fill = st.text_input("Min fill", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", "")))
+            min_score = st.text_input("Min score", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_score", "")))
+            top2_ratio = st.text_input("Top2 ratio", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", "")))
+        
+        # Alignment options
+        with st.expander("Alignment options", expanded=False):
+            align_method = st.selectbox("Alignment method", ["auto", "aruco", "feature"], index=0)
+            min_markers = st.number_input("Min ArUco markers", min_value=0, max_value=32, value=int(_dflt(ALIGN_DEFAULTS, "min_aruco", 4)), step=1)
+    
+    # Run quick grade workflow
+    if run_quick_grade:
+        # Validate inputs
+        if not scans:
+            quick_status.error("Please upload scanned answer sheets PDF")
+        elif template_choice is None and (not custom_template_pdf or not custom_bublmap):
+            quick_status.error("Please select a template or upload custom template files")
+        else:
+            # Determine template files to use
+            if template_choice:
+                template_pdf = template_choice.template_pdf_path
+                bublmap = template_choice.bubblemap_yaml_path
+            else:
+                template_pdf = custom_template_pdf
+                bublmap = custom_bublmap
+            
+            base = WORKDIR or Path(os.getcwd())
+            work_dir = Path(tempfile.mkdtemp(prefix="quick_grade_", dir=str(base)))
+            
+            try:
+                # Step 1: Align
+                quick_status.info("Step 1/2: Aligning scans to template...")
+                aligned_pdf = work_dir / "aligned_scans.pdf"
+                
+                align_args = [
+                    "align",
+                    str(scans),
+                    "--template", str(template_pdf),
+                    "--out-pdf", str(aligned_pdf),
+                    "--dpi", str(int(dpi)),
+                    "--align-method", align_method,
+                    "--min-markers", str(min_markers),
+                ]
+                
+                with st.spinner("Aligning scans..."):
+                    align_out = _run_cli(align_args)
+                    quick_status.success("✓ Alignment complete")
+                
+                # Step 2: Score
+                quick_status.info("Step 2/2: Scoring aligned sheets...")
+                out_csv = work_dir / out_csv_name
+                out_pdf = work_dir / out_pdf_name
+                
+                score_args = [
+                    "score",
+                    str(aligned_pdf),
+                    "--bublmap", str(bublmap),
+                    "--out-csv", str(out_csv),
+                    "--out-pdf", out_pdf_name,
+                    "--dpi", str(int(dpi)),
+                ]
+                
+                if key_txt:
+                    score_args += ["--key-txt", str(key_txt)]
+                if annotate_all:
+                    score_args += ["--annotate-all-cells"]
+                if label_density:
+                    score_args += ["--label-density"]
+                if not auto_thresh:
+                    score_args += ["--no-auto-thresh"]
+                if verbose_thresh:
+                    score_args += ["--verbose-thresh"]
+                if min_fill.strip():
+                    score_args += ["--min-fill", min_fill.strip()]
+                if top2_ratio.strip():
+                    score_args += ["--top2-ratio", top2_ratio.strip()]
+                if min_score.strip():
+                    score_args += ["--min-score", min_score.strip()]
+                
+                with st.spinner("Scoring sheets..."):
+                    score_out = _run_cli(score_args)
+                    quick_status.success("✅ Quick Grade complete!")
+                
+                # Display results
+                st.success("Processing complete!")
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    _download_file_button("📄 Download Results CSV", out_csv)
+                with col2:
+                    _download_file_button("📑 Download Annotated PDF", out_pdf)
+                with col3:
+                    _download_file_button("📋 Download Aligned Scans", aligned_pdf)
+                
+                # Show output logs
+                with st.expander("View processing logs", expanded=False):
+                    st.text("Alignment output:")
+                    st.code(align_out or "Done.", language="bash")
+                    st.text("Scoring output:")
+                    st.code(score_out or "Done.", language="bash")
+                    
+            except Exception as e:
+                quick_status.error(f"Error: {str(e)}")
+                st.exception(e)
+
 # ===================== 1) ALIGN SCANS =====================
-if page.startswith("1"):
+elif page.startswith("1"):
     st.header("Align raw scans to your template bubblesheet")
 
     # Top-of-page controls and status
@@ -501,18 +713,193 @@ elif page.startswith("4"):
 
 
 
-# ===================== 5) HELP =====================
-else:
+# ===================== 5) MANAGE TEMPLATES =====================
+elif page.startswith("5"):
+    st.header("Manage Bubble Sheet Templates")
+    
+    # Initialize template manager
+    template_manager = None
+    if TemplateManager is not None:
+        try:
+            templates_dir_path = _dflt(TEMPLATE_DEFAULTS, "templates_dir", None)
+            template_manager = TemplateManager(templates_dir_path)
+            
+            st.info(f"**Templates directory:** `{template_manager.templates_dir}`")
+            st.caption("You can change this by setting the MARKSHARK_TEMPLATES_DIR environment variable or editing defaults.py")
+        except Exception as e:
+            st.error(f"Could not initialize template manager: {e}")
+    else:
+        st.error("Template manager not available. Please ensure markshark.template_manager is installed.")
+    
+    if template_manager:
+        # Refresh button
+        if st.button("🔄 Refresh Template List"):
+            template_manager._templates_cache = None
+            st.rerun()
+        
+        st.divider()
+        
+        # Display existing templates
+        templates = template_manager.scan_templates(force_refresh=False)
+        
+        if templates:
+            st.subheader(f"Available Templates ({len(templates)})")
+            
+            for template in templates:
+                with st.expander(f"📋 {template.display_name}", expanded=False):
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        st.markdown(f"**Template ID:** `{template.template_id}`")
+                        if template.description:
+                            st.markdown(f"**Description:** {template.description}")
+                        if template.num_questions:
+                            st.markdown(f"**Questions:** {template.num_questions}")
+                        if template.num_choices:
+                            st.markdown(f"**Choices per question:** {template.num_choices}")
+                        
+                        st.markdown(f"**PDF:** `{template.template_pdf_path.name}`")
+                        st.markdown(f"**YAML:** `{template.bubblemap_yaml_path.name}`")
+                    
+                    with col2:
+                        # Validate template
+                        is_valid, errors = template_manager.validate_template(template)
+                        if is_valid:
+                            st.success("✅ Valid")
+                        else:
+                            st.error("❌ Invalid")
+                            for error in errors:
+                                st.caption(f"• {error}")
+                    
+                    # Show full paths
+                    with st.expander("Full paths"):
+                        st.code(str(template.template_pdf_path))
+                        st.code(str(template.bubblemap_yaml_path))
+        else:
+            st.warning("No templates found in the templates directory.")
+        
+        st.divider()
+        
+        # Add new template section
+        st.subheader("Add New Template")
+        
+        with st.expander("Upload new template files", expanded=False):
+            st.markdown("""
+            To add a new template:
+            1. Create a folder in the templates directory with a unique name (e.g., `my_custom_template`)
+            2. Place two files in that folder:
+               - `master_template.pdf` - The blank bubble sheet PDF
+               - `bubblemap.yaml` - The bubble zone configuration
+            3. Click "Refresh Template List" above
+            
+            Alternatively, use the form below to upload files and MarkShark will create the folder for you.
+            """)
+            
+            new_template_id = st.text_input(
+                "Template ID (folder name)",
+                placeholder="e.g., my_50q_test",
+                help="Use lowercase letters, numbers, and underscores only"
+            )
+            new_display_name = st.text_input(
+                "Display Name",
+                placeholder="e.g., My 50 Question Test",
+                help="Human-readable name shown in dropdowns"
+            )
+            new_description = st.text_input(
+                "Description (optional)",
+                placeholder="e.g., 50 questions, 4 choices (A-D)"
+            )
+            
+            new_pdf = st.file_uploader("Upload master template PDF", type=["pdf"], key="new_template_pdf")
+            new_yaml = st.file_uploader("Upload bubblemap YAML", type=["yaml", "yml"], key="new_template_yaml")
+            
+            if st.button("Create Template"):
+                if not new_template_id or not new_template_id.replace('_', '').isalnum():
+                    st.error("Please provide a valid template ID (letters, numbers, underscores only)")
+                elif not new_pdf or not new_yaml:
+                    st.error("Please upload both PDF and YAML files")
+                else:
+                    try:
+                        # Create template directory
+                        template_dir = template_manager.templates_dir / new_template_id
+                        if template_dir.exists():
+                            st.error(f"Template '{new_template_id}' already exists!")
+                        else:
+                            template_dir.mkdir(parents=True, exist_ok=True)
+                            
+                            # Save PDF
+                            pdf_path = template_dir / "master_template.pdf"
+                            pdf_path.write_bytes(new_pdf.getbuffer())
+                            
+                            # Load and update YAML with metadata
+                            yaml_data = yaml.safe_load(new_yaml.getvalue())
+                            if 'metadata' not in yaml_data:
+                                yaml_data['metadata'] = {}
+                            if new_display_name:
+                                yaml_data['metadata']['display_name'] = new_display_name
+                            if new_description:
+                                yaml_data['metadata']['description'] = new_description
+                            
+                            # Save YAML
+                            yaml_path = template_dir / "bubblemap.yaml"
+                            with open(yaml_path, 'w') as f:
+                                yaml.dump(yaml_data, f, default_flow_style=False, sort_keys=False)
+                            
+                            st.success(f"✅ Template '{new_template_id}' created successfully!")
+                            st.info("Click 'Refresh Template List' above to see your new template.")
+                            
+                    except Exception as e:
+                        st.error(f"Error creating template: {e}")
+        
+        # Directory structure helper
+        with st.expander("📁 Expected directory structure"):
+            st.code("""
+templates/
+├── my_template_1/
+│   ├── master_template.pdf
+│   └── bubblemap.yaml
+├── my_template_2/
+│   ├── master_template.pdf
+│   └── bubblemap.yaml
+└── ...
+            """, language="text")
+            
+            st.markdown("**bubblemap.yaml** can optionally include metadata:")
+            st.code("""
+metadata:
+  display_name: "My 50 Question Test"
+  description: "50 questions, 5 choices (A-E)"
+  num_questions: 50
+  num_choices: 5
+
+answer_rows:
+  # ... your bubble coordinates ...
+            """, language="yaml")
+
+
+# ===================== 6) HELP =====================
+elif page.startswith("6"):
     st.header("Help and CLI reference")
     st.markdown("""
-**Typical workflow**
-1. Align scans (raw student scans PDF + template PDF) to create an aligned PDF
-2. Grade the aligned PDF (aligned PDF + bubblemap YAML, optional key.txt) to get results.csv
-3. Compute stats from results.csv (item analysis, KR-20, plots)
-4. (Optional) Visualize your bubblemap overlay to verify bubble ROI placement
+**New Unified Workflow (Recommended)**
+- **Quick Grade**: Upload scanned answer sheets + answer key, select a template → get results instantly!
+
+**Traditional Workflow (Advanced)**
+1. **Manage Templates**: Set up your bubble sheet templates (once per template type)
+2. **Align scans**: Align raw student scans to template PDF → create aligned PDF
+3. **Score**: Grade the aligned PDF with bubblemap YAML and answer key → get results.csv
+4. **Stats**: Compute item analysis, KR-20, plots from results.csv
+5. **Visualize**: Verify bubblemap overlay on your template (for template creation)
+
+**About Templates**
+Templates combine the master bubble sheet PDF and its bubblemap YAML configuration.
+Store them in: `{template_dir}`
+Each template needs its own folder with:
+- `master_template.pdf` 
+- `bubblemap.yaml`
 
 If the GUI is missing something, the CLI is always the single source of truth.
-""")
+""".format(template_dir=template_manager.templates_dir if (template_manager and hasattr(template_manager, 'templates_dir')) else "templates/"))
 
     st.subheader("Show CLI help")
     topic = st.selectbox("Help topic", ["markshark", "align", "score", "stats", "visualize"], index=0)

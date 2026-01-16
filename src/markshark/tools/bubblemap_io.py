@@ -1,8 +1,8 @@
 """
 MarkShark
-bublmap_io.py
+bubblemap_io.py
 ------------
-Axis-based YAML bubblemap loader for MarkShark OMR.
+Axis-based YAML bubblemap loader for MarkShark OMR with multi-page support.
 
 Each bubble block in the bubblemap defines:
   x_topleft:      normalized X of the top-left bubble center   (0..1)
@@ -21,52 +21,27 @@ Each bubble block in the bubblemap defines:
                   - "row": select one column per row (answers, version-as-row)
                   - "col": select one row per column (names, ID)
 
-Example YAML snippets:
+Multi-page YAML structure:
 
-answer_layouts:
-  - x_topleft: 0.5931
-    y_topleft: 0.0626
-    x_bottomright: 0.9227
-    y_bottomright: 0.2458
-    radius_pct: 0.008
-    numrows: 16
-    numcols: 5
-    bubble_shape: circle
-    selection_axis: row      # pick A..E per question row
-    labels: ABCDE            # optional (auto A..E if omitted)
+metadata:
+  display_name: "Template Name"
+  description: "Description"
+  pages: 2  # Number of pages
+  total_questions: 128
 
-last_name_layout:
-  x_topleft: 0.1062
-  y_topleft: 0.3591
-  x_bottomright: 0.5690
-  y_bottomright: 0.7693
-  radius_pct: 0.008
-  numrows: 27
-  numcols: 14
-  selection_axis: col       # pick a letter (row) per column (position)
-  labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # rows = 27
+page_1:
+  last_name_layout: { ... }
+  first_name_layout: { ... }
+  id_layout: { ... }
+  version_layout: { ... }
+  answer_layouts:
+    - { ... }
 
-id_layout:
-  x_topleft: 0.3978
-  y_topleft: 0.0370
-  x_bottomright: 0.5690
-  y_bottomright: 0.3255
-  radius_pct: 0.008
-  numrows: 10
-  numcols: 10
-  selection_axis: col
-  labels: "0123456789"
-
-version_layout:               # one row, 4 columns horizontally (A-D)
-  x_topleft: 0.3080
-  y_topleft: 0.2030
-  x_bottomright: 0.3286
-  y_bottomright: 0.3092
-  radius_pct: 0.008
-  numrows: 1
-  numcols: 4
-  selection_axis: row        # one row → pick one column
-  labels: "ABCD"
+page_2:
+  # Optional layouts for validation/redundancy
+  last_name_layout: { ... }  # Optional
+  answer_layouts:
+    - { ... }
 """
 
 from __future__ import annotations
@@ -92,14 +67,70 @@ class GridLayout:
 
 
 @dataclass
-class Bubblemap:
-    """Top-level bubblemap configuration object."""
+class PageLayout:
+    """Layouts for a single page of the bubble sheet."""
+    page_number: int
     answer_layouts: List[GridLayout]
     last_name_layout: GridLayout | None = None
     first_name_layout: GridLayout | None = None
     id_layout: GridLayout | None = None
     version_layout: GridLayout | None = None
+
+
+@dataclass
+class Bubblemap:
+    """Top-level bubblemap configuration object with multi-page support."""
+    pages: List[PageLayout]  # One PageLayout per page
+    metadata: Dict[str, Any] | None = None
     total_questions: int | None = None
+    
+    @property
+    def num_pages(self) -> int:
+        """Number of pages in this bubble sheet."""
+        return len(self.pages)
+    
+    def get_page(self, page_num: int) -> PageLayout | None:
+        """Get layouts for a specific page (1-indexed)."""
+        for page in self.pages:
+            if page.page_number == page_num:
+                return page
+        return None
+    
+    # Backward compatibility properties for single-page sheets
+    @property
+    def answer_layouts(self) -> List[GridLayout]:
+        """Get answer layouts from page 1 (for backward compatibility)."""
+        if self.pages:
+            return self.pages[0].answer_layouts
+        return []
+    
+    @property
+    def last_name_layout(self) -> GridLayout | None:
+        """Get last_name_layout from page 1 (for backward compatibility)."""
+        if self.pages:
+            return self.pages[0].last_name_layout
+        return None
+    
+    @property
+    def first_name_layout(self) -> GridLayout | None:
+        """Get first_name_layout from page 1 (for backward compatibility)."""
+        if self.pages:
+            return self.pages[0].first_name_layout
+        return None
+    
+    @property
+    def id_layout(self) -> GridLayout | None:
+        """Get id_layout from page 1 (for backward compatibility)."""
+        if self.pages:
+            return self.pages[0].id_layout
+        return None
+    
+    @property
+    def version_layout(self) -> GridLayout | None:
+        """Get version_layout from page 1 (for backward compatibility)."""
+        if self.pages:
+            return self.pages[0].version_layout
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -119,11 +150,11 @@ def _parse_layout(name: str, section: Dict[str, Any]) -> GridLayout:
         raise ValueError(f"Layout '{name}': selection_axis must be 'row' or 'col'.")
 
     labels = section.get("labels")
-    # NEW: validate against the axis we select on
+    # Validate labels length against the appropriate axis
     if labels is not None:
         numrows = int(section["numrows"])
-        numcols   = int(section["numcols"])
-        expected  = numcols if selection_axis == "row" else numrows
+        numcols = int(section["numcols"])
+        expected = numcols if selection_axis == "row" else numrows
         if len(labels) != expected:
             raise ValueError(
                 f"Layout '{name}': labels length ({len(labels)}) must equal "
@@ -144,52 +175,85 @@ def _parse_layout(name: str, section: Dict[str, Any]) -> GridLayout:
         selection_axis=selection_axis,
     )
 
-def load_bublmap(path: str) -> Bubblemap:
-    """Load and validate a Bubblemap YAML file."""
-    import io
-    with io.open(path, "r", encoding="utf-8", errors="replace") as f:
-        data = yaml.safe_load(f)
+
+def _parse_page_layouts(page_num: int, page_data: Dict[str, Any]) -> PageLayout:
+    """Parse layouts for a single page."""
     # Parse answer layouts
-    answer_layouts_data = data.get("answer_layouts", [])
+    answer_layouts_data = page_data.get("answer_layouts", [])
     answer_layouts: List[GridLayout] = []
     for i, block in enumerate(answer_layouts_data):
-        # default labels for answers if omitted
+        # Default labels for answers if omitted
         if "labels" not in block and "numcols" in block:
             ch = int(block["numcols"])
             block["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
         if "selection_axis" not in block:
             block["selection_axis"] = "row"
-        answer_layouts.append(_parse_layout(f"answers_{i+1}", block))
+        answer_layouts.append(_parse_layout(f"page{page_num}_answers_{i+1}", block))
 
-    bmap = Bubblemap(answer_layouts=answer_layouts)
+    page_layout = PageLayout(
+        page_number=page_num,
+        answer_layouts=answer_layouts
+    )
 
     # Optional other layouts
     for opt_name in ["last_name_layout", "first_name_layout", "id_layout", "version_layout"]:
-        if opt_name in data:
-            bmap_dict = dict(data[opt_name])  # shallow copy
-            # sensible defaults if omitted
+        if opt_name in page_data:
+            layout_dict = dict(page_data[opt_name])  # Shallow copy
+            # Sensible defaults if omitted
             if opt_name in ("last_name_layout", "first_name_layout"):
-                bmap_dict.setdefault("selection_axis", "col")
-                bmap_dict.setdefault("labels", " ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+                layout_dict.setdefault("selection_axis", "col")
+                layout_dict.setdefault("labels", " ABCDEFGHIJKLMNOPQRSTUVWXYZ")
             elif opt_name == "id_layout":
-                bmap_dict.setdefault("selection_axis", "col")
-                bmap_dict.setdefault("labels", "0123456789")
+                layout_dict.setdefault("selection_axis", "col")
+                layout_dict.setdefault("labels", "0123456789")
             elif opt_name == "version_layout":
-                bmap_dict.setdefault("selection_axis", "row")
-                # if numcols present and labels omitted, auto ABCD...
-                if "labels" not in bmap_dict and "numcols" in bmap_dict:
-                    ch = int(bmap_dict["numcols"])
-                    bmap_dict["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
-            setattr(bmap, opt_name, _parse_layout(opt_name, bmap_dict))
+                layout_dict.setdefault("selection_axis", "row")
+                # If numcols present and labels omitted, auto ABCD...
+                if "labels" not in layout_dict and "numcols" in layout_dict:
+                    ch = int(layout_dict["numcols"])
+                    layout_dict["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
+            setattr(page_layout, opt_name, _parse_layout(f"page{page_num}_{opt_name}", layout_dict))
 
-    bmap.total_questions = data.get("total_questions")
+    return page_layout
+
+
+def load_bublmap(path: str) -> Bubblemap:
+    """Load and validate a Bubblemap YAML file with multi-page support."""
+    import io
+    with io.open(path, "r", encoding="utf-8", errors="replace") as f:
+        data = yaml.safe_load(f)
+    
+    # Extract metadata
+    metadata = data.get("metadata", {})
+    num_pages = metadata.get("pages", 1)
+    total_questions = metadata.get("total_questions")
+    
+    # Parse pages
+    pages: List[PageLayout] = []
+    
+    for page_num in range(1, num_pages + 1):
+        page_key = f"page_{page_num}"
+        
+        if page_key not in data:
+            raise ValueError(f"Missing '{page_key}' section in YAML (metadata says {num_pages} pages)")
+        
+        page_data = data[page_key]
+        page_layout = _parse_page_layouts(page_num, page_data)
+        pages.append(page_layout)
+    
+    bmap = Bubblemap(
+        pages=pages,
+        metadata=metadata,
+        total_questions=total_questions
+    )
+    
     return bmap
 
 
 # ---------------------------------------------------------------------------
 
-def dump_bublmap(bmap: Config, path: str) -> None:
-    """Write a Config back to YAML (useful for debugging)."""
+def dump_bublmap(bmap: Bubblemap, path: str) -> None:
+    """Write a Bubblemap back to YAML (useful for debugging)."""
     def layout_to_dict(gl: GridLayout) -> Dict[str, Any]:
         out = {
             "x_topleft": gl.x_topleft,
@@ -206,17 +270,30 @@ def dump_bublmap(bmap: Config, path: str) -> None:
             out["labels"] = gl.labels
         return out
 
-    data: Dict[str, Any] = {
-        "answer_layouts": [layout_to_dict(a) for a in bmap.answer_layouts]
-    }
-
-    for opt_name in ["last_name_layout", "first_name_layout", "id_layout", "version_layout"]:
-        layout = getattr(bmap, opt_name)
-        if layout is not None:
-            data[opt_name] = layout_to_dict(layout)
-
-    if bmap.total_questions is not None:
-        data["total_questions"] = bmap.total_questions
-
+    data: Dict[str, Any] = {}
+    
+    # Add metadata
+    if bmap.metadata:
+        data["metadata"] = bmap.metadata
+    elif bmap.num_pages > 1:
+        data["metadata"] = {
+            "pages": bmap.num_pages,
+            "total_questions": bmap.total_questions
+        }
+    
+    # Add page layouts
+    for page in bmap.pages:
+        page_key = f"page_{page.page_number}"
+        page_data: Dict[str, Any] = {
+            "answer_layouts": [layout_to_dict(a) for a in page.answer_layouts]
+        }
+        
+        for opt_name in ["last_name_layout", "first_name_layout", "id_layout", "version_layout"]:
+            layout = getattr(page, opt_name)
+            if layout is not None:
+                page_data[opt_name] = layout_to_dict(layout)
+        
+        data[page_key] = page_data
+    
     with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, sort_keys=False)
+        yaml.safe_dump(data, f, sort_keys=False, default_flow_style=False)
