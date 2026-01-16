@@ -1,0 +1,167 @@
+# bubblemap.yaml
+# coordinates are given in percentages from top (y values) and left (x values) of page.
+# x_topleft: 0.5 -> means a point 50% or in the middle of the page from left to right
+
+
+metadata:
+  display_name: "MarkShark Double Test"
+  description: "128 questions, 5 choices (A-E)"
+  pages: 2
+  total_questions: 128
+  alignment:
+    aruco:
+      enabled: true
+      dictionary: "DICT_4X4_50"
+  schema_version: 1
+
+page_1:
+# -----------------------------
+# Name blocks (select one row per column)
+# -----------------------------
+  last_name_layout:
+    x_topleft: 0.3837
+    y_topleft: 0.1167
+    x_bottomright: 0.7641
+    y_bottomright: 0.5601
+    radius_pct: 0.008
+    numrows: 27
+    numcols: 14
+    bubble_shape: circle
+    selection_axis: col
+    labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+  first_name_layout:
+    x_topleft: 0.8205
+    y_topleft: 0.1167
+    x_bottomright: 0.9375
+    y_bottomright: 0.5601
+    radius_pct: 0.008
+    numrows: 27
+    numcols: 5
+    bubble_shape: circle
+    selection_axis: col
+    labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+# -----------------------------
+# Student ID (select one row per column)
+# -----------------------------
+  id_layout:
+    x_topleft: 0.0608
+    y_topleft: 0.4061
+    x_bottomright: 0.3208
+    y_bottomright: 0.5601
+    radius_pct: 0.008
+    numrows: 10           # rows 10
+    numcols: 10             # 10 digit positions
+    bubble_shape: circle
+    selection_axis: col
+    labels: "0123456789"
+
+# -----------------------------
+# Test version (select one column in a single row)
+# -----------------------------
+  version_layout:
+    x_topleft: 0.2271
+    y_topleft: 0.3182
+    x_bottomright: 0.3063
+    y_bottomright: 0.3185
+    radius_pct: 0.008
+    numrows: 1
+    numcols: 4
+    bubble_shape: circle
+    selection_axis: row
+    labels: "ABCD"
+
+# -----------------------------
+# Answer blocks (select one column per row)
+# -----------------------------
+  answer_layouts:
+    - x_topleft: 0.0906
+      y_topleft: 0.6030
+      x_bottomright: 0.2373
+      y_bottomright: 0.9127
+      radius_pct: 0.008
+      numrows: 16
+      numcols: 5
+      bubble_shape: circle
+      selection_axis: row
+      labels: "ABCDE"
+      
+    - x_topleft: 0.3262
+      y_topleft: 0.6030
+      x_bottomright: 0.4728
+      y_bottomright: 0.9127
+      radius_pct: 0.008
+      numrows: 16
+      numcols: 5
+      bubble_shape: circle
+      selection_axis: row
+      labels: "ABCDE"
+  
+    - x_topleft: 0.5612
+      y_topleft: 0.6030
+      x_bottomright: 0.7084
+      y_bottomright: 0.9127
+      radius_pct: 0.008
+      numrows: 16
+      numcols: 5
+      bubble_shape: circle
+      selection_axis: row
+      labels: "ABCDE"
+  
+    - x_topleft: 0.7973
+      y_topleft: 0.6030
+      x_bottomright: 0.9439
+      y_bottomright: 0.9127
+      radius_pct: 0.008
+      numrows: 16
+      numcols: 5
+      bubble_shape: circle
+      selection_axis: row
+      labels: "ABCDE"
+      
+page_2:
+  answer_layouts:
+    - x_topleft: 0.0906
+      y_topleft: 0.6030
+      x_bottomright: 0.2373
+      y_bottomright: 0.9127
+      radius_pct: 0.008
+      numrows: 16
+      numcols: 5
+      bubble_shape: circle
+      selection_axis: row
+      labels: "ABCDE"
+      
+    - x_topleft: 0.3262
+      y_topleft: 0.6030
+      x_bottomright: 0.4728
+      y_bottomright: 0.9127
+      radius_pct: 0.008
+      numrows: 16
+      numcols: 5
+      bubble_shape: circle
+      selection_axis: row
+      labels: "ABCDE"
+  
+    - x_topleft: 0.5612
+      y_topleft: 0.6030
+      x_bottomright: 0.7084
+      y_bottomright: 0.9127
+      radius_pct: 0.008
+      numrows: 16
+      numcols: 5
+      bubble_shape: circle
+      selection_axis: row
+      labels: "ABCDE"
+  
+    - x_topleft: 0.7973
+      y_topleft: 0.6030
+      x_bottomright: 0.9439
+      y_bottomright: 0.9127
+      radius_pct: 0.008
+      numrows: 16
+      numcols: 5
+      bubble_shape: circle
+      selection_axis: row
+      labels: "ABCDE"
