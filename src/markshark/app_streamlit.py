@@ -195,6 +195,103 @@ def _run_cli(args: List[str]) -> str:
         raise last_err
     raise RuntimeError("Unknown CLI invocation error")
 
+
+def _run_cli_with_progress(args: List[str], progress_placeholder, status_placeholder) -> str:
+    """
+    Run the MarkShark CLI with real-time progress updates.
+    Parses stderr for [info] and [ok] messages to update progress.
+    
+    Args:
+        args: CLI arguments
+        progress_placeholder: Streamlit placeholder for progress bar
+        status_placeholder: Streamlit placeholder for status text
+        
+    Returns:
+        Combined stdout/stderr output
+    """
+    import re
+    
+    cmds = [
+        ["markshark"] + args,
+        [sys.executable, "-m", "markshark.cli"] + args,
+    ]
+    
+    last_err = None
+    for cmd in cmds:
+        try:
+            # Start process with line-buffered output
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,  # Line buffered
+            )
+            
+            output_lines = []
+            pages_processed = 0
+            total_pages = None
+            
+            # Read stderr line by line for progress
+            while True:
+                line = proc.stderr.readline()
+                if not line and proc.poll() is not None:
+                    break
+                if line:
+                    output_lines.append(line)
+                    
+                    # Parse progress info from stderr
+                    # Look for: "[info] Processing X scan pages as Y student(s) × Z page(s)"
+                    match = re.search(r'Processing (\d+) scan pages', line)
+                    if match:
+                        total_pages = int(match.group(1))
+                        status_placeholder.text(f"Processing {total_pages} pages...")
+                    
+                    # Look for: "[info] Aligning scan page X to template page Y"
+                    match = re.search(r'Aligning scan page (\d+)', line)
+                    if match:
+                        current_page = int(match.group(1))
+                        if total_pages:
+                            progress = current_page / total_pages
+                            progress_placeholder.progress(progress, text=f"Aligning page {current_page}/{total_pages}")
+                        else:
+                            status_placeholder.text(f"Aligning page {current_page}...")
+                    
+                    # Look for: "[ok]" or "[error]" completion messages
+                    if '[ok]' in line or '[error]' in line:
+                        pages_processed += 1
+                        if total_pages:
+                            progress = pages_processed / total_pages
+                            progress_placeholder.progress(progress, text=f"Completed {pages_processed}/{total_pages} pages")
+            
+            # Read any remaining stdout
+            stdout_out = proc.stdout.read() if proc.stdout else ""
+            output_lines.insert(0, stdout_out)
+            
+            proc.wait()
+            
+            out = "".join(output_lines)
+            if proc.returncode != 0:
+                last_err = RuntimeError(out.strip() or f"Non-zero exit: {proc.returncode}")
+                continue
+            
+            # Final progress update
+            if total_pages:
+                progress_placeholder.progress(1.0, text=f"Completed all {total_pages} pages")
+            
+            return out
+            
+        except FileNotFoundError as e:
+            last_err = e
+            continue
+        except Exception as e:
+            last_err = e
+            continue
+    
+    if last_err:
+        raise last_err
+    raise RuntimeError("Unknown CLI invocation error")
+
 def _download_file_button(label: str, path: Path):
     if path.exists():
         st.download_button(label, data=path.read_bytes(), file_name=path.name)
@@ -309,7 +406,8 @@ if page.startswith("0"):
         out_pdf_name = st.text_input("Annotated PDF name", value="quick_grade_annotated.pdf")
         
         st.markdown("---")
-        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 300)), step=1)
+        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1,
+                              help="150 DPI is usually sufficient for bubble sheets. Higher values are slower.")
         
         # Scoring options
         with st.expander("Scoring options", expanded=False):
@@ -365,9 +463,18 @@ if page.startswith("0"):
                 if bublmap:
                     align_args += ["--bubblemap", str(bublmap)]
                 
-                with st.spinner("Aligning scans..."):
+                # Show progress during alignment
+                align_progress = st.progress(0, text="Starting alignment...")
+                align_status = st.empty()
+                
+                try:
+                    align_out = _run_cli_with_progress(align_args, align_progress, align_status)
+                except Exception as e:
+                    # Fallback to regular CLI if progress version fails
                     align_out = _run_cli(align_args)
-                    quick_status.success("✓ Alignment complete")
+                
+                align_progress.progress(1.0, text="✓ Alignment complete")
+                quick_status.success("✓ Alignment complete")
                 
                 # Step 2: Score
                 quick_status.info("Step 2/2: Scoring aligned sheets...")
@@ -535,8 +642,17 @@ elif page.startswith("1"):
                 args += ["--bubblemap", str(align_bublmap)]
 
             try:
-                with st.spinner("Aligning via CLI..."):
+                # Show progress during alignment
+                align_progress = st.progress(0, text="Starting alignment...")
+                align_status_text = st.empty()
+                
+                try:
+                    out = _run_cli_with_progress(args, align_progress, align_status_text)
+                except Exception:
+                    # Fallback to regular CLI if progress version fails
                     out = _run_cli(args)
+                
+                align_progress.progress(1.0, text="✓ Alignment complete")
                 status.success("Alignment finished.")
                 st.code(out or "Done.", language="bash")
 

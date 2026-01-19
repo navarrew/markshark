@@ -802,54 +802,25 @@ def align_with_guardrails(template_bgr: np.ndarray,
                           bubblemap: Any = None,
                           page_num: int = 1):
     """
-    Try alignment with multiple fallback strategies:
-    1. Base ORB feature matching
-    2. Stricter ORB parameters
-    3. Bubble grid alignment (if bubblemap provided) - NEW
-    4. Page quadrilateral fallback
+    Try alignment with multiple fallback strategies (optimized order):
+    
+    When bubblemap IS provided (bubble sheets):
+      1. Bubble grid alignment (fast, reliable for bubble sheets)
+      2. Base ORB feature matching (fallback)
+      3. Page quadrilateral fallback (last resort)
+    
+    When bubblemap is NOT provided (general documents):
+      1. Base ORB feature matching
+      2. Stricter ORB parameters  
+      3. Page quadrilateral fallback
     
     Returns (warped, metrics_dict_with_mode).
     """
-    # Attempt 1: base ORB features
-    try:
-        warped, metrics = align_page_once(template_bgr, scan_bgr, base_fpar, base_epar, base_ratio)
-        if not need_retry(metrics, fail_med, fail_p95, fail_br):
-            metrics['mode'] = 'base'
-            return warped, metrics
-    except Exception:
-        pass
-
-    # Attempt 2: stricter ORB params
-    ratio = max(0.68, base_ratio - 0.05)
     
-    fpar = apply_feat_overrides(
-        tiles_x=max(base_fpar.tiles_x, 8),
-        tiles_y=max(base_fpar.tiles_y, 10),
-        orb_fast_threshold=max(6, base_fpar.orb_fast_threshold - 4),
-        topk_per_tile=base_fpar.topk_per_tile,
-        orb_nfeatures=base_fpar.orb_nfeatures,
-    )
-    
-    epar = apply_est_overrides(
-        estimator_method=base_epar.estimator_method,
-        ransac_thresh=min(base_epar.ransac_thresh, 2.0),
-        max_iters=max(base_epar.max_iters, 20000),
-        confidence=base_epar.confidence,
-        use_ecc=base_epar.use_ecc,
-        ecc_levels=base_epar.ecc_levels,
-        ecc_max_iters=getattr(base_epar, "ecc_max_iters", 50),
-        ecc_eps=base_epar.ecc_eps,
-    )
-
-    try:
-        warped, metrics = align_page_once(template_bgr, scan_bgr, fpar, epar, ratio)
-        if not need_retry(metrics, fail_med, fail_p95, fail_br):
-            metrics['mode'] = 'retry'
-            return warped, metrics
-    except Exception:
-        pass
-
-    # Attempt 3: Bubble grid alignment (NEW - if bubblemap provided)
+    # ==========================================================================
+    # FAST PATH: When bubblemap is provided, try bubble grid FIRST
+    # (This is typically faster and more reliable for bubble sheets)
+    # ==========================================================================
     if bubblemap is not None:
         try:
             warped_bg, H_bg, bg_metrics = align_with_bubble_grid(
@@ -871,16 +842,92 @@ def align_with_guardrails(template_bgr: np.ndarray,
                 print(f"[info] Bubble grid alignment succeeded: {bg_metrics['inliers']} inliers from {bg_metrics['matched_pairs']} matches", file=sys.stderr)
                 return warped_bg, metrics
             else:
-                print(f"[info] Bubble grid alignment failed: {bg_metrics.get('error', 'unknown')}", file=sys.stderr)
+                print(f"[info] Bubble grid alignment failed: {bg_metrics.get('error', 'unknown')}. Trying ORB features...", file=sys.stderr)
         except Exception as e:
-            print(f"[info] Bubble grid alignment error: {e}", file=sys.stderr)
+            print(f"[info] Bubble grid alignment error: {e}. Trying ORB features...", file=sys.stderr)
+    
+    # ==========================================================================
+    # Attempt: Base ORB features (with reduced ECC iterations for speed)
+    # ==========================================================================
+    try:
+        # Use reduced ECC iterations for faster processing
+        faster_epar = apply_est_overrides(
+            estimator_method=base_epar.estimator_method,
+            ransac_thresh=base_epar.ransac_thresh,
+            max_iters=base_epar.max_iters,
+            confidence=base_epar.confidence,
+            use_ecc=base_epar.use_ecc,
+            ecc_levels=base_epar.ecc_levels,
+            ecc_max_iters=min(getattr(base_epar, "ecc_max_iters", 50), 30),  # Cap at 30 iterations
+            ecc_eps=base_epar.ecc_eps,
+        )
+        warped, metrics = align_page_once(template_bgr, scan_bgr, base_fpar, faster_epar, base_ratio)
+        if not need_retry(metrics, fail_med, fail_p95, fail_br):
+            metrics['mode'] = 'base'
+            return warped, metrics
+    except Exception:
+        pass
 
-    # Attempt 4: page-quad fallback (+ optional ECC micro-refine)
-    warped_q, H_inv_q = warp_by_page_quad(template_bgr, scan_bgr)
+    # ==========================================================================
+    # Attempt: Stricter ORB params (only if bubblemap not provided)
+    # Skip this slow step if we already tried bubble grid
+    # ==========================================================================
+    if bubblemap is None:
+        ratio = max(0.68, base_ratio - 0.05)
+        
+        fpar = apply_feat_overrides(
+            tiles_x=max(base_fpar.tiles_x, 8),
+            tiles_y=max(base_fpar.tiles_y, 10),
+            orb_fast_threshold=max(6, base_fpar.orb_fast_threshold - 4),
+            topk_per_tile=base_fpar.topk_per_tile,
+            orb_nfeatures=base_fpar.orb_nfeatures,
+        )
+        
+        epar = apply_est_overrides(
+            estimator_method=base_epar.estimator_method,
+            ransac_thresh=min(base_epar.ransac_thresh, 2.0),
+            max_iters=min(base_epar.max_iters, 15000),  # Reduced from 20000
+            confidence=base_epar.confidence,
+            use_ecc=base_epar.use_ecc,
+            ecc_levels=base_epar.ecc_levels,
+            ecc_max_iters=min(getattr(base_epar, "ecc_max_iters", 50), 25),  # Reduced
+            ecc_eps=base_epar.ecc_eps,
+        )
+
+        try:
+            warped, metrics = align_page_once(template_bgr, scan_bgr, fpar, epar, ratio)
+            if not need_retry(metrics, fail_med, fail_p95, fail_br):
+                metrics['mode'] = 'retry'
+                return warped, metrics
+        except Exception:
+            pass
+
+    # ==========================================================================
+    # Last resort: Page quadrilateral fallback (+ optional ECC micro-refine)
+    # ==========================================================================
+    try:
+        warped_q, H_inv_q = warp_by_page_quad(template_bgr, scan_bgr)
+    except Exception as e:
+        print(f"[warning] Page quad detection failed: {e}", file=sys.stderr)
+        # Return original image if everything fails
+        metrics = {"res_median": float("nan"), "res_p95": float("nan"), "res_br_p95": float("nan"), "n_inliers": 0, "mode": "failed"}
+        return scan_bgr, metrics
+    
     try:
         H_init = np.eye(3, dtype='float64')
         mask = make_content_mask(_to_gray(template_bgr))
-        H_ref = ecc_refine(_to_gray(template_bgr), _to_gray(warped_q), H_init, mask, base_epar)
+        # Reduced ECC for quad fallback too
+        reduced_epar = apply_est_overrides(
+            estimator_method=base_epar.estimator_method,
+            ransac_thresh=base_epar.ransac_thresh,
+            max_iters=base_epar.max_iters,
+            confidence=base_epar.confidence,
+            use_ecc=base_epar.use_ecc,
+            ecc_levels=base_epar.ecc_levels,
+            ecc_max_iters=min(getattr(base_epar, "ecc_max_iters", 50), 20),  # Reduced
+            ecc_eps=base_epar.ecc_eps,
+        )
+        H_ref = ecc_refine(_to_gray(template_bgr), _to_gray(warped_q), H_init, mask, reduced_epar)
         try:
             H_inv_ref = np.linalg.inv(H_ref)
         except Exception:
@@ -890,27 +937,31 @@ def align_with_guardrails(template_bgr: np.ndarray,
     except Exception:
         warped = warped_q
 
-    # Compute diagnostic residuals after fallback (best-effort)
-    try:
-        fpar2 = apply_feat_overrides(tiles_x=6, tiles_y=8, topk_per_tile=120,
-                                     orb_nfeatures=2500, orb_fast_threshold=12)
-        epar2 = apply_est_overrides(estimator_method=base_epar.estimator_method, ransac_thresh=3.0,
-                                    max_iters=10000, confidence=0.999,
-                                    use_ecc=False, ecc_levels=base_epar.ecc_levels,
-                                    ecc_max_iters=getattr(base_epar, 'ecc_max_iters', 50), ecc_eps=base_epar.ecc_eps)
-        tpl_g = _to_gray(template_bgr); war_g = _to_gray(warped)
-        k1, d1 = detect_orb_grid(tpl_g, fpar2); k2, d2 = detect_orb_grid(war_g, fpar2)
-        matches = match_descriptors(d1, d2, ratio=0.75, cross_check=True)
-        if len(matches) >= 4:
-            src = np.float32([k1[m.queryIdx].pt for m in matches]); dst = np.float32([k2[m.trainIdx].pt for m in matches])
-            H2, inl2 = estimate_homography(src, dst, epar2)
-            if H2 is not None and inl2 is not None and inl2.sum() >= 4:
-                metrics = compute_residuals(H2, src[inl2.ravel() > 0], dst[inl2.ravel() > 0], img_shape=war_g.shape)
+    # Compute diagnostic residuals after fallback (simplified - skip if bubblemap provided)
+    if bubblemap is None:
+        try:
+            fpar2 = apply_feat_overrides(tiles_x=6, tiles_y=8, topk_per_tile=100,
+                                         orb_nfeatures=2000, orb_fast_threshold=12)
+            epar2 = apply_est_overrides(estimator_method=base_epar.estimator_method, ransac_thresh=3.0,
+                                        max_iters=8000, confidence=0.999,
+                                        use_ecc=False, ecc_levels=base_epar.ecc_levels,
+                                        ecc_max_iters=20, ecc_eps=base_epar.ecc_eps)
+            tpl_g = _to_gray(template_bgr); war_g = _to_gray(warped)
+            k1, d1 = detect_orb_grid(tpl_g, fpar2); k2, d2 = detect_orb_grid(war_g, fpar2)
+            matches = match_descriptors(d1, d2, ratio=0.75, cross_check=True)
+            if len(matches) >= 4:
+                src = np.float32([k1[m.queryIdx].pt for m in matches]); dst = np.float32([k2[m.trainIdx].pt for m in matches])
+                H2, inl2 = estimate_homography(src, dst, epar2)
+                if H2 is not None and inl2 is not None and inl2.sum() >= 4:
+                    metrics = compute_residuals(H2, src[inl2.ravel() > 0], dst[inl2.ravel() > 0], img_shape=war_g.shape)
+                else:
+                    metrics = {"res_median": float("nan"), "res_p95": float("nan"), "res_br_p95": float("nan"), "n_inliers": 0}
             else:
                 metrics = {"res_median": float("nan"), "res_p95": float("nan"), "res_br_p95": float("nan"), "n_inliers": 0}
-        else:
+        except Exception:
             metrics = {"res_median": float("nan"), "res_p95": float("nan"), "res_br_p95": float("nan"), "n_inliers": 0}
-    except Exception:
+    else:
+        # Skip expensive residual computation for bubble sheet workflow
         metrics = {"res_median": float("nan"), "res_p95": float("nan"), "res_br_p95": float("nan"), "n_inliers": 0}
 
     metrics['mode'] = 'quad_fallback'
