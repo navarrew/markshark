@@ -1,13 +1,16 @@
 # bubblemap.yaml
-# coordinates are given in percentages from top (y values) and left (x values) of page.
-# x_topleft: 0.5 -> means a point 50% or in the middle of the page from left to right
+# point coordinates are given as percentages in from left (x) and top (y) edges of page.
+# zones are defined as rectangles bounded by their top-left & bottom-right corners
+# x_topleft: 0.2 -> means the point is 20% of the way in from the left edge of the page
+# y_topleft: 0.35 -> means the point is 35% of the way down from the top of the page
+# so the top-left corner of the zone is defined at coordinate (0.2,0.35)
 
 
 metadata:
-  display_name: "MarkShark Double Test"
-  description: "128 questions, 5 choices (A-E)"
+  display_name: "MarkShark 232 Question Template"
+  description: "232 questions, 5 choices (A-E)"
   pages: 2
-  total_questions: 128
+  total_questions: 232
   alignment:
     aruco:
       enabled: true
@@ -123,44 +126,44 @@ page_1:
 page_2:
   answer_layouts:
     - x_topleft: 0.0906
-      y_topleft: 0.6030
+      y_topleft: 0.0773
       x_bottomright: 0.2373
-      y_bottomright: 0.9127
+      y_bottomright: 0.9239
       radius_pct: 0.008
-      numrows: 16
+      numrows: 42
       numcols: 5
       bubble_shape: circle
       selection_axis: row
       labels: "ABCDE"
       
     - x_topleft: 0.3262
-      y_topleft: 0.6030
+      y_topleft: 0.0773
       x_bottomright: 0.4728
-      y_bottomright: 0.9127
+      y_bottomright: 0.9239
       radius_pct: 0.008
-      numrows: 16
+      numrows: 42
       numcols: 5
       bubble_shape: circle
       selection_axis: row
       labels: "ABCDE"
   
     - x_topleft: 0.5612
-      y_topleft: 0.6030
+      y_topleft: 0.0773
       x_bottomright: 0.7084
-      y_bottomright: 0.9127
+      y_bottomright: 0.9239
       radius_pct: 0.008
-      numrows: 16
+      numrows: 42
       numcols: 5
       bubble_shape: circle
       selection_axis: row
       labels: "ABCDE"
   
     - x_topleft: 0.7973
-      y_topleft: 0.6030
+      y_topleft: 0.0773
       x_bottomright: 0.9439
-      y_bottomright: 0.9127
+      y_bottomright: 0.9239
       radius_pct: 0.008
-      numrows: 16
+      numrows: 42
       numcols: 5
       bubble_shape: circle
       selection_axis: row

@@ -1,0 +1,93 @@
+# bubblemap.yaml
+# point coordinates are given as percentages in from left (x) and top (y) edges of page.
+# zones are defined as rectangles bounded by their top-left & bottom-right corners
+# x_topleft: 0.2 -> means the point is 20% of the way in from the left edge of the page
+# y_topleft: 0.35 -> means the point is 35% of the way down from the top of the page
+# so the top-left corner of the zone is defined at coordinate (0.2,0.35)
+
+
+
+metadata:
+  display_name: "UofToronto Faculty of Med - 1 page"
+  description: "48 questions, 5 choices (A-E)"
+  pages: 1
+  total_questions: 1
+  alignment:
+    aruco:
+      enabled: false
+      dictionary: "NONE"
+  schema_version: 1
+
+page_1:
+
+# -----------------------------
+# Name blocks (select one row per column)
+# -----------------------------
+  last_name_layout:
+    x_topleft: 0.06117
+    y_topleft: 0.1726
+    x_bottomright: 0.5012
+    y_bottomright: 0.6159
+    radius_pct: 0.008
+    numrows: 27            # synonymous with rows (letters incl. leading space)
+    numcols: 15              # synonymous with columns (positions)
+    bubble_shape: circle
+    selection_axis: col
+    labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  
+  first_name_layout:
+    x_topleft: 0.5624
+    y_topleft: 0.1716
+    x_bottomright: 0.6787
+    y_bottomright: 0.615
+    radius_pct: 0.008
+    numrows: 27
+    numcols: 5
+    bubble_shape: circle
+    selection_axis: col
+    labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+# -----------------------------
+# Student ID (select one row per column)
+# -----------------------------
+  id_layout:
+    x_topleft: 0.0969
+    y_topleft: 0.691
+    x_bottomright: 0.4556
+    y_bottomright: 0.8445
+    radius_pct: 0.008
+    numrows: 10           # rows 10
+    numcols: 10             # 10 digit positions (col)
+    bubble_shape: circle
+    selection_axis: col
+    labels: "0123456789"
+
+# -----------------------------
+# Test version 
+# -----------------------------
+  version_layout:
+    x_topleft: 0.6759
+    y_topleft: 0.691
+    x_bottomright: 0.6759
+    y_bottomright: 0.8445
+    radius_pct: 0.008
+    numrows: 10            #one column of 10 letters
+    numcols: 1
+    bubble_shape: circle
+    selection_axis: col
+    labels: "ABCDEFGHIJ"
+
+# -----------------------------
+# Answer blocks (select one column per row)
+# -----------------------------
+  answer_layouts:
+    - x_topleft: 0.7787
+      y_topleft: 0.0859
+      x_bottomright: 0.9198
+      y_bottomright: 0.9467
+      radius_pct: 0.008
+      numrows: 48
+      numcols: 5
+      bubble_shape: circle
+      selection_axis: row
+      labels: "ABCDE"

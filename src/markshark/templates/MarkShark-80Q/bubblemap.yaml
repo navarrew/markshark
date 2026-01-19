@@ -1,8 +1,13 @@
 # bubblemap.yaml
-# coordinates are given in percentages from left (x values) and top (y values) of page.
+# point coordinates are given as percentages in from left (x) and top (y) edges of page.
+# zones are defined as rectangles bounded by their top-left & bottom-right corners
 # x_topleft: 0.2 -> means the point is 20% of the way in from the left edge of the page
 # y_topleft: 0.35 -> means the point is 35% of the way down from the top of the page
+# so the top-left corner of the zone is defined at coordinate (0.2,0.35)
 
+# -----------------------------
+# metadata includes text for MarkShark to put in the dropdown menu
+# -----------------------------
 metadata:
   display_name: "MarkShark 80 Question Template"
   description: "80 questions, 5 choices (A-E)"
@@ -13,10 +18,14 @@ metadata:
       enabled: true
       dictionary: "DICT_4X4_50"
   schema_version: 1
-  
-page_1:
+
 # -----------------------------
-# Name blocks (select one row per column)
+# Page coordinate data follows (start with page_1:)
+# -----------------------------
+page_1:
+
+# -----------------------------
+# Name block zones (select one letter or space per column)
 # -----------------------------
   last_name_layout:
     x_topleft: 0.3924
@@ -43,8 +52,9 @@ page_1:
     labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 # -----------------------------
-# Student ID (select one row per column)
+# Student ID zone (select one number per column)
 # -----------------------------
+
   id_layout:
     x_topleft: 0.0940
     y_topleft: 0.1050
@@ -58,7 +68,7 @@ page_1:
     labels: "0123456789"
 
 # -----------------------------
-# Test version (select one column in a single row)
+# Test version zone (select one column in a single row)
 # -----------------------------
   version_layout:
     x_topleft: 0.2453
@@ -73,7 +83,7 @@ page_1:
     labels: "ABCD"
 
 # -----------------------------
-# Answer blocks (select one column per row)
+# Answer block zones (select one letter per row)
 # -----------------------------
   answer_layouts:
     - x_topleft: 0.1311

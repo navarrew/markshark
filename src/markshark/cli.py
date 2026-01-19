@@ -59,10 +59,30 @@ def align(
     dict_name: str = typer.Option(ALIGN_DEFAULTS.dict_name, "--dict-name", help="ArUco dictionary"),
     first_page: Optional[int] = typer.Option(None, "--first-page", help="First page index (1-based)"),
     last_page: Optional[int] = typer.Option(None, "--last-page", help="Last page index (inclusive, 1-based)"),
+    # NEW: Bubblemap for bubble grid alignment fallback
+    bubblemap_path: Optional[str] = typer.Option(
+        None, "--bubblemap", "-m",
+        help="Bubblemap YAML file. If provided, enables bubble grid alignment as fallback when ArUco/ORB features fail."
+    ),
 ):
     """
     Align raw scans to a template PDF.
+    
+    NEW: If --bubblemap is provided, bubble grid alignment will be used as a fallback
+    when ArUco markers are not detected and ORB feature matching fails. This uses the
+    known bubble positions from the bubblemap to find circles in the scan and compute
+    a robust alignment.
     """
+    # Load bubblemap if provided (for bubble grid fallback)
+    bubblemap = None
+    if bubblemap_path:
+        try:
+            bubblemap = load_bublmap(bubblemap_path)
+            rprint(f"[cyan]Loaded bubblemap:[/cyan] {bubblemap_path} (bubble grid fallback enabled)")
+        except Exception as e:
+            rprint(f"[yellow]Warning: Could not load bubblemap {bubblemap_path}: {e}[/yellow]")
+            rprint("[yellow]Bubble grid alignment fallback will not be available.[/yellow]")
+    
     out = align_pdf_scans(
         input_pdf=input_pdf,
         template=template,
@@ -81,6 +101,7 @@ def align(
         match_ratio=match_ratio,
         first_page=first_page,
         last_page=last_page,
+        bubblemap=bubblemap,  # NEW: Pass bubblemap for bubble grid fallback
     )
     rprint(f"[green]Wrote:[/green] {out}")
 
@@ -152,7 +173,7 @@ def score(
         SCORING_DEFAULTS.verbose_calibration,
         "--verbose-thresh",
         help="Print per-page threshold calibration diagnostics",
-    ),    # (annotation flags you already added can stay)
+    ),
 ):
     """
     Grade aligned scans using axis-based bublmap.
@@ -164,7 +185,7 @@ def score(
         raise typer.Exit(code=2)
 
     try:
-        scoring = apply_scoring_overrides(  # ← use centralized helper in defaults.py
+        scoring = apply_scoring_overrides(
             min_fill=min_fill if min_fill is not None else SCORING_DEFAULTS.min_fill,
             top2_ratio=top2_ratio if top2_ratio is not None else SCORING_DEFAULTS.top2_ratio,
             min_score=min_score if min_score is not None else SCORING_DEFAULTS.min_score,
@@ -184,117 +205,60 @@ def score(
             min_fill=scoring.min_fill,
             top2_ratio=scoring.top2_ratio,
             min_score=scoring.min_score,
-            fixed_thresh=fixed_thresh,
+            fixed_thresh=fixed_thresh if fixed_thresh is not None else scoring.fixed_thresh,
             auto_calibrate_thresh=scoring.auto_calibrate_thresh,
             verbose_calibration=scoring.verbose_calibration,
             annotate_all_cells=annotate_all_cells,
             label_density=label_density,
         )
     except Exception as e:
-        rprint(f"[red]Grading failed:[/red] {e}")
+        rprint(f"[red]Scoring failed:[/red] {e}")
         raise typer.Exit(code=2)
 
-    rprint(f"[green]Wrote results:[/green] {out_csv}")
+    rprint(f"[green]Wrote:[/green] {out_csv}")
 
 
-# ------------------------------ STATS -------------------------------
+# ---------------------- STATS ----------------------
 @app.command()
 def stats(
-    input_csv: str = typer.Argument(..., help="Results CSV (from 'score')"),
-    output_csv: str = typer.Option("results_with_stats.csv", "--output-csv", "-o", help="Augmented CSV with summary rows"),
-    item_pattern: str = typer.Option(r"^Q\d+$", "--item-pattern", help="Regex for item columns (default: ^Q\\d+$). Example: '^Q\\d+$'"),
-    percent: bool = typer.Option(True, "--percent/--proportion", help="Report difficulty as percent (0-100) (default) or proportion (0-1)"),
-    label_col: Optional[str] = typer.Option("name", "--label-col", help="Column containing student label (name/id)"),
-    exam_stats_csv: Optional[str] = typer.Option(None, "--exam-stats-csv", help="Optional CSV with KR-20/KR-21, mean, SD"),
-    plots_dir: Optional[str] = typer.Option(None, "--plots-dir", help="Optional directory for IRT-ish item plots"),
-    key_row_index: Optional[int] = typer.Option(None, "--key-row-index", help="Row index of answer key (0-based). Auto-detect if omitted."),
-    answers_mode: str = typer.Option("letters", "--answers-mode", help="letters|index depending on how answers are stored"),
-    item_report_csv: Optional[str] = typer.Option(None, "--item-report-csv", help="Optional per-item distractor report CSV"),
-    key_label: str = typer.Option("KEY", "--key-label", help="Label string for the key row used in auto-detection"),
-    decimals: int = typer.Option(3, "--decimals", help="Number of decimals for output rounding (default: 3)"),
+    input_csv: str = typer.Argument(..., help="Results CSV from 'score'"),
+    out_prefix: str = typer.Option("stats_", "--out-prefix", "-o", help="Prefix for output files"),
+    alpha: float = typer.Option(0.05, "--alpha", help="Significance threshold for p-values"),
 ):
     """
-    Compute item difficulty, point-biserial, and exam reliability (KR-20/KR-21).
+    Compute item stats, KR-20, plots from a results CSV.
     """
     try:
-        # Newer stats_tools.run signatures accept 'decimals'; older ones don't.
-        stats_mod.run(
-            input_csv=input_csv,
-            output_csv=output_csv,
-            item_pattern=item_pattern,
-            percent=percent,
-            label_col=label_col,
-            exam_stats_csv=exam_stats_csv,
-            plots_dir=plots_dir,
-            key_row_index=key_row_index,
-            answers_mode=answers_mode,
-            item_report_csv=item_report_csv,
-            key_label=key_label,
-            decimals=decimals,  # default 3
-        )
-    except TypeError:
-        # Backward-compat: call without 'decimals'
-        stats_mod.run(
-            input_csv=input_csv,
-            output_csv=output_csv,
-            item_pattern=item_pattern,
-            percent=percent,
-            label_col=label_col,
-            exam_stats_csv=exam_stats_csv,
-            plots_dir=plots_dir,
-            key_row_index=key_row_index,
-            answers_mode=answers_mode,
-            item_report_csv=item_report_csv,
-            key_label=key_label,
-        )
-        rprint("[yellow]Note:[/yellow] your stats_tools.run() doesn’t support a 'decimals' parameter; "
-               "update it to get consistent 3-decimal rounding in all outputs.")
-    rprint(f"[green]Wrote stats:[/green] {output_csv}")
-    if exam_stats_csv:
-        rprint(f"[green]Exam summary:[/green] {exam_stats_csv}")
-    if item_report_csv:
-        rprint(f"[green]Item report:[/green] {item_report_csv}")
+        stats_mod.run(input_csv, out_prefix, alpha)
+    except Exception as e:
+        rprint(f"[red]Stats failed:[/red] {e}")
+        raise typer.Exit(code=2)
 
 
-
-# ------------------------------- TEMPLATES -------------------------------
+# ---------------------- TEMPLATES ----------------------
 @app.command()
 def templates(
-    templates_dir: Optional[str] = typer.Option(None, "--templates-dir", "-d", help="Custom templates directory (default: auto-detect)"),
-    create_example: bool = typer.Option(False, "--create-example", help="Create an example template structure"),
-    validate: bool = typer.Option(False, "--validate", help="Validate all templates"),
+    templates_dir: Optional[str] = typer.Option(None, "--templates-dir", "-d", help="Templates directory (default: auto-detect)"),
+    validate: bool = typer.Option(False, "--validate", "-v", help="Validate each template"),
 ):
     """
     List available bubble sheet templates.
     """
     try:
         manager = TemplateManager(templates_dir)
-        rprint(f"[cyan]Templates directory:[/cyan] {manager.templates_dir}")
-        rprint()
+        templates_list = manager.scan_templates(force_refresh=True)
         
-        if create_example:
-            example_dir = manager.create_example_template()
-            rprint(f"[green]Created example template at:[/green] {example_dir}")
-            rprint("[yellow]Note:[/yellow] You'll need to add actual PDF and populate the YAML with bubble coordinates.")
-            return
-        
-        templates = manager.scan_templates()
-        
-        if not templates:
+        if not templates_list:
             rprint("[yellow]No templates found.[/yellow]")
-            rprint("Create a template directory with:")
-            rprint("  - templates/your_template_name/master_template.pdf")
-            rprint("  - templates/your_template_name/bubblemap.yaml")
+            rprint(f"Templates directory: {manager.templates_dir}")
             return
         
-        rprint(f"[cyan]Found {len(templates)} template(s):[/cyan]")
-        rprint()
+        rprint(f"[cyan]Found {len(templates_list)} template(s) in {manager.templates_dir}:[/cyan]\n")
         
-        for template in templates:
-            rprint(f"[bold]{template.display_name}[/bold]")
-            rprint(f"  ID: {template.template_id}")
+        for template in templates_list:
+            rprint(f"[bold]{template.display_name}[/bold] (ID: {template.template_id})")
             if template.description:
-                rprint(f"  Description: {template.description}")
+                rprint(f"  {template.description}")
             if template.num_questions:
                 rprint(f"  Questions: {template.num_questions}")
             if template.num_choices:
@@ -341,6 +305,10 @@ def quick_grade(
 ):
     """
     Quick grade: align + score in one command using a template.
+    
+    This command automatically uses bubble grid alignment as a fallback when
+    ArUco markers are not detected, using the bubble positions from the template's
+    bubblemap YAML.
     """
     try:
         # Get template
@@ -355,6 +323,15 @@ def quick_grade(
         
         rprint(f"[cyan]Using template:[/cyan] {template.display_name}")
         
+        # Load bubblemap for bubble grid alignment fallback
+        bubblemap = None
+        try:
+            bubblemap = load_bublmap(str(template.bubblemap_yaml_path))
+            rprint(f"[cyan]Bubble grid alignment fallback:[/cyan] enabled")
+        except Exception as e:
+            rprint(f"[yellow]Warning: Could not load bubblemap: {e}[/yellow]")
+            rprint("[yellow]Bubble grid alignment fallback will not be available.[/yellow]")
+        
         # Determine output directory
         if out_dir is None:
             out_dir = str(Path(out_csv).parent) if Path(out_csv).parent != Path('.') else "."
@@ -362,7 +339,7 @@ def quick_grade(
         out_dir_path = Path(out_dir)
         out_dir_path.mkdir(parents=True, exist_ok=True)
         
-        # Step 1: Align
+        # Step 1: Align (with bubblemap for bubble grid fallback)
         rprint("[cyan]Step 1/2: Aligning scans...[/cyan]")
         aligned_pdf = out_dir_path / "aligned_scans.pdf"
         
@@ -373,6 +350,7 @@ def quick_grade(
             dpi=dpi,
             align_method=align_method,
             min_markers=min_markers,
+            bubblemap=bubblemap,  # NEW: Pass bubblemap for bubble grid fallback
         )
         rprint(f"[green]✓ Alignment complete:[/green] {aligned_pdf}")
         
@@ -464,4 +442,3 @@ def app_main(
 
 if __name__ == "__main__":
     app_main()
-

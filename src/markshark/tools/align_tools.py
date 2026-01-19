@@ -12,14 +12,16 @@ Reusable alignment primitives:
   estimate_homography, ecc_refine
 - Residual metrics: compute_residuals
 - Fallback via page quadrilateral: detect_page_quad, warp_by_page_quad
+- Bubble grid alignment: align_with_bubble_grid (NEW)
 - Guardrailed alignment pipeline: align_page_once, align_with_guardrails
 
 """
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Any
 import os
+import sys
 import numpy as np  # type: ignore
 import cv2 as cv    # type: ignore
 
@@ -277,6 +279,479 @@ def warp_by_page_quad(template_bgr: np.ndarray, scan_bgr: np.ndarray) -> Tuple[n
     warped = cv.warpPerspective(scan_bgr, H_inv, (tpl_w, tpl_h), flags=cv.INTER_LINEAR)
     return warped, H_inv
 
+
+# ==================== NEW: Bubble Grid Alignment ====================
+#
+# Uses known bubble positions from bubblemap to detect circles in scans
+# and compute a robust homography. This is more reliable than ORB features
+# for bubble sheets because it leverages the structured grid layout.
+# ====================================================================
+
+def _get_bubble_centers_from_layout(
+    layout: Any,
+    img_width: int,
+    img_height: int
+) -> List[Tuple[float, float]]:
+    """
+    Extract bubble center coordinates from a single GridLayout or dict.
+    Works with both GridLayout dataclass objects and raw dictionaries.
+    
+    Args:
+        layout: GridLayout object or dict with x_topleft, y_topleft, etc.
+        img_width: Template image width in pixels
+        img_height: Template image height in pixels
+        
+    Returns:
+        List of (x, y) pixel coordinates for each bubble center
+    """
+    # Handle both GridLayout objects and dictionaries
+    if hasattr(layout, 'x_topleft'):
+        # GridLayout dataclass
+        x1 = layout.x_topleft * img_width
+        y1 = layout.y_topleft * img_height
+        x2 = layout.x_bottomright * img_width
+        y2 = layout.y_bottomright * img_height
+        numrows = layout.numrows
+        numcols = layout.numcols
+        radius_pct = getattr(layout, 'radius_pct', 0.008)
+    else:
+        # Dictionary
+        x1 = layout['x_topleft'] * img_width
+        y1 = layout['y_topleft'] * img_height
+        x2 = layout['x_bottomright'] * img_width
+        y2 = layout['y_bottomright'] * img_height
+        numrows = layout['numrows']
+        numcols = layout['numcols']
+        radius_pct = layout.get('radius_pct', 0.008)
+    
+    # Calculate spacing between bubble centers
+    if numcols > 1:
+        x_step = (x2 - x1) / (numcols - 1)
+    else:
+        x_step = 0
+        x1 = (x1 + x2) / 2  # Center single column
+        
+    if numrows > 1:
+        y_step = (y2 - y1) / (numrows - 1)
+    else:
+        y_step = 0
+        y1 = (y1 + y2) / 2  # Center single row
+    
+    centers = []
+    for row in range(numrows):
+        for col in range(numcols):
+            cx = x1 + col * x_step
+            cy = y1 + row * y_step
+            centers.append((cx, cy))
+    
+    return centers
+
+
+def _get_all_bubble_centers_from_bubblemap(
+    bubblemap: Any,
+    img_width: int,
+    img_height: int,
+    page_num: int = 1
+) -> Tuple[np.ndarray, float]:
+    """
+    Extract all bubble center coordinates from a Bubblemap object.
+    
+    Args:
+        bubblemap: Bubblemap object (from bubblemap_io)
+        img_width: Template image width in pixels
+        img_height: Template image height in pixels
+        page_num: Which page to extract (1-indexed)
+        
+    Returns:
+        (centers_array, radius_pct) - numpy array of shape (N, 2) and radius as fraction
+    """
+    all_centers = []
+    radius_pct = 0.008  # Default
+    
+    # Get the page layout
+    if hasattr(bubblemap, 'get_page'):
+        page = bubblemap.get_page(page_num)
+        if page is None:
+            raise ValueError(f"Page {page_num} not found in bubblemap")
+        
+        # Extract from standard layouts
+        for layout_attr in ['last_name_layout', 'first_name_layout', 'id_layout', 'version_layout']:
+            layout = getattr(page, layout_attr, None)
+            if layout is not None:
+                centers = _get_bubble_centers_from_layout(layout, img_width, img_height)
+                all_centers.extend(centers)
+                if hasattr(layout, 'radius_pct'):
+                    radius_pct = layout.radius_pct
+        
+        # Extract from answer layouts
+        if hasattr(page, 'answer_layouts') and page.answer_layouts:
+            for layout in page.answer_layouts:
+                centers = _get_bubble_centers_from_layout(layout, img_width, img_height)
+                all_centers.extend(centers)
+                if hasattr(layout, 'radius_pct'):
+                    radius_pct = layout.radius_pct
+    else:
+        # Fallback: treat as raw dict (backward compatibility)
+        page_key = f"page_{page_num}"
+        if page_key not in bubblemap:
+            raise ValueError(f"Page key '{page_key}' not found in bubblemap")
+        
+        page_data = bubblemap[page_key]
+        
+        for layout_name in ['last_name_layout', 'first_name_layout', 'id_layout', 'version_layout']:
+            if layout_name in page_data:
+                centers = _get_bubble_centers_from_layout(page_data[layout_name], img_width, img_height)
+                all_centers.extend(centers)
+                radius_pct = page_data[layout_name].get('radius_pct', radius_pct)
+        
+        if 'answer_layouts' in page_data:
+            for layout in page_data['answer_layouts']:
+                centers = _get_bubble_centers_from_layout(layout, img_width, img_height)
+                all_centers.extend(centers)
+                radius_pct = layout.get('radius_pct', radius_pct)
+    
+    return np.array(all_centers, dtype=np.float32), radius_pct
+
+
+def _detect_circles_hough(
+    gray: np.ndarray,
+    min_radius: float,
+    max_radius: float,
+    param1: int = 50,
+    param2: int = 25,
+    min_dist_factor: float = 1.5
+) -> np.ndarray:
+    """
+    Detect circles using Hough Circle Transform.
+    
+    Returns:
+        Array of shape (N, 3) with (x, y, radius) for each detected circle,
+        or empty array if no circles found
+    """
+    # Apply slight blur to reduce noise
+    blurred = cv.GaussianBlur(gray, (5, 5), 1.5)
+    
+    # Detect circles
+    circles = cv.HoughCircles(
+        blurred,
+        cv.HOUGH_GRADIENT,
+        dp=1,
+        minDist=int(max(min_radius * min_dist_factor, 5)),
+        param1=param1,
+        param2=param2,
+        minRadius=int(max(min_radius * 0.5, 3)),
+        maxRadius=int(max_radius * 1.5)
+    )
+    
+    if circles is None:
+        return np.array([]).reshape(0, 3)
+    
+    return circles[0]  # Shape: (N, 3)
+
+
+def _detect_circles_contour(
+    gray: np.ndarray,
+    min_radius: float,
+    max_radius: float,
+    circularity_thresh: float = 0.65
+) -> np.ndarray:
+    """
+    Detect circles using contour analysis (backup method).
+    More robust to partially filled bubbles than Hough.
+    
+    Returns:
+        Array of shape (N, 3) with (x, y, radius) for each detected circle
+    """
+    # Adaptive threshold to handle varying lighting
+    blurred = cv.GaussianBlur(gray, (5, 5), 0)
+    thresh = cv.adaptiveThreshold(
+        blurred, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv.THRESH_BINARY_INV, 15, 5
+    )
+    
+    # Find contours
+    contours, _ = cv.findContours(thresh, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+    
+    circles = []
+    min_area = np.pi * (min_radius * 0.5) ** 2
+    max_area = np.pi * (max_radius * 1.5) ** 2
+    
+    for cnt in contours:
+        area = cv.contourArea(cnt)
+        if area < min_area or area > max_area:
+            continue
+            
+        perimeter = cv.arcLength(cnt, True)
+        if perimeter == 0:
+            continue
+            
+        circularity = 4 * np.pi * area / (perimeter ** 2)
+        if circularity < circularity_thresh:
+            continue
+        
+        # Get enclosing circle
+        (x, y), radius = cv.minEnclosingCircle(cnt)
+        if min_radius * 0.5 <= radius <= max_radius * 1.5:
+            circles.append([x, y, radius])
+    
+    return np.array(circles, dtype=np.float32).reshape(-1, 3) if circles else np.array([]).reshape(0, 3)
+
+
+def _match_circles_to_expected(
+    detected_circles: np.ndarray,
+    expected_centers: np.ndarray,
+    max_dist_ratio: float = 0.4
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Match detected circles to expected bubble positions.
+    
+    Returns:
+        (matched_detected, matched_expected) - corresponding point pairs
+    """
+    if len(detected_circles) == 0 or len(expected_centers) == 0:
+        return np.array([]).reshape(0, 2), np.array([]).reshape(0, 2)
+    
+    detected_xy = detected_circles[:, :2]  # Just x, y
+    
+    # Estimate typical bubble spacing from expected centers
+    if len(expected_centers) > 10:
+        diffs = np.diff(expected_centers[:50], axis=0)
+        dists = np.sqrt(np.sum(diffs ** 2, axis=1))
+        small_dists = dists[dists < np.median(dists) * 2]
+        if len(small_dists) > 0:
+            typical_spacing = np.median(small_dists)
+        else:
+            typical_spacing = np.median(dists)
+    else:
+        typical_spacing = 30  # Fallback
+    
+    max_match_dist = typical_spacing * max_dist_ratio
+    
+    matched_det = []
+    matched_exp = []
+    used_expected = set()
+    
+    # For each detected circle, find nearest expected bubble
+    for det in detected_xy:
+        dists = np.sqrt(np.sum((expected_centers - det) ** 2, axis=1))
+        nearest_idx = np.argmin(dists)
+        
+        if dists[nearest_idx] < max_match_dist and nearest_idx not in used_expected:
+            matched_det.append(det)
+            matched_exp.append(expected_centers[nearest_idx])
+            used_expected.add(nearest_idx)
+    
+    return (
+        np.array(matched_det, dtype=np.float32).reshape(-1, 2),
+        np.array(matched_exp, dtype=np.float32).reshape(-1, 2)
+    )
+
+
+def _validate_homography(
+    H: np.ndarray,
+    img_shape: Tuple[int, int],
+    max_scale_change: float = 0.35,
+    max_shear: float = 0.25
+) -> bool:
+    """
+    Validate that a homography is reasonable (not a crazy warp).
+    """
+    if H is None:
+        return False
+    
+    h, w = img_shape[:2]
+    corners = np.float32([[0, 0], [w, 0], [w, h], [0, h]]).reshape(-1, 1, 2)
+    
+    try:
+        warped_corners = cv.perspectiveTransform(corners, H).reshape(-1, 2)
+    except:
+        return False
+    
+    # Check corners stay in roughly same order
+    sums = warped_corners.sum(axis=1)
+    if np.argmin(sums) != 0:
+        return False
+    
+    # Check area doesn't change drastically
+    original_area = w * h
+    warped_area = cv.contourArea(warped_corners.astype(np.float32))
+    area_ratio = warped_area / original_area
+    if area_ratio < (1 - max_scale_change) or area_ratio > (1 + max_scale_change):
+        return False
+    
+    # Check angles stay roughly 90 degrees
+    def angle_at_corner(p1, p2, p3):
+        v1 = p1 - p2
+        v2 = p3 - p2
+        cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-8)
+        return np.arccos(np.clip(cos_angle, -1, 1))
+    
+    for i in range(4):
+        p1 = warped_corners[(i - 1) % 4]
+        p2 = warped_corners[i]
+        p3 = warped_corners[(i + 1) % 4]
+        angle = angle_at_corner(p1, p2, p3)
+        if abs(angle - np.pi/2) > max_shear * np.pi:
+            return False
+    
+    return True
+
+
+def align_with_bubble_grid(
+    scan_bgr: np.ndarray,
+    template_bgr: np.ndarray,
+    bubblemap: Any,
+    page_num: int = 1,
+    ransac_thresh: float = 5.0,
+    min_inliers: int = 30,
+    hough_param1: int = 50,
+    hough_param2: int = 25
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Dict[str, Any]]:
+    """
+    Align a scan to template using bubble grid positions from bubblemap.
+    
+    This function:
+    1. Gets expected bubble positions from bubblemap (percentage-based, scale-independent)
+    2. Detects circles in the scan using Hough transform (with contour fallback)
+    3. Matches detected circles to expected positions
+    4. Computes homography with RANSAC
+    5. Validates and applies the transform
+    
+    Args:
+        scan_bgr: Scan image (BGR)
+        template_bgr: Template image (BGR)
+        bubblemap: Bubblemap object (from bubblemap_io) or raw dict
+        page_num: Which page in bubblemap to use (1-indexed)
+        ransac_thresh: RANSAC reprojection threshold
+        min_inliers: Minimum inliers required for valid alignment
+        hough_param1: Canny threshold for Hough circles
+        hough_param2: Accumulator threshold for Hough circles
+        
+    Returns:
+        (aligned_image, homography_matrix, metrics_dict)
+        If alignment fails, returns (None, None, metrics_dict_with_error)
+    """
+    metrics: Dict[str, Any] = {
+        "method": "bubble_grid",
+        "detected_circles": 0,
+        "expected_bubbles": 0,
+        "matched_pairs": 0,
+        "inliers": 0,
+        "success": False,
+        "error": None
+    }
+    
+    # Convert to grayscale
+    scan_gray = _to_gray(scan_bgr)
+    template_gray = _to_gray(template_bgr)
+    
+    tpl_h, tpl_w = template_gray.shape[:2]
+    scan_h, scan_w = scan_gray.shape[:2]
+    
+    # Get expected bubble positions (in template coordinates)
+    try:
+        expected_centers, radius_pct = _get_all_bubble_centers_from_bubblemap(
+            bubblemap, tpl_w, tpl_h, page_num
+        )
+        metrics["expected_bubbles"] = len(expected_centers)
+    except Exception as e:
+        metrics["error"] = f"Failed to parse bubblemap: {e}"
+        return None, None, metrics
+    
+    if len(expected_centers) < 20:
+        metrics["error"] = f"Too few bubbles in bubblemap ({len(expected_centers)})"
+        return None, None, metrics
+    
+    # Estimate bubble radius in pixels
+    expected_radius = radius_pct * tpl_w
+    
+    # Scale for scan dimensions (scan might be different size than template)
+    scale_x = scan_w / tpl_w
+    scale_y = scan_h / tpl_h
+    avg_scale = (scale_x + scale_y) / 2
+    scan_radius = expected_radius * avg_scale
+    
+    # Detect circles in scan - try Hough first
+    detected = _detect_circles_hough(
+        scan_gray,
+        min_radius=scan_radius * 0.5,
+        max_radius=scan_radius * 2.5,
+        param1=hough_param1,
+        param2=hough_param2
+    )
+    
+    # If Hough doesn't find enough, try contour method
+    if len(detected) < 100:
+        detected_contour = _detect_circles_contour(
+            scan_gray,
+            min_radius=scan_radius * 0.5,
+            max_radius=scan_radius * 2.5
+        )
+        # Combine both methods
+        if len(detected_contour) > 0:
+            if len(detected) > 0:
+                detected = np.vstack([detected, detected_contour])
+            else:
+                detected = detected_contour
+    
+    metrics["detected_circles"] = len(detected)
+    
+    if len(detected) < 30:
+        metrics["error"] = f"Only detected {len(detected)} circles (need 30+)"
+        return None, None, metrics
+    
+    # Scale expected centers to scan coordinates for matching
+    expected_scaled = expected_centers.copy()
+    expected_scaled[:, 0] *= scale_x
+    expected_scaled[:, 1] *= scale_y
+    
+    # Match detected circles to expected positions
+    matched_det, matched_exp_scaled = _match_circles_to_expected(
+        detected, expected_scaled, max_dist_ratio=0.45
+    )
+    
+    metrics["matched_pairs"] = len(matched_det)
+    
+    if len(matched_det) < min_inliers:
+        metrics["error"] = f"Only matched {len(matched_det)} pairs (need {min_inliers}+)"
+        return None, None, metrics
+    
+    # Scale matched expected points back to template coordinates
+    matched_exp_template = matched_exp_scaled.copy()
+    matched_exp_template[:, 0] /= scale_x
+    matched_exp_template[:, 1] /= scale_y
+    
+    # Compute homography: scan -> template
+    H, mask = cv.findHomography(
+        matched_det,             # Source points (scan coordinates)
+        matched_exp_template,    # Destination points (template coordinates)
+        cv.RANSAC,
+        ransac_thresh
+    )
+    
+    if H is None:
+        metrics["error"] = "Homography estimation failed"
+        return None, None, metrics
+    
+    inliers = int(mask.ravel().sum()) if mask is not None else 0
+    metrics["inliers"] = inliers
+    
+    if inliers < min_inliers:
+        metrics["error"] = f"Only {inliers} inliers (need {min_inliers}+)"
+        return None, None, metrics
+    
+    # Validate homography is reasonable
+    if not _validate_homography(H, (scan_h, scan_w)):
+        metrics["error"] = "Homography validation failed (unreasonable transform)"
+        return None, None, metrics
+    
+    # Apply homography
+    aligned = cv.warpPerspective(scan_bgr, H, (tpl_w, tpl_h))
+    
+    metrics["success"] = True
+    return aligned, H, metrics
+
+
 # --------------------------- Guardrailed Alignment ---------------------------
 
 def align_page_once(template_bgr: np.ndarray,
@@ -323,12 +798,19 @@ def align_with_guardrails(template_bgr: np.ndarray,
                           base_ratio: float,
                           fail_med: float,
                           fail_p95: float,
-                          fail_br: float):
+                          fail_br: float,
+                          bubblemap: Any = None,
+                          page_num: int = 1):
     """
-    Try once with base params; if metrics too high, retry with stricter settings; if still bad, fallback via page quad.
+    Try alignment with multiple fallback strategies:
+    1. Base ORB feature matching
+    2. Stricter ORB parameters
+    3. Bubble grid alignment (if bubblemap provided) - NEW
+    4. Page quadrilateral fallback
+    
     Returns (warped, metrics_dict_with_mode).
     """
-    # Attempt 1: base
+    # Attempt 1: base ORB features
     try:
         warped, metrics = align_page_once(template_bgr, scan_bgr, base_fpar, base_epar, base_ratio)
         if not need_retry(metrics, fail_med, fail_p95, fail_br):
@@ -337,26 +819,24 @@ def align_with_guardrails(template_bgr: np.ndarray,
     except Exception:
         pass
 
-    # Attempt 2: stricter params
+    # Attempt 2: stricter ORB params
     ratio = max(0.68, base_ratio - 0.05)
     
     fpar = apply_feat_overrides(
         tiles_x=max(base_fpar.tiles_x, 8),
         tiles_y=max(base_fpar.tiles_y, 10),
         orb_fast_threshold=max(6, base_fpar.orb_fast_threshold - 4),
-        # carry forward unchanged fields
         topk_per_tile=base_fpar.topk_per_tile,
         orb_nfeatures=base_fpar.orb_nfeatures,
     )
     
     epar = apply_est_overrides(
-        method=base_epar.method,
+        estimator_method=base_epar.estimator_method,
         ransac_thresh=min(base_epar.ransac_thresh, 2.0),
         max_iters=max(base_epar.max_iters, 20000),
         confidence=base_epar.confidence,
         use_ecc=base_epar.use_ecc,
         ecc_levels=base_epar.ecc_levels,
-        # if your EstParams uses 'ecc_max_iters'/'ecc_eps', include them; adjust names to your dataclass
         ecc_max_iters=getattr(base_epar, "ecc_max_iters", 50),
         ecc_eps=base_epar.ecc_eps,
     )
@@ -369,7 +849,33 @@ def align_with_guardrails(template_bgr: np.ndarray,
     except Exception:
         pass
 
-    # Attempt 3: page-quad fallback (+ optional ECC micro-refine)
+    # Attempt 3: Bubble grid alignment (NEW - if bubblemap provided)
+    if bubblemap is not None:
+        try:
+            warped_bg, H_bg, bg_metrics = align_with_bubble_grid(
+                scan_bgr, template_bgr, bubblemap,
+                page_num=page_num,
+                ransac_thresh=5.0,
+                min_inliers=30
+            )
+            if warped_bg is not None and bg_metrics.get("success", False):
+                metrics = {
+                    "mode": "bubble_grid",
+                    "res_median": float("nan"),
+                    "res_p95": float("nan"),
+                    "res_br_p95": float("nan"),
+                    "n_inliers": bg_metrics.get("inliers", 0),
+                    "matched_pairs": bg_metrics.get("matched_pairs", 0),
+                    "detected_circles": bg_metrics.get("detected_circles", 0),
+                }
+                print(f"[info] Bubble grid alignment succeeded: {bg_metrics['inliers']} inliers from {bg_metrics['matched_pairs']} matches", file=sys.stderr)
+                return warped_bg, metrics
+            else:
+                print(f"[info] Bubble grid alignment failed: {bg_metrics.get('error', 'unknown')}", file=sys.stderr)
+        except Exception as e:
+            print(f"[info] Bubble grid alignment error: {e}", file=sys.stderr)
+
+    # Attempt 4: page-quad fallback (+ optional ECC micro-refine)
     warped_q, H_inv_q = warp_by_page_quad(template_bgr, scan_bgr)
     try:
         H_init = np.eye(3, dtype='float64')
@@ -384,14 +890,14 @@ def align_with_guardrails(template_bgr: np.ndarray,
     except Exception:
         warped = warped_q
 
-    # Optional: compute diagnostic residuals after fallback (best-effort)
+    # Compute diagnostic residuals after fallback (best-effort)
     try:
         fpar2 = apply_feat_overrides(tiles_x=6, tiles_y=8, topk_per_tile=120,
                                      orb_nfeatures=2500, orb_fast_threshold=12)
-        epar2 = apply_est_overrides(method=base_epar.method, ransac_thresh=3.0,
+        epar2 = apply_est_overrides(estimator_method=base_epar.estimator_method, ransac_thresh=3.0,
                                     max_iters=10000, confidence=0.999,
                                     use_ecc=False, ecc_levels=base_epar.ecc_levels,
-                                    ecc_max_iters=base_epar.ecc_iters, ecc_eps=base_epar.ecc_eps)
+                                    ecc_max_iters=getattr(base_epar, 'ecc_max_iters', 50), ecc_eps=base_epar.ecc_eps)
         tpl_g = _to_gray(template_bgr); war_g = _to_gray(warped)
         k1, d1 = detect_orb_grid(tpl_g, fpar2); k2, d2 = detect_orb_grid(war_g, fpar2)
         matches = match_descriptors(d1, d2, ratio=0.75, cross_check=True)

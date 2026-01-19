@@ -7,7 +7,7 @@ align_core.py  — MarkShark bubblesheet alignment engine with MULTI-PAGE suppor
 import os
 import sys
 from types import SimpleNamespace
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Any
 
 import numpy as np  # type: ignore
 import cv2  # type: ignore
@@ -45,6 +45,7 @@ def align_pdf_scans(
     last_page: Optional[int] = None,
     save_debug: Optional[str] = None,
     fallback_original: bool = True,
+    bubblemap: Any = None,  # NEW: Optional Bubblemap object for bubble grid alignment
 ) -> str:
     """
     Align scanned bubble sheets to a template.
@@ -56,6 +57,10 @@ def align_pdf_scans(
       * Pages 2,4,6... align to template page 2
       * etc.
     - Input scan pages must be a multiple of template pages
+    
+    NEW: Bubble grid alignment fallback!
+    - If bubblemap is provided, uses known bubble positions for alignment
+    - More robust than ORB features for sheets without ArUco markers
     """
     # Build args expected by the lower-level aligner
     args = SimpleNamespace(
@@ -88,6 +93,8 @@ def align_pdf_scans(
         fail_med=ALIGN_DEFAULTS.fail_med, fail_p95=ALIGN_DEFAULTS.fail_p95, fail_br=ALIGN_DEFAULTS.fail_br,
         # Misc
         save_debug=save_debug, fallback_original=fallback_original,
+        # NEW: Bubblemap for bubble grid alignment
+        bubblemap=bubblemap,
     )
 
     # Choose renderer
@@ -106,6 +113,8 @@ def align_pdf_scans(
     template_bgr_list = [bgr for (path, idx, bgr) in template_pages_tuples]
     
     print(f"[info] Loaded template with {num_template_pages} page(s)", file=sys.stderr)
+    if bubblemap is not None:
+        print(f"[info] Bubblemap provided - bubble grid alignment available as fallback", file=sys.stderr)
 
     # Convert raw scans to (src_path, page_idx, bgr)
     raw_scans_bgr = IO.convert_pdf_pages_to_bgr_tuples(input_pdf, dpi=dpi, renderer=renderer)
@@ -163,7 +172,7 @@ def align_raw_bgr_scans_multipage(
     Args:
         raw_scans_bgr: List of (src_path, page_idx, bgr_image) tuples
         template_bgr_list: List of template page images [page1_bgr, page2_bgr, ...]
-        args: Alignment parameters
+        args: Alignment parameters (now includes optional bubblemap)
         
     Returns:
         (aligned_pages, metrics_rows) in original scan order
@@ -171,6 +180,9 @@ def align_raw_bgr_scans_multipage(
     num_template_pages = len(template_bgr_list)
     aligned_pages: List[np.ndarray] = []
     metrics_rows: List[dict] = []
+
+    # Get bubblemap if provided
+    bubblemap = getattr(args, 'bubblemap', None)
 
     # Pre-build base params for feature pass
     fpar = apply_feat_overrides(
@@ -193,9 +205,27 @@ def align_raw_bgr_scans_multipage(
         template_page_idx = scan_idx % num_template_pages
         template_bgr = template_bgr_list[template_page_idx]
         
+        # Handle first_page/last_page filters
+        skip_this_page = False
         if getattr(args, "first_page", None) is not None and page_idx < int(args.first_page):
-            continue
+            skip_this_page = True
         if getattr(args, "last_page", None) is not None and page_idx > int(args.last_page):
+            skip_this_page = True
+        
+        if skip_this_page:
+            # Keep original page if skipping due to filters
+            aligned_pages.append(scan_bgr)
+            metrics_rows.append({
+                "source": os.path.basename(src_path),
+                "page": page_idx,
+                "template_page": template_page_idx + 1,
+                "mode": "skipped",
+                "res_median": "nan",
+                "res_p95": "nan",
+                "res_br_p95": "nan",
+                "n_inliers": "",
+            })
+            print(f"[info] Skipping page {page_idx} (outside first_page/last_page range)", file=sys.stderr)
             continue
         
         print(f"[info] Aligning scan page {page_idx} to template page {template_page_idx + 1}", file=sys.stderr)
@@ -247,11 +277,14 @@ def align_raw_bgr_scans_multipage(
                     })
                     print(f"[info] {src_path} p{page_idx}: kept original (ArUco-only mode).", file=sys.stderr)
             else:
-                # Feature-based alignment
+                # Feature-based alignment with guardrails
+                # NOW: Pass bubblemap for bubble grid fallback
                 try:
                     warped, metrics = SA.align_with_guardrails(
                         template_bgr, scan_bgr, fpar, epar, args.match_ratio,
-                        args.fail_med, args.fail_p95, args.fail_br
+                        args.fail_med, args.fail_p95, args.fail_br,
+                        bubblemap=bubblemap,
+                        page_num=template_page_idx + 1  # 1-indexed page number for bubblemap
                     )
                     aligned_pages.append(warped)
                     if getattr(args, "out_dir", None):
@@ -272,6 +305,25 @@ def align_raw_bgr_scans_multipage(
                     print(f"[ok] {src_path} p{page_idx}: mode={row['mode']} median={row['res_median']} p95={row['res_p95']} br_p95={row['res_br_p95']}", file=sys.stderr)
                 except Exception as e:
                     print(f"[error] {src_path} p{page_idx}: {e}", file=sys.stderr)
+                    # CRITICAL: Even if alignment fails, we must append a page to maintain count
+                    if getattr(args, "fallback_original", True):
+                        print(f"[info] {src_path} p{page_idx}: Using original unaligned page as fallback", file=sys.stderr)
+                        aligned_pages.append(scan_bgr)
+                    else:
+                        print(f"[info] {src_path} p{page_idx}: Using black page (fallback disabled)", file=sys.stderr)
+                        # Create a black page of the same size
+                        aligned_pages.append(np.zeros_like(scan_bgr))
+                    metrics_rows.append({
+                        "source": os.path.basename(src_path),
+                        "page": page_idx,
+                        "template_page": template_page_idx + 1,
+                        "mode": "error",
+                        "res_median": "nan",
+                        "res_p95": "nan",
+                        "res_br_p95": "nan",
+                        "n_inliers": "",
+                    })
+
 
     return aligned_pages, metrics_rows
 

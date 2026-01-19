@@ -100,6 +100,73 @@ class TemplateManager:
         # Fall back to current directory
         return Path.cwd() / "templates"
     
+    @staticmethod
+    def _find_answer_layouts_in_yaml(yaml_data: dict) -> Tuple[bool, Optional[int], Optional[int]]:
+        """
+        Find answer_layouts in YAML data, supporting both legacy and multi-page formats.
+        
+        Returns:
+            Tuple of (found, num_questions, num_choices)
+        """
+        if not isinstance(yaml_data, dict):
+            return False, None, None
+        
+        num_questions = None
+        num_choices = None
+        
+        # Check for multi-page format (page_1, page_2, etc.)
+        page_keys = [k for k in yaml_data.keys() if k.startswith('page_')]
+        
+        if page_keys:
+            # Multi-page format
+            total_questions = 0
+            for page_key in sorted(page_keys):
+                page_data = yaml_data.get(page_key, {})
+                if isinstance(page_data, dict):
+                    answer_layouts = page_data.get('answer_layouts', [])
+                    if answer_layouts:
+                        for layout in answer_layouts:
+                            if isinstance(layout, dict):
+                                # Count questions (numrows for row-selection layouts)
+                                total_questions += layout.get('numrows', 0)
+                                # Get num_choices from numcols (or labels length)
+                                if num_choices is None:
+                                    num_choices = layout.get('numcols')
+                                    if num_choices is None and 'labels' in layout:
+                                        num_choices = len(layout['labels'])
+            
+            if total_questions > 0:
+                num_questions = total_questions
+                return True, num_questions, num_choices
+        
+        # Check for legacy flat format (answer_layouts at top level)
+        if 'answer_layouts' in yaml_data:
+            answer_layouts = yaml_data['answer_layouts']
+            if isinstance(answer_layouts, list):
+                total_questions = 0
+                for layout in answer_layouts:
+                    if isinstance(layout, dict):
+                        total_questions += layout.get('numrows', 0)
+                        if num_choices is None:
+                            num_choices = layout.get('numcols')
+                            if num_choices is None and 'labels' in layout:
+                                num_choices = len(layout['labels'])
+                if total_questions > 0:
+                    num_questions = total_questions
+                return True, num_questions, num_choices
+        
+        # Check for old answer_rows format (legacy)
+        if 'answer_rows' in yaml_data:
+            answer_rows = yaml_data['answer_rows']
+            if isinstance(answer_rows, list):
+                num_questions = len(answer_rows)
+                if answer_rows and isinstance(answer_rows[0], dict):
+                    choices = answer_rows[0].get('choices', [])
+                    num_choices = len(choices) if choices else None
+                return True, num_questions, num_choices
+        
+        return False, None, None
+    
     def scan_templates(self, force_refresh: bool = False) -> List[BubbleSheetTemplate]:
         """
         Scan the templates directory and return a list of available templates.
@@ -169,17 +236,17 @@ class TemplateManager:
                             description = metadata.get('description', description)
                             num_questions = metadata.get('num_questions', num_questions)
                             num_choices = metadata.get('num_choices', num_choices)
+                            # Also check total_questions (alternate key)
+                            if num_questions is None:
+                                num_questions = metadata.get('total_questions', num_questions)
                         
-                        # Try to infer num_questions from answer_rows if not in metadata
-                        if num_questions is None and 'answer_rows' in yaml_data:
-                            num_questions = len(yaml_data['answer_rows'])
-                        
-                        # Try to infer num_choices from first answer row
-                        if num_choices is None and 'answer_rows' in yaml_data:
-                            answer_rows = yaml_data['answer_rows']
-                            if answer_rows and isinstance(answer_rows[0], dict):
-                                choices = answer_rows[0].get('choices', [])
-                                num_choices = len(choices) if choices else None
+                        # Try to infer num_questions and num_choices from answer layouts
+                        if num_questions is None or num_choices is None:
+                            found, inferred_questions, inferred_choices = self._find_answer_layouts_in_yaml(yaml_data)
+                            if num_questions is None:
+                                num_questions = inferred_questions
+                            if num_choices is None:
+                                num_choices = inferred_choices
                 
             except Exception as e:
                 logger.warning(f"Error reading metadata from {yaml_path}: {e}")
@@ -256,17 +323,31 @@ class TemplateManager:
         template_dir = self.templates_dir / template_id
         template_dir.mkdir(parents=True, exist_ok=True)
         
-        # Create example bubblemap.yaml
+        # Create example bubblemap.yaml (multi-page format)
         example_yaml = {
             'metadata': {
                 'display_name': 'Example 50 Question Test',
                 'description': '50 questions, 5 choices (A-E)',
-                'num_questions': 50,
-                'num_choices': 5,
+                'pages': 1,
+                'total_questions': 50,
+                'schema_version': 1,
             },
-            'answer_rows': [],  # This would be populated with actual bubble coordinates
-            'name_zone': {},  # This would be populated with actual zone coordinates
-            'id_zone': {},  # This would be populated with actual zone coordinates
+            'page_1': {
+                'answer_layouts': [
+                    {
+                        'x_topleft': 0.1,
+                        'y_topleft': 0.1,
+                        'x_bottomright': 0.9,
+                        'y_bottomright': 0.9,
+                        'radius_pct': 0.008,
+                        'numrows': 50,
+                        'numcols': 5,
+                        'bubble_shape': 'circle',
+                        'selection_axis': 'row',
+                        'labels': 'ABCDE',
+                    }
+                ],
+            },
         }
         
         yaml_path = template_dir / "bubblemap.yaml"
@@ -313,9 +394,14 @@ class TemplateManager:
                 if not isinstance(yaml_data, dict):
                     errors.append("Bubblemap YAML must contain a dictionary/mapping")
                 else:
-                    # Check for required keys
-                    if 'answer_rows' not in yaml_data:
-                        errors.append("Bubblemap YAML missing 'answer_rows' key")
+                    # Check for answer layouts using the helper that supports all formats
+                    found, _, _ = self._find_answer_layouts_in_yaml(yaml_data)
+                    if not found:
+                        errors.append(
+                            "Bubblemap YAML missing answer layouts. "
+                            "Expected 'answer_layouts' in page_X sections (multi-page format) "
+                            "or at top level (legacy format)"
+                        )
                     
             except yaml.YAMLError as e:
                 errors.append(f"Invalid YAML syntax: {e}")

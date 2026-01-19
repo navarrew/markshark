@@ -29,6 +29,18 @@ metadata:
   pages: 2  # Number of pages
   total_questions: 128
 
+registration:  # NEW: Alignment configuration
+  primary_method: "aruco"
+  fallback_methods: ["bubble_grid", "orb_features"]
+  aruco:
+    enabled: true
+    dictionary: "DICT_4X4_50"
+    min_markers: 4
+  bubble_grid:
+    enabled: true
+    ransac_threshold: 5.0
+    min_inliers: 30
+
 page_1:
   last_name_layout: { ... }
   first_name_layout: { ... }
@@ -46,7 +58,7 @@ page_2:
 
 from __future__ import annotations
 import yaml
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
 
@@ -67,6 +79,56 @@ class GridLayout:
 
 
 @dataclass
+class ArUcoConfig:
+    """ArUco marker alignment configuration."""
+    enabled: bool = False
+    dictionary: str = "DICT_4X4_50"
+    min_markers: int = 4
+    ransac_threshold: float = 3.0
+    markers: Optional[List[Dict[str, Any]]] = None  # Optional explicit marker positions
+
+
+@dataclass
+class BubbleGridConfig:
+    """Bubble grid alignment configuration."""
+    enabled: bool = True
+    alignment_zones: Optional[List[str]] = None  # Which zones to use for alignment
+    hough_param1: int = 50
+    hough_param2: int = 25
+    ransac_threshold: float = 5.0
+    min_inliers: int = 30
+
+
+@dataclass
+class CornerMarksConfig:
+    """Corner registration marks configuration."""
+    enabled: bool = False
+    type: str = "filled_square"  # "filled_square", "L_bracket", "crosshair", "circle"
+    size_pct: float = 0.015
+    positions: Optional[List[Dict[str, Any]]] = None
+
+
+@dataclass
+class OrbFeaturesConfig:
+    """ORB feature alignment configuration."""
+    enabled: bool = True
+    exclude_zones: Optional[List[str]] = None  # Zones to exclude from feature detection
+    orb_nfeatures: int = 2000
+    match_ratio: float = 0.75
+
+
+@dataclass
+class RegistrationConfig:
+    """Alignment/registration configuration."""
+    primary_method: str = "aruco"
+    fallback_methods: List[str] = field(default_factory=lambda: ["bubble_grid", "orb_features"])
+    aruco: ArUcoConfig = field(default_factory=ArUcoConfig)
+    bubble_grid: BubbleGridConfig = field(default_factory=BubbleGridConfig)
+    corner_marks: CornerMarksConfig = field(default_factory=CornerMarksConfig)
+    orb_features: OrbFeaturesConfig = field(default_factory=OrbFeaturesConfig)
+
+
+@dataclass
 class PageLayout:
     """Layouts for a single page of the bubble sheet."""
     page_number: int
@@ -83,6 +145,7 @@ class Bubblemap:
     pages: List[PageLayout]  # One PageLayout per page
     metadata: Dict[str, Any] | None = None
     total_questions: int | None = None
+    registration: RegistrationConfig | None = None  # NEW: Registration config
     
     @property
     def num_pages(self) -> int:
@@ -95,6 +158,40 @@ class Bubblemap:
             if page.page_number == page_num:
                 return page
         return None
+    
+    def get_aruco_config(self) -> ArUcoConfig:
+        """Get ArUco configuration, with fallback to metadata for backward compat."""
+        if self.registration is not None:
+            return self.registration.aruco
+        
+        # Backward compatibility: check metadata.alignment.aruco
+        if self.metadata and 'alignment' in self.metadata:
+            align = self.metadata['alignment']
+            if 'aruco' in align:
+                aruco_data = align['aruco']
+                return ArUcoConfig(
+                    enabled=aruco_data.get('enabled', False),
+                    dictionary=aruco_data.get('dictionary', 'DICT_4X4_50'),
+                    min_markers=aruco_data.get('min_markers', 4),
+                )
+        
+        return ArUcoConfig()  # Default
+    
+    def get_bubble_grid_config(self) -> BubbleGridConfig:
+        """Get bubble grid alignment configuration."""
+        if self.registration is not None:
+            return self.registration.bubble_grid
+        return BubbleGridConfig()  # Default
+    
+    def should_use_aruco(self) -> bool:
+        """Check if ArUco alignment should be attempted."""
+        config = self.get_aruco_config()
+        return config.enabled and config.dictionary.upper() not in ("NONE", "")
+    
+    def should_use_bubble_grid(self) -> bool:
+        """Check if bubble grid alignment should be attempted."""
+        config = self.get_bubble_grid_config()
+        return config.enabled
     
     # Backward compatibility properties for single-page sheets
     @property
@@ -217,6 +314,70 @@ def _parse_page_layouts(page_num: int, page_data: Dict[str, Any]) -> PageLayout:
     return page_layout
 
 
+def _parse_registration_config(data: Dict[str, Any]) -> Optional[RegistrationConfig]:
+    """Parse the registration configuration section."""
+    if 'registration' not in data:
+        return None
+    
+    reg_data = data['registration']
+    
+    # Parse ArUco config
+    aruco_config = ArUcoConfig()
+    if 'aruco' in reg_data:
+        aruco_data = reg_data['aruco']
+        aruco_config = ArUcoConfig(
+            enabled=aruco_data.get('enabled', False),
+            dictionary=aruco_data.get('dictionary', 'DICT_4X4_50'),
+            min_markers=aruco_data.get('min_markers', 4),
+            ransac_threshold=aruco_data.get('ransac_threshold', 3.0),
+            markers=aruco_data.get('markers'),
+        )
+    
+    # Parse bubble grid config
+    bubble_grid_config = BubbleGridConfig()
+    if 'bubble_grid' in reg_data:
+        bg_data = reg_data['bubble_grid']
+        bubble_grid_config = BubbleGridConfig(
+            enabled=bg_data.get('enabled', True),
+            alignment_zones=bg_data.get('alignment_zones'),
+            hough_param1=bg_data.get('hough_param1', 50),
+            hough_param2=bg_data.get('hough_param2', 25),
+            ransac_threshold=bg_data.get('ransac_threshold', 5.0),
+            min_inliers=bg_data.get('min_inliers', 30),
+        )
+    
+    # Parse corner marks config
+    corner_marks_config = CornerMarksConfig()
+    if 'corner_marks' in reg_data:
+        cm_data = reg_data['corner_marks']
+        corner_marks_config = CornerMarksConfig(
+            enabled=cm_data.get('enabled', False),
+            type=cm_data.get('type', 'filled_square'),
+            size_pct=cm_data.get('size_pct', 0.015),
+            positions=cm_data.get('positions'),
+        )
+    
+    # Parse ORB features config
+    orb_config = OrbFeaturesConfig()
+    if 'orb_features' in reg_data:
+        orb_data = reg_data['orb_features']
+        orb_config = OrbFeaturesConfig(
+            enabled=orb_data.get('enabled', True),
+            exclude_zones=orb_data.get('exclude_zones'),
+            orb_nfeatures=orb_data.get('orb_nfeatures', 2000),
+            match_ratio=orb_data.get('match_ratio', 0.75),
+        )
+    
+    return RegistrationConfig(
+        primary_method=reg_data.get('primary_method', 'aruco'),
+        fallback_methods=reg_data.get('fallback_methods', ['bubble_grid', 'orb_features']),
+        aruco=aruco_config,
+        bubble_grid=bubble_grid_config,
+        corner_marks=corner_marks_config,
+        orb_features=orb_config,
+    )
+
+
 def load_bublmap(path: str) -> Bubblemap:
     """Load and validate a Bubblemap YAML file with multi-page support."""
     import io
@@ -227,6 +388,9 @@ def load_bublmap(path: str) -> Bubblemap:
     metadata = data.get("metadata", {})
     num_pages = metadata.get("pages", 1)
     total_questions = metadata.get("total_questions")
+    
+    # Parse registration config (NEW)
+    registration = _parse_registration_config(data)
     
     # Parse pages
     pages: List[PageLayout] = []
@@ -244,7 +408,8 @@ def load_bublmap(path: str) -> Bubblemap:
     bmap = Bubblemap(
         pages=pages,
         metadata=metadata,
-        total_questions=total_questions
+        total_questions=total_questions,
+        registration=registration,
     )
     
     return bmap
@@ -280,6 +445,56 @@ def dump_bublmap(bmap: Bubblemap, path: str) -> None:
             "pages": bmap.num_pages,
             "total_questions": bmap.total_questions
         }
+    
+    # Add registration config (NEW)
+    if bmap.registration is not None:
+        reg = bmap.registration
+        reg_data: Dict[str, Any] = {
+            "primary_method": reg.primary_method,
+            "fallback_methods": reg.fallback_methods,
+        }
+        
+        # ArUco
+        reg_data["aruco"] = {
+            "enabled": reg.aruco.enabled,
+            "dictionary": reg.aruco.dictionary,
+            "min_markers": reg.aruco.min_markers,
+            "ransac_threshold": reg.aruco.ransac_threshold,
+        }
+        if reg.aruco.markers:
+            reg_data["aruco"]["markers"] = reg.aruco.markers
+        
+        # Bubble grid
+        reg_data["bubble_grid"] = {
+            "enabled": reg.bubble_grid.enabled,
+            "hough_param1": reg.bubble_grid.hough_param1,
+            "hough_param2": reg.bubble_grid.hough_param2,
+            "ransac_threshold": reg.bubble_grid.ransac_threshold,
+            "min_inliers": reg.bubble_grid.min_inliers,
+        }
+        if reg.bubble_grid.alignment_zones:
+            reg_data["bubble_grid"]["alignment_zones"] = reg.bubble_grid.alignment_zones
+        
+        # Corner marks
+        if reg.corner_marks.enabled:
+            reg_data["corner_marks"] = {
+                "enabled": reg.corner_marks.enabled,
+                "type": reg.corner_marks.type,
+                "size_pct": reg.corner_marks.size_pct,
+            }
+            if reg.corner_marks.positions:
+                reg_data["corner_marks"]["positions"] = reg.corner_marks.positions
+        
+        # ORB features
+        reg_data["orb_features"] = {
+            "enabled": reg.orb_features.enabled,
+            "orb_nfeatures": reg.orb_features.orb_nfeatures,
+            "match_ratio": reg.orb_features.match_ratio,
+        }
+        if reg.orb_features.exclude_zones:
+            reg_data["orb_features"]["exclude_zones"] = reg.orb_features.exclude_zones
+        
+        data["registration"] = reg_data
     
     # Add page layouts
     for page in bmap.pages:

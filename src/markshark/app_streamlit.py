@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional, List
 
 import streamlit as st
+import yaml  # For template creation
 
 # Optional, pull defaults from MarkShark so GUI matches CLI defaults.
 try:
@@ -228,12 +229,21 @@ page = st.sidebar.radio("Select below", [
 # Initialize / show working directory selector
 _init_workdir()
 
+# Initialize template manager (used by multiple pages)
+template_manager = None
+if TemplateManager is not None:
+    try:
+        templates_dir = _dflt(TEMPLATE_DEFAULTS, "templates_dir", None)
+        template_manager = TemplateManager(templates_dir)
+    except Exception as e:
+        pass  # Will show warning on pages that need it
+
 # ===================== 0) QUICK GRADE (UNIFIED WORKFLOW) =====================
 if page.startswith("0"):
     st.header("Quick Grade: Align + Score in One Step")
     st.markdown("""
     Upload your **scanned answer sheets** and **answer key**, select a template, and MarkShark will:
-    1. Align the scans to the template
+    1. Align the scans to the template (with bubble grid fallback if ArUco markers not found)
     2. Score them automatically
     """)
     
@@ -245,15 +255,6 @@ if page.startswith("0"):
         quick_status = st.empty()
     
     st.divider()
-    
-    # Initialize template manager
-    template_manager = None
-    if TemplateManager is not None:
-        try:
-            templates_dir = _dflt(TEMPLATE_DEFAULTS, "templates_dir", None)
-            template_manager = TemplateManager(templates_dir)
-        except Exception as e:
-            st.warning(f"Could not initialize template manager: {e}")
     
     colA, colB = st.columns(2)
     with colA:
@@ -287,6 +288,8 @@ if page.startswith("0"):
                         st.success(f"Using template: **{template_choice.display_name}**")
                         if template_choice.num_questions:
                             st.caption(f"Questions: {template_choice.num_questions} | Choices: {template_choice.num_choices or 'N/A'}")
+                        # NEW: Show bubble grid info
+                        st.caption("✓ Bubble grid alignment fallback enabled")
             else:
                 st.info("No templates found. Upload custom files below or add templates to the templates directory.")
         
@@ -295,6 +298,8 @@ if page.startswith("0"):
             st.markdown("**Upload custom template files:**")
             custom_template_pdf = _tempfile_from_uploader("Master template PDF", "quick_template_pdf", types=("pdf",))
             custom_bublmap = _tempfile_from_uploader("Bubblemap YAML", "quick_bubblemap", types=("yaml", "yml"))
+            if custom_bublmap:
+                st.caption("✓ Bubble grid alignment fallback enabled")
     
     with colB:
         st.subheader("Options")
@@ -342,7 +347,7 @@ if page.startswith("0"):
             work_dir = Path(tempfile.mkdtemp(prefix="quick_grade_", dir=str(base)))
             
             try:
-                # Step 1: Align
+                # Step 1: Align (with bubblemap for bubble grid fallback)
                 quick_status.info("Step 1/2: Aligning scans to template...")
                 aligned_pdf = work_dir / "aligned_scans.pdf"
                 
@@ -355,6 +360,10 @@ if page.startswith("0"):
                     "--align-method", align_method,
                     "--min-markers", str(min_markers),
                 ]
+                
+                # NEW: Pass bubblemap for bubble grid alignment fallback
+                if bublmap:
+                    align_args += ["--bubblemap", str(bublmap)]
                 
                 with st.spinner("Aligning scans..."):
                     align_out = _run_cli(align_args)
@@ -434,6 +443,16 @@ elif page.startswith("1"):
     with colA:
         scans = _tempfile_from_uploader("Raw student scans (PDF)", "align_scans", types=("pdf",))
         template = _tempfile_from_uploader("Template bubble sheet (PDF)", "align_template", types=("pdf",))
+        
+        # NEW: Optional bubblemap for bubble grid fallback
+        st.markdown("---")
+        st.markdown("**Optional: Bubblemap for enhanced alignment**")
+        st.caption("If provided, enables bubble grid alignment as fallback when ArUco/features fail")
+        align_bublmap = _tempfile_from_uploader("Bubblemap YAML (optional)", "align_bubblemap", types=("yaml", "yml"))
+        if align_bublmap:
+            st.success("✓ Bubble grid fallback enabled")
+        
+        st.markdown("---")
         method = st.selectbox("Alignment method", ["auto", "aruco", "feature"], index=0)
         dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1)
 
@@ -496,7 +515,7 @@ elif page.startswith("1"):
                 "--template", str(template),
                 "--out-pdf", str(out_pdf),
                 "--dpi", str(int(dpi)),
-                "--align_method", method,
+                "--align-method", method,
                 "--estimator-method", estimator_method,
                 "--template-page", str(int(template_page)),
                 "--ransac", str(float(ransac)),
@@ -510,6 +529,10 @@ elif page.startswith("1"):
                 args += ["--first-page", str(int(first_page))]
             if last_page > 0:
                 args += ["--last-page", str(int(last_page))]
+            
+            # NEW: Pass bubblemap for bubble grid fallback
+            if align_bublmap:
+                args += ["--bubblemap", str(align_bublmap)]
 
             try:
                 with st.spinner("Aligning via CLI..."):
@@ -545,24 +568,19 @@ elif page.startswith("2"):
         out_ann_dir = st.text_input("Annotated png directory (optional)", value="", placeholder="Enter a folder name here for png files")
         annotate_all = st.checkbox("Annotate all cells", value=True)
         label_density = st.checkbox("Label density diagnostics", value=True)
-        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1)
+        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1, key="score_dpi")
         st.markdown("---")
         st.markdown("Adjustments if scoring isn't working well")
-        auto_thresh = st.checkbox(
-            "Auto tune gray sensitivity per page",
-            value=bool(_dflt(SCORING_DEFAULTS, "auto_calibrate_thresh", True)),
-        )
-        verbose_thresh = st.checkbox(
-            "Show threshold calibration logs",
-            value=bool(_dflt(SCORING_DEFAULTS, "verbose_calibration", False)),
-        )
-        fixed_thresh = st.text_input("Gray sensitivity (1-255: higher number = more sensitive to lighter shades)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "fixed_thresh", "")))
-        min_fill = st.text_input("Minimum bubble area filled", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", "")))
-        min_score = st.text_input("Minimum fill area difference between top two filled bubbles", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_score", "")))
-        top2_ratio = st.text_input("Minimum area fill ratio between 1st and 2nd most filled bubble", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", "")))
+        auto_thresh = st.checkbox("Auto-calibrate threshold", value=_dflt(SCORING_DEFAULTS, "auto_calibrate_thresh", True), key="score_auto_thresh")
+        verbose_thresh = st.checkbox("Verbose threshold calibration", value=True, key="score_verbose")
+
+        min_fill = st.text_input("Min fill (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", "")))
+        min_score = st.text_input("Min score (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_score", "")))
+        top2_ratio = st.text_input("Top2 ratio (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", "")))
+
     if run_score_clicked:
         if not aligned or not bublmap:
-            st.error("Please upload aligned PDF and bubblemap.")
+            score_status.error("Please upload aligned PDF and bubblemap YAML.")
         else:
             base = WORKDIR or Path(os.getcwd())
             out_dir = Path(tempfile.mkdtemp(prefix="score_", dir=str(base)))
@@ -576,12 +594,10 @@ elif page.startswith("2"):
             ]
             if key_txt:
                 args += ["--key-txt", str(key_txt)]
-            if out_ann_dir.strip():
-                ann_dir = out_dir / out_ann_dir.strip()
-                args += ["--out-annotated-dir", str(ann_dir)]
-            # Optional annotated PDF output name (only pass if user provided)
             if scored_pdf_name.strip():
                 args += ["--out-pdf", scored_pdf_name.strip()]
+            if out_ann_dir.strip():
+                args += ["--out-annotated-dir", str(out_dir / out_ann_dir.strip())]
             if annotate_all:
                 args += ["--annotate-all-cells"]
             if label_density:
@@ -590,9 +606,6 @@ elif page.startswith("2"):
                 args += ["--no-auto-thresh"]
             if verbose_thresh:
                 args += ["--verbose-thresh"]
-            # Optional scoring thresholds (only pass if user provided)
-            if fixed_thresh.strip():
-                args += ["--fixed-thresh", fixed_thresh.strip()]
             if min_fill.strip():
                 args += ["--min-fill", min_fill.strip()]
             if top2_ratio.strip():
@@ -600,131 +613,131 @@ elif page.startswith("2"):
             if min_score.strip():
                 args += ["--min-score", min_score.strip()]
 
-            with st.spinner("Scoring tests via CLI..."):
-                try:
+            try:
+                with st.spinner("Scoring via CLI..."):
                     out = _run_cli(args)
-                    st.code(out or "Done.", language="bash")
-                    _download_file_button("Download results.csv", out_csv)
-                    # Offer annotated PDF if produced
-                    pdf_name = scored_pdf_name.strip() or str(_dflt(SCORING_DEFAULTS, "out_pdf", "scored_scans.pdf"))
-                    pdf_path = Path(pdf_name) if Path(pdf_name).is_absolute() else (out_dir / pdf_name)
-                    _download_file_button(f"Download {pdf_path.name}", pdf_path)
+                score_status.success("Scoring finished.")
+                st.code(out or "Done.", language="bash")
 
-                    # Offer annotated pages if produced
-                    if out_ann_dir.strip():
-                        ann_dir = out_dir / out_ann_dir.strip()
-                        if ann_dir.exists():
-                            st.download_button("Download annotated_pages.zip", data=_zip_dir_to_bytes(ann_dir), file_name="annotated_pages.zip")
-                except Exception as e:
-                    score_status.error(str(e))
+                _download_file_button("Download results.csv", out_csv)
+                
+                # If scored PDF was created, offer download
+                if scored_pdf_name.strip():
+                    scored_pdf_path = out_dir / scored_pdf_name.strip()
+                    if scored_pdf_path.exists():
+                        _download_file_button("Download scored PDF", scored_pdf_path)
+                
+                # If annotated dir was created, offer zip download
+                if out_ann_dir.strip():
+                    ann_path = out_dir / out_ann_dir.strip()
+                    if ann_path.exists() and ann_path.is_dir():
+                        zip_bytes = _zip_dir_to_bytes(ann_path)
+                        st.download_button("Download annotated PNGs (zip)", data=zip_bytes, file_name="annotated.zip")
+
+            except Exception as e:
+                score_status.error(f"Error during scoring: {e}")
 
 # ===================== 3) STATS =====================
 elif page.startswith("3"):
-    st.header("Item/exam statistics")
-    colA, colB = st.columns(2)
-    with colA:
-        in_csv = _tempfile_from_uploader("Results CSV (from score)", "stats_csv", types=("csv",))
-        out_csv_name = st.text_input("Augmented CSV name", value="results_with_stats.csv")
-        item_report_name = st.text_input("Item report CSV", value="item_analysis.csv")
-        exam_stats_name = st.text_input("Exam stats CSV", value="exam_stats.csv")
-        want_plots = st.checkbox("Generate item plots", value=False)
-    with colB:
-        percent = st.checkbox("Report difficulty as percent", value=True)
-        label_col = st.text_input("Student label column", value="name")
-        key_row_index = st.text_input("Key row index (blank=auto)", value="")
-        answers_mode = st.selectbox("Answers mode", ["letters", "index"], index=0)
-        key_label = st.text_input("Key label for auto-detect", value="KEY")
-        decimals = st.number_input("Decimals", min_value=0, max_value=6, value=3, step=1)
+    st.header("Compute statistics from results CSV")
+    
+    top_col1, top_col2 = st.columns([1, 3])
+    with top_col1:
+        run_stats_clicked = st.button("Run Stats")
+    with top_col2:
+        stats_status = st.empty()
 
-    if st.button("Compute stats"):
-        if not in_csv:
-            st.error("Please upload the results CSV.")
+    st.divider()
+
+    results_csv = _tempfile_from_uploader("Results CSV (from score)", "stats_csv", types=("csv",))
+    out_prefix = st.text_input("Output prefix", value="stats_")
+    alpha = st.number_input("Significance alpha", min_value=0.001, max_value=0.5, value=0.05, step=0.01)
+
+    if run_stats_clicked:
+        if not results_csv:
+            stats_status.error("Please upload a results CSV.")
         else:
             base = WORKDIR or Path(os.getcwd())
             out_dir = Path(tempfile.mkdtemp(prefix="stats_", dir=str(base)))
-            out_csv = out_dir / out_csv_name
-            item_csv = out_dir / item_report_name
-            exam_csv = out_dir / exam_stats_name
-            plots_dir = out_dir / "item_plots" if want_plots else None
             args = [
                 "stats",
-                str(in_csv),
-                "--output-csv", str(out_csv),
-                "--item-report-csv", str(item_csv),
-                "--exam-stats-csv", str(exam_csv),
-                "--label-col", label_col,
-                "--answers-mode", answers_mode,
-                "--key-label", key_label,
-                "--decimals", str(int(decimals)),
+                str(results_csv),
+                "--out-prefix", str(out_dir / out_prefix),
+                "--alpha", str(alpha),
             ]
-            if percent:
-                args += ["--percent"]
-            else:
-                args += ["--proportion"]
-            if plots_dir:
-                args += ["--plots-dir", str(plots_dir)]
-            if key_row_index.strip():
-                args += ["--key-row-index", key_row_index.strip()]
 
-            with st.spinner("Computing stats via CLI..."):
-                try:
+            try:
+                with st.spinner("Computing stats..."):
                     out = _run_cli(args)
-                    st.code(out or "Done.", language="bash")
-                    _download_file_button("Download results_with_stats.csv", out_csv)
-                    _download_file_button("Download item_analysis.csv", item_csv)
-                    _download_file_button("Download exam_stats.csv", exam_csv)
-                    if plots_dir and Path(plots_dir).exists():
-                        st.download_button("Download item_plots.zip", data=_zip_dir_to_bytes(Path(plots_dir)), file_name="item_plots.zip")
-                except Exception as e:
-                    st.error(str(e))
+                stats_status.success("Stats finished.")
+                st.code(out or "Done.", language="bash")
 
-# ===================== 4) VISUALIZE BUBBLEMAP ====================
+                # Offer downloads
+                for f in out_dir.glob("*"):
+                    if f.is_file():
+                        _download_file_button(f"Download {f.name}", f)
+
+            except Exception as e:
+                stats_status.error(f"Error: {e}")
+
+# ===================== 4) VISUALIZE =====================
 elif page.startswith("4"):
-    st.header("View your bubblemap.yaml on your template")
+    st.header("Bubblemap Visualizer")
+    st.markdown("Overlay bubble zones on a template or aligned PDF to verify placement.")
+
+    top_col1, top_col2 = st.columns([1, 3])
+    with top_col1:
+        run_viz_clicked = st.button("Visualize")
+    with top_col2:
+        viz_status = st.empty()
+
+    st.divider()
+
     colA, colB = st.columns(2)
     with colA:
-        pdf = _tempfile_from_uploader("Template or aligned PDF (single page preferred)", "viz_pdf", types=("pdf",))
-        bublmap = _tempfile_from_uploader("Bubblemap (YAML)", "viz_cfg", types=("yaml","yml"))
+        viz_pdf = _tempfile_from_uploader("PDF (template or aligned page)", "viz_pdf", types=("pdf",))
+        viz_bublmap = _tempfile_from_uploader("Bubblemap YAML", "viz_yaml", types=("yaml", "yml"))
     with colB:
-        out_image_name = st.text_input("Output image name", value="bubblemap_overlay.png")
-        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=300, step=1)
+        out_image = st.text_input("Output image name", value="bubblemap_overlay.png")
+        viz_dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=300, step=1, key="viz_dpi")
 
-    if st.button("Render overlay"):
-        if not pdf or not bublmap:
-            st.error("Please upload a PDF and a bubblemap.")
+    if run_viz_clicked:
+        if not viz_pdf or not viz_bublmap:
+            viz_status.error("Please upload PDF and bubblemap YAML.")
         else:
             base = WORKDIR or Path(os.getcwd())
             out_dir = Path(tempfile.mkdtemp(prefix="viz_", dir=str(base)))
-            out_img = out_dir / out_image_name
+            out_path = out_dir / out_image
+
             args = [
                 "visualize",
-                str(pdf),
-                "--bublmap", str(bublmap),
-                "--out-image", str(out_img),
-                "--dpi", str(int(dpi)),
+                str(viz_pdf),
+                "--bublmap", str(viz_bublmap),
+                "--out-image", str(out_path),
+                "--dpi", str(int(viz_dpi)),
             ]
-            with st.spinner("Rendering via CLI..."):
-                try:
+
+            try:
+                with st.spinner("Generating overlay..."):
                     out = _run_cli(args)
-                    st.code(out or "Done.", language="bash")
-                    _download_file_button("Download overlay image", out_img)
-                except Exception as e:
-                    st.error(str(e))
+                viz_status.success("Visualization complete.")
+                st.code(out or "Done.", language="bash")
 
+                if out_path.exists():
+                    st.image(str(out_path), caption="Bubblemap Overlay")
+                    _download_file_button("Download overlay image", out_path)
 
+            except Exception as e:
+                viz_status.error(f"Error: {e}")
 
-# ===================== 5) MANAGE TEMPLATES =====================
+# ===================== 5) TEMPLATE MANAGER =====================
 elif page.startswith("5"):
-    st.header("Manage Bubble Sheet Templates")
+    st.header("Template Manager")
+    st.markdown("Manage your bubble sheet templates. Each template needs a PDF and a bubblemap YAML file.")
     
-    # Initialize template manager
-    template_manager = None
-    if TemplateManager is not None:
+    if template_manager is not None:
         try:
-            templates_dir_path = _dflt(TEMPLATE_DEFAULTS, "templates_dir", None)
-            template_manager = TemplateManager(templates_dir_path)
-            
-            st.info(f"**Templates directory:** `{template_manager.templates_dir}`")
+            st.info(f"📁 Templates directory: `{template_manager.templates_dir}`")
             st.caption("You can change this by setting the MARKSHARK_TEMPLATES_DIR environment variable or editing defaults.py")
         except Exception as e:
             st.error(f"Could not initialize template manager: {e}")
@@ -771,8 +784,8 @@ elif page.startswith("5"):
                             for error in errors:
                                 st.caption(f"• {error}")
                     
-                    # Show full paths
-                    with st.expander("Full paths"):
+                    # Show full paths (use checkbox instead of nested expander)
+                    if st.checkbox("Show full paths", key=f"paths_{template.template_id}"):
                         st.code(str(template.template_pdf_path))
                         st.code(str(template.bubblemap_yaml_path))
         else:
@@ -897,6 +910,11 @@ Store them in: `{template_dir}`
 Each template needs its own folder with:
 - `master_template.pdf` 
 - `bubblemap.yaml`
+
+**NEW: Bubble Grid Alignment Fallback**
+When a bubblemap is provided during alignment, MarkShark can use the known bubble positions
+to align scans even when ArUco markers are not present. This is especially useful for
+legacy bubble sheets or templates from other sources.
 
 If the GUI is missing something, the CLI is always the single source of truth.
 """.format(template_dir=template_manager.templates_dir if (template_manager and hasattr(template_manager, 'templates_dir')) else "templates/"))
