@@ -166,6 +166,17 @@ def score(
         "--out-pdf",
         help=f"Annotated PDF output filename. Default: {SCORING_DEFAULTS.out_pdf}. Use \"\"\" to disable.",
     ),
+    # NEW: Review/flagging options
+    review_pdf: Optional[str] = typer.Option(
+        None,
+        "--review-pdf",
+        help="Output PDF containing only pages with flagged answers (blank/multi). Use for manual review.",
+    ),
+    flagged_csv: Optional[str] = typer.Option(
+        None,
+        "--flagged-csv",
+        help="Output CSV listing all flagged items (blank/multi answers) with student ID, question, and issue.",
+    ),
     annotate_all_cells: bool = typer.Option(False, "--annotate-all-cells", help="Draw every bubble in each row"),
     label_density: bool = typer.Option(False, "--label-density", help="Overlay % fill text at bubble centers"),
     dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Scan/PDF render DPI"),
@@ -193,9 +204,20 @@ def score(
         "--verbose-thresh",
         help="Print per-page threshold calibration diagnostics",
     ),
+    # NEW: Inline stats option
+    include_stats: bool = typer.Option(
+        True,
+        "--include-stats/--no-include-stats",
+        help="Append basic statistics (mean, std, KR-20, item difficulty, point-biserial) to CSV. Requires answer key.",
+    ),
 ):
     """
     Grade aligned scans using axis-based bublmap.
+    
+    When --key-txt is provided and --include-stats is enabled (default), the output CSV
+    will include summary rows at the bottom with:
+    - Exam statistics: N, Mean, StdDev, High/Low scores, KR-20 reliability
+    - Item statistics: % correct and point-biserial for each question
     """
     try:
         _ = load_bublmap(bublmap)
@@ -229,12 +251,21 @@ def score(
             verbose_calibration=scoring.verbose_calibration,
             annotate_all_cells=annotate_all_cells,
             label_density=label_density,
+            review_pdf=review_pdf,
+            flagged_csv=flagged_csv,
+            include_stats=include_stats,
         )
     except Exception as e:
         rprint(f"[red]Scoring failed:[/red] {e}")
         raise typer.Exit(code=2)
 
     rprint(f"[green]Wrote:[/green] {out_csv}")
+    if include_stats and key_txt:
+        rprint(f"[cyan]Stats included:[/cyan] See bottom of {out_csv} for exam & item statistics")
+    if review_pdf:
+        rprint(f"[yellow]Review PDF:[/yellow] {review_pdf}")
+    if flagged_csv:
+        rprint(f"[yellow]Flagged CSV:[/yellow] {flagged_csv}")
 
 
 # ---------------------- STATS ----------------------

@@ -771,6 +771,14 @@ elif page.startswith("2"):
         annotate_all = st.checkbox("Annotate all cells", value=True)
         label_density = st.checkbox("Label density diagnostics", value=True)
         dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1, key="score_dpi")
+        
+        st.markdown("---")
+        st.markdown("**Flagging & Review**")
+        generate_review_pdf = st.checkbox("Generate review PDF (flagged pages only)", value=True,
+                                          help="Creates a separate PDF with only pages containing blank/multi answers for manual review")
+        generate_flagged_csv = st.checkbox("Generate flagged items CSV", value=True,
+                                           help="Creates a CSV listing all blank/multi answers with student ID and question number")
+        
         st.markdown("---")
         st.markdown("Adjustments if scoring isn't working well")
         auto_thresh = st.checkbox("Auto-calibrate threshold", value=_dflt(SCORING_DEFAULTS, "auto_calibrate_thresh", True), key="score_auto_thresh")
@@ -779,6 +787,11 @@ elif page.startswith("2"):
         min_fill = st.text_input("Min fill (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", "")))
         min_score = st.text_input("Min score (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_score", "")))
         top2_ratio = st.text_input("Top2 ratio (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", "")))
+        
+        st.markdown("---")
+        st.markdown("**Statistics**")
+        include_stats = st.checkbox("Include basic statistics in CSV", value=True,
+                                    help="Appends exam stats (mean, std, KR-20) and item stats (% correct, point-biserial) to the CSV. Requires answer key.")
 
     if run_score_clicked:
         # Determine bubblemap to use
@@ -822,6 +835,22 @@ elif page.startswith("2"):
                 args += ["--top2-ratio", top2_ratio.strip()]
             if min_score.strip():
                 args += ["--min-score", min_score.strip()]
+            
+            # Stats option
+            if include_stats:
+                args += ["--include-stats"]
+            else:
+                args += ["--no-include-stats"]
+            
+            # Review/flagging options
+            review_pdf_path = None
+            flagged_csv_path = None
+            if generate_review_pdf:
+                review_pdf_path = out_dir / "for_review.pdf"
+                args += ["--review-pdf", str(review_pdf_path)]
+            if generate_flagged_csv:
+                flagged_csv_path = out_dir / "flagged.csv"
+                args += ["--flagged-csv", str(flagged_csv_path)]
 
             try:
                 with st.spinner("Scoring via CLI..."):
@@ -831,11 +860,23 @@ elif page.startswith("2"):
 
                 _download_file_button("Download results.csv", out_csv)
                 
+                # Show stats note if included
+                if include_stats and key_txt:
+                    st.info("📊 Basic statistics appended to CSV (scroll to bottom)")
+                
                 # If scored PDF was created, offer download
                 if scored_pdf_name.strip():
                     scored_pdf_path = out_dir / scored_pdf_name.strip()
                     if scored_pdf_path.exists():
                         _download_file_button("Download scored PDF", scored_pdf_path)
+                
+                # If review PDF was created, offer download
+                if review_pdf_path and review_pdf_path.exists():
+                    _download_file_button("📋 Download Review PDF (flagged pages)", review_pdf_path)
+                
+                # If flagged CSV was created, offer download
+                if flagged_csv_path and flagged_csv_path.exists():
+                    _download_file_button("⚠️ Download Flagged Items CSV", flagged_csv_path)
                 
                 # If annotated dir was created, offer zip download
                 if out_ann_dir.strip():
@@ -1121,7 +1162,7 @@ Each template needs its own folder with:
 - `master_template.pdf` 
 - `bubblemap.yaml`
 
-**Bubble Grid Alignment Fallback**
+**NEW: Bubble Grid Alignment Fallback**
 When a bubblemap is provided during alignment, MarkShark can use the known bubble positions
 to align scans even when ArUco markers are not present. This is especially useful for
 legacy bubble sheets or templates from other sources.

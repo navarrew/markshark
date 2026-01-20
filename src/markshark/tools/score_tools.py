@@ -553,6 +553,170 @@ def scores_to_labels_row(
 
 
 # ------------------------------------------------------------------------------
+# Detailed scoring with flagging info
+# ------------------------------------------------------------------------------
+
+from dataclasses import dataclass
+from typing import NamedTuple
+
+class AnswerDetail(NamedTuple):
+    """Detailed info about a single answer for flagging purposes."""
+    question_num: int           # 1-indexed question number
+    answer: Optional[str]       # The answer (None=blank, "A,B"=multi, "A"=single)
+    issue: str                  # "ok", "blank", "multi", "low_confidence"
+    top_fill_pct: float         # Fill % of top choice
+    second_fill_pct: float      # Fill % of second choice (for confidence calc)
+    separation: float           # top - second (higher = more confident)
+    all_fills: List[float]      # All fill percentages for this row
+
+
+def scores_to_labels_row_detailed(
+    scores: List[float],
+    rows: int,
+    cols: int,
+    choice_labels: List[str],
+    *,
+    min_fill: float = SCORING_DEFAULTS.min_fill,
+    top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
+    min_score: float = SCORING_DEFAULTS.min_score,
+    multi_top_k: int = 2,
+    multi_delim: str = ",",
+    low_confidence_threshold: float = 0.15,  # Flag if separation < this
+    question_offset: int = 0,  # For multi-page: offset to add to question numbers
+) -> Tuple[List[Optional[str]], List[AnswerDetail]]:
+    """
+    Like scores_to_labels_row but also returns detailed info for flagging.
+    
+    Returns:
+        (answers, details) where:
+        - answers: List of answer strings (same as scores_to_labels_row)
+        - details: List of AnswerDetail with flagging info for each question
+    """
+    arr = np.asarray(scores, dtype=float)
+    if arr.size != int(rows) * int(cols):
+        raise ValueError(f"scores length {arr.size} != rows*cols {rows*cols}")
+
+    answers: List[Optional[str]] = []
+    details: List[AnswerDetail] = []
+    cols_i = int(cols)
+    k = max(2, int(multi_top_k)) if int(cols) > 1 else 1
+
+    for r in range(int(rows)):
+        row_slice = arr[r * cols_i : (r + 1) * cols_i]
+        q_num = question_offset + r + 1  # 1-indexed
+        
+        if row_slice.size == 0:
+            answers.append(None)
+            details.append(AnswerDetail(
+                question_num=q_num,
+                answer=None,
+                issue="blank",
+                top_fill_pct=0.0,
+                second_fill_pct=0.0,
+                separation=0.0,
+                all_fills=[],
+            ))
+            continue
+
+        order = np.argsort(row_slice)[::-1]
+        best_idx = int(order[0])
+        top = float(row_slice[best_idx])
+        second = float(row_slice[order[1]]) if row_slice.size > 1 else 0.0
+        separation = top - second
+        all_fills = row_slice.tolist()
+
+        # BLANK: top score below min_fill
+        if top < float(min_fill):
+            answers.append(None)
+            details.append(AnswerDetail(
+                question_num=q_num,
+                answer=None,
+                issue="blank",
+                top_fill_pct=top,
+                second_fill_pct=second,
+                separation=separation,
+                all_fills=all_fills,
+            ))
+            continue
+
+        # Single choice column
+        if cols_i <= 1:
+            ans = choice_labels[best_idx] if best_idx < len(choice_labels) else None
+            answers.append(ans)
+            details.append(AnswerDetail(
+                question_num=q_num,
+                answer=ans,
+                issue="ok",
+                top_fill_pct=top,
+                second_fill_pct=second,
+                separation=separation,
+                all_fills=all_fills,
+            ))
+            continue
+
+        # Runner-up below min_fill = clear single mark
+        if second < float(min_fill):
+            ans = choice_labels[best_idx] if best_idx < len(choice_labels) else None
+            # Check if it's low confidence (close to threshold)
+            issue = "ok"
+            if top < min_fill + low_confidence_threshold:
+                issue = "low_confidence"
+            answers.append(ans)
+            details.append(AnswerDetail(
+                question_num=q_num,
+                answer=ans,
+                issue=issue,
+                top_fill_pct=top,
+                second_fill_pct=second,
+                separation=separation,
+                all_fills=all_fills,
+            ))
+            continue
+
+        sep_score = (top - second) * 100.0
+        sep_ratio_ok = (second <= top * float(top2_ratio))
+
+        if (sep_score >= float(min_score)) or sep_ratio_ok:
+            # Single mark accepted
+            ans = choice_labels[best_idx] if best_idx < len(choice_labels) else None
+            # Check for low confidence
+            issue = "ok"
+            if separation < low_confidence_threshold:
+                issue = "low_confidence"
+            answers.append(ans)
+            details.append(AnswerDetail(
+                question_num=q_num,
+                answer=ans,
+                issue=issue,
+                top_fill_pct=top,
+                second_fill_pct=second,
+                separation=separation,
+                all_fills=all_fills,
+            ))
+            continue
+
+        # MULTI: Ambiguous, return top-K labels
+        picks = []
+        for j in range(min(k, order.size)):
+            idx = int(order[j])
+            if 0 <= idx < len(choice_labels):
+                picks.append(choice_labels[idx])
+        ans = multi_delim.join(picks) if picks else None
+        answers.append(ans)
+        details.append(AnswerDetail(
+            question_num=q_num,
+            answer=ans,
+            issue="multi",
+            top_fill_pct=top,
+            second_fill_pct=second,
+            separation=separation,
+            all_fills=all_fills,
+        ))
+
+    return answers, details
+
+
+# ------------------------------------------------------------------------------
 # Zone decoding
 # ------------------------------------------------------------------------------
 

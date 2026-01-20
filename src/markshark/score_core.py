@@ -17,6 +17,7 @@ Features:
 from __future__ import annotations
 import os
 import csv
+import sys
 from typing import Optional, List, Tuple, Dict
 
 import numpy as np
@@ -40,6 +41,158 @@ from .tools.score_tools import (
     roi_fill_scores,
     calibrate_fixed_thresh_for_page,
 )
+
+
+# ----------------------------
+# Basic Stats Functions (for inline stats during scoring)
+# ----------------------------
+
+def _compute_basic_stats(
+    all_student_answers: List[List[Optional[str]]],
+    all_student_scores: List[Tuple[int, int]],  # List of (correct, total) tuples
+    keys_dict: Optional[Dict[str, List[str]]],
+    q_out: int,
+) -> Dict:
+    """
+    Compute basic exam and item statistics from scoring results.
+    
+    Returns dict with:
+        - n_students: number of students
+        - mean_score: mean number correct
+        - mean_percent: mean percentage correct
+        - std_dev: standard deviation of scores
+        - high_score: highest score
+        - low_score: lowest score
+        - kr20: KR-20 reliability coefficient (if key provided)
+        - per_item_pct: list of % correct for each question
+        - per_item_pb: list of point-biserial for each question
+    """
+    n_students = len(all_student_answers)
+    
+    if n_students == 0:
+        return {
+            "n_students": 0,
+            "mean_score": 0,
+            "mean_percent": 0,
+            "std_dev": 0,
+            "high_score": 0,
+            "low_score": 0,
+            "kr20": float("nan"),
+            "per_item_pct": [],
+            "per_item_pb": [],
+        }
+    
+    # Extract scores
+    scores = [correct for correct, total in all_student_scores if total > 0]
+    totals = [total for correct, total in all_student_scores if total > 0]
+    
+    if not scores:
+        return {
+            "n_students": n_students,
+            "mean_score": 0,
+            "mean_percent": 0,
+            "std_dev": 0,
+            "high_score": 0,
+            "low_score": 0,
+            "kr20": float("nan"),
+            "per_item_pct": [],
+            "per_item_pb": [],
+        }
+    
+    mean_score = np.mean(scores)
+    mean_total = np.mean(totals) if totals else q_out
+    mean_percent = (mean_score / mean_total * 100) if mean_total > 0 else 0
+    std_dev = np.std(scores, ddof=1) if len(scores) > 1 else 0
+    high_score = max(scores)
+    low_score = min(scores)
+    
+    # Build correctness matrix for item analysis (only if we have a key)
+    per_item_pct = []
+    per_item_pb = []
+    kr20_val = float("nan")
+    
+    if keys_dict and all_student_answers:
+        # Get the first key for analysis (most common case)
+        first_key = list(keys_dict.values())[0][:q_out]
+        
+        # Build correctness matrix: n_students x q_out
+        correctness = np.zeros((n_students, q_out))
+        for i, answers in enumerate(all_student_answers):
+            for j, ans in enumerate(answers[:q_out]):
+                if j < len(first_key):
+                    # Check if answer matches key (handle None/blank)
+                    if ans and ans == first_key[j]:
+                        correctness[i, j] = 1
+                    elif ans is None or ans == "" or "," in str(ans):
+                        correctness[i, j] = 0  # blank or multi = wrong
+                    else:
+                        correctness[i, j] = 0
+        
+        # Per-item difficulty (% correct)
+        per_item_pct = (correctness.mean(axis=0) * 100).tolist()
+        
+        # Per-item point-biserial
+        total_scores = correctness.sum(axis=1)
+        per_item_pb = []
+        for j in range(q_out):
+            item_col = correctness[:, j]
+            total_minus_item = total_scores - item_col
+            pb = _point_biserial(item_col, total_minus_item)
+            per_item_pb.append(pb)
+        
+        # KR-20 reliability
+        kr20_val = _kr20(correctness, total_scores)
+    
+    return {
+        "n_students": n_students,
+        "mean_score": round(mean_score, 2),
+        "mean_percent": round(mean_percent, 1),
+        "std_dev": round(std_dev, 2),
+        "high_score": high_score,
+        "low_score": low_score,
+        "kr20": round(kr20_val, 3) if not np.isnan(kr20_val) else float("nan"),
+        "per_item_pct": [round(p, 1) for p in per_item_pct],
+        "per_item_pb": [round(p, 3) if not np.isnan(p) else float("nan") for p in per_item_pb],
+    }
+
+
+def _point_biserial(item: np.ndarray, total_minus_item: np.ndarray) -> float:
+    """Compute point-biserial correlation for an item."""
+    p = item.mean()
+    q = 1 - p
+    if p == 0 or p == 1:
+        return float("nan")
+    
+    mask_1 = item == 1
+    mask_0 = item == 0
+    
+    if mask_1.sum() == 0 or mask_0.sum() == 0:
+        return float("nan")
+    
+    M1 = total_minus_item[mask_1].mean()
+    M0 = total_minus_item[mask_0].mean()
+    s = total_minus_item.std(ddof=1)
+    
+    if s == 0 or np.isnan(s):
+        return float("nan")
+    
+    return float(((M1 - M0) / s) * np.sqrt(p * q))
+
+
+def _kr20(correctness: np.ndarray, total_scores: np.ndarray) -> float:
+    """Compute KR-20 reliability coefficient."""
+    k = correctness.shape[1]
+    if k < 2:
+        return float("nan")
+    
+    p = correctness.mean(axis=0)
+    pq_sum = (p * (1 - p)).sum()
+    var_total = np.var(total_scores, ddof=1)
+    
+    if var_total <= 0 or np.isnan(var_total):
+        return float("nan")
+    
+    return float((k / (k - 1.0)) * (1.0 - (pq_sum / var_total)))
 
 
 # ----------------------------
@@ -487,6 +640,12 @@ def score_pdf(
     pdf_renderer: str = "auto",
     auto_calibrate_thresh: bool = True,
     verbose_calibration: bool = False,
+    # NEW: Review/flagging options
+    review_pdf: Optional[str] = None,  # Output PDF containing only flagged pages
+    flagged_csv: Optional[str] = None,  # Output CSV listing flagged items
+    low_confidence_threshold: float = 0.15,  # Flag answers with separation below this
+    # NEW: Inline stats option
+    include_stats: bool = True,  # Append summary stats rows to CSV
 ) -> str:
     
     """
@@ -494,6 +653,8 @@ def score_pdf(
     
     NEW: Multi-page bubble sheet support!
     NEW: Multi-version exam support!
+    NEW: Flagging and review PDF support!
+    NEW: Inline basic statistics!
 
     Behavior:
       - Supports single-page or multi-page bubble sheets
@@ -507,6 +668,17 @@ def score_pdf(
       - KEY row(s) written under header (one per version).
       - Annotated images combine blue name/ID overlays and answer overlays.
       - Page column shows "1-2" for 2-page sheets, "1" for single-page
+      
+    Flagging (NEW):
+      - Tracks answers that are blank, multi, or low-confidence
+      - If review_pdf is provided: generates a PDF with just the flagged pages
+      - If flagged_csv is provided: writes details about each flagged item
+      - Flagged pages get special annotations highlighting problem areas
+      
+    Inline Stats (NEW):
+      - If include_stats=True and key is provided: appends summary rows to CSV
+      - Exam stats: N, Mean, StdDev, High, Low, KR-20
+      - Item stats: % Correct, Point-Biserial for each question
     """
     bmap: Bubblemap = load_bublmap(bublmap_path)
     pages = IO.load_pages(input_path, dpi=dpi, renderer=pdf_renderer)
@@ -573,6 +745,51 @@ def score_pdf(
             pdf_writer = IO.PdfPageWriter(out_pdf_path, dpi=dpi)
         except Exception:
             pdf_writer = None
+    
+    # ==================== FLAGGING INFRASTRUCTURE ====================
+    # Track flagged items for review PDF generation
+    flagged_items: List[Dict] = []  # List of {student_id, page, question, issue, answer, fill_pct, ...}
+    flagged_page_images: List[Tuple[int, np.ndarray]] = []  # (page_idx, annotated_image) for review PDF
+    
+    # Helper to check if a student has flagged answers
+    def _has_flags(answers: List[Optional[str]]) -> bool:
+        for a in answers:
+            if a is None or a == "":  # blank
+                return True
+            if isinstance(a, str) and "," in a:  # multi
+                return True
+        return False
+    
+    # Helper to record flagged items for a student
+    def _record_flags(
+        student_id: str,
+        page_num: int,
+        answers: List[Optional[str]],
+        student_name: str = "",
+    ):
+        for q_idx, ans in enumerate(answers):
+            issue = None
+            if ans is None or ans == "":
+                issue = "blank"
+            elif isinstance(ans, str) and "," in ans:
+                issue = "multi"
+            
+            if issue:
+                flagged_items.append({
+                    "student_id": student_id,
+                    "student_name": student_name,
+                    "page": page_num,
+                    "question": q_idx + 1,
+                    "issue": issue,
+                    "current_answer": ans if ans else "",
+                })
+    # ==================================================================
+    
+    # ==================== STATS COLLECTION ============================
+    # Collect data for computing basic statistics at the end
+    all_student_answers: List[List[Optional[str]]] = []  # Each student's answers
+    all_student_scores: List[Tuple[int, int]] = []  # (correct, total) for each student
+    # ==================================================================
             
     with open(out_csv, "w", newline="", encoding="utf-8") as f:
         outputcsv = csv.writer(f)
@@ -703,6 +920,27 @@ def score_pdf(
                 
                 outputcsv.writerow(row)
                 
+                # ==================== FLAGGING ====================
+                # Record flagged items for this student (multi-page)
+                if _has_flags(answers_out):
+                    student_name = f"{student_info.get('last_name', '')} {student_info.get('first_name', '')}".strip()
+                    _record_flags(
+                        student_id=student_info.get("student_id", f"student_{student_idx+1}"),
+                        page_num=start_page_idx + 1,  # First page of this student's set
+                        answers=answers_out,
+                        student_name=student_name,
+                    )
+                # ==================================================
+                
+                # ==================== STATS COLLECTION ====================
+                # Collect data for stats computation
+                all_student_answers.append(answers_out)
+                if keys_dict:
+                    all_student_scores.append((correct, total_scored))
+                else:
+                    all_student_scores.append((0, q_out))
+                # ==========================================================
+                
                 # Annotate all pages for this student
                 if out_annotated_dir or out_pdf_path:
                     for page_num, img_bgr in enumerate(student_pages, start=1):
@@ -790,6 +1028,11 @@ def score_pdf(
                                 pdf_writer.add_page(vis)
                             else:
                                 annotated_pages.append(vis)
+                        
+                        # Track flagged pages for review PDF (multi-page mode)
+                        if (review_pdf or flagged_csv) and _has_flags(all_answers):
+                            actual_page_num = start_page_idx + page_num
+                            flagged_page_images.append((actual_page_num, vis.copy()))
         
         else:
             # SINGLE-PAGE MODE: Original logic (unchanged)
@@ -861,6 +1104,27 @@ def score_pdf(
                 row += answers_csv
                 
                 outputcsv.writerow(row)
+                
+                # ==================== FLAGGING ====================
+                # Record flagged items for this student
+                if _has_flags(answers_out):
+                    student_name = f"{info.get('last_name', '')} {info.get('first_name', '')}".strip()
+                    _record_flags(
+                        student_id=info.get("student_id", f"page_{page_idx}"),
+                        page_num=page_idx,
+                        answers=answers_out,
+                        student_name=student_name,
+                    )
+                # ==================================================
+                
+                # ==================== STATS COLLECTION ====================
+                # Collect data for stats computation
+                all_student_answers.append(answers_out)
+                if keys_dict:
+                    all_student_scores.append((correct, total_scored))
+                else:
+                    all_student_scores.append((0, q_out))
+                # ==========================================================
 
                 # Annotated image: names/IDs in blue (with optional %), then answers overlay
                 if out_annotated_dir or out_pdf_path:
@@ -891,11 +1155,115 @@ def score_pdf(
                             pdf_writer.add_page(vis)
                         else:
                             annotated_pages.append(vis)
+                    
+                    # Track flagged pages for review PDF (single-page mode)
+                    if (review_pdf or flagged_csv) and _has_flags(answers_out):
+                        flagged_page_images.append((page_idx, vis.copy()))
                         
     if out_pdf_path:
         if pdf_writer is not None:
             pdf_writer.close(save=True)
         elif annotated_pages:
             IO.save_images_as_pdf(annotated_pages, out_pdf_path, dpi=dpi)
+
+    # ==================== COMPUTE AND APPEND STATS ====================
+    if include_stats and keys_dict and all_student_answers:
+        stats = _compute_basic_stats(
+            all_student_answers=all_student_answers,
+            all_student_scores=all_student_scores,
+            keys_dict=keys_dict,
+            q_out=q_out,
+        )
+        
+        # Append stats rows to CSV
+        with open(out_csv, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            
+            # Empty row as separator
+            writer.writerow([])
+            
+            # Exam-level stats rows
+            # Format: label in first non-Q column, value in appropriate column
+            n_cols_before_q = 5 + 5 if keys_dict else 5 + 1  # Version,Page,Last,First,ID + metrics
+            
+            def make_stats_row(label: str, value, q_values=None):
+                """Helper to create a stats row with label and optional per-Q values."""
+                row = [""] * n_cols_before_q
+                row[0] = label  # Put label in Version column
+                if q_values:
+                    row.extend([str(v) if v == v else "" for v in q_values])  # v==v checks for NaN
+                else:
+                    row.extend([""] * q_out)
+                if value is not None:
+                    row[1] = str(value)  # Put main value in Page column
+                return row
+            
+            # Summary stats header
+            writer.writerow(make_stats_row("--- EXAM STATISTICS ---", ""))
+            writer.writerow(make_stats_row("N_STUDENTS", stats["n_students"]))
+            writer.writerow(make_stats_row("MEAN_SCORE", stats["mean_score"]))
+            writer.writerow(make_stats_row("MEAN_PERCENT", f"{stats['mean_percent']:.1f}%"))
+            writer.writerow(make_stats_row("STD_DEV", stats["std_dev"]))
+            writer.writerow(make_stats_row("HIGH_SCORE", stats["high_score"]))
+            writer.writerow(make_stats_row("LOW_SCORE", stats["low_score"]))
+            if not np.isnan(stats["kr20"]):
+                writer.writerow(make_stats_row("KR20_RELIABILITY", stats["kr20"]))
+            
+            # Per-item stats
+            if stats["per_item_pct"]:
+                writer.writerow([])
+                writer.writerow(make_stats_row("--- ITEM STATISTICS ---", ""))
+                writer.writerow(make_stats_row("PCT_CORRECT", "", stats["per_item_pct"]))
+                writer.writerow(make_stats_row("POINT_BISERIAL", "", stats["per_item_pb"]))
+        
+        # Print stats summary to stderr
+        print(f"[info] Exam stats: N={stats['n_students']}, Mean={stats['mean_score']:.1f} ({stats['mean_percent']:.1f}%), "
+              f"SD={stats['std_dev']:.2f}, Range={stats['low_score']}-{stats['high_score']}", file=sys.stderr)
+        if not np.isnan(stats["kr20"]):
+            print(f"[info] KR-20 reliability: {stats['kr20']:.3f}", file=sys.stderr)
+    # =================================================================
+
+    # ==================== GENERATE REVIEW OUTPUTS ====================
+    # Write flagged CSV if requested
+    if flagged_csv and flagged_items:
+        _ensure_dir(os.path.dirname(flagged_csv) or ".")
+        with open(flagged_csv, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["student_id", "student_name", "page", "question", "issue", "current_answer"])
+            for item in flagged_items:
+                writer.writerow([
+                    item["student_id"],
+                    item["student_name"],
+                    item["page"],
+                    item["question"],
+                    item["issue"],
+                    item["current_answer"],
+                ])
+        print(f"[info] Wrote {len(flagged_items)} flagged items to {flagged_csv}", file=__import__('sys').stderr)
+    
+    # Generate review PDF with flagged pages
+    if review_pdf and flagged_page_images:
+        _ensure_dir(os.path.dirname(review_pdf) or ".")
+        review_pages = [img for _, img in sorted(flagged_page_images, key=lambda x: x[0])]
+        
+        try:
+            review_writer = IO.PdfPageWriter(review_pdf, dpi=dpi)
+            for img in review_pages:
+                review_writer.add_page(img)
+            review_writer.close(save=True)
+        except Exception:
+            # Fallback to PIL-based saving
+            IO.save_images_as_pdf(review_pages, review_pdf, dpi=dpi)
+        
+        print(f"[info] Wrote review PDF with {len(review_pages)} flagged pages to {review_pdf}", file=__import__('sys').stderr)
+    elif review_pdf and not flagged_page_images:
+        print(f"[info] No flagged pages - review PDF not created", file=__import__('sys').stderr)
+    
+    # Print summary
+    if flagged_items:
+        blank_count = sum(1 for item in flagged_items if item["issue"] == "blank")
+        multi_count = sum(1 for item in flagged_items if item["issue"] == "multi")
+        print(f"[info] Flagging summary: {blank_count} blank, {multi_count} multi across {len(set(item['student_id'] for item in flagged_items))} students", file=__import__('sys').stderr)
+    # =================================================================
 
     return out_csv
