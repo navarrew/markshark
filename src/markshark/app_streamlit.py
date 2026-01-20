@@ -422,7 +422,15 @@ if page.startswith("0"):
         
         # Alignment options
         with st.expander("Alignment options", expanded=False):
-            align_method = st.selectbox("Alignment method", ["auto", "aruco", "feature"], index=0)
+            align_method = st.selectbox(
+                "Alignment method",
+                ["auto", "fast", "slow", "aruco"],
+                index=0,
+                help="auto: fast if template selected, slow otherwise. "
+                     "fast: 72 DPI coarse + bubble grid (quick). "
+                     "slow: full-res ORB (thorough). "
+                     "aruco: ArUco markers only."
+            )
             min_markers = st.number_input("Min ArUco markers", min_value=0, max_value=32, value=int(_dflt(ALIGN_DEFAULTS, "min_aruco", 4)), step=1)
     
     # Run quick grade workflow
@@ -554,13 +562,21 @@ elif page.startswith("1"):
         # NEW: Optional bubblemap for bubble grid fallback
         st.markdown("---")
         st.markdown("**Optional: Bubblemap for enhanced alignment**")
-        st.caption("If provided, enables bubble grid alignment as fallback when ArUco/features fail")
+        st.caption("If provided, enables 'fast' alignment mode (coarse-to-fine with bubble grid)")
         align_bublmap = _tempfile_from_uploader("Bubblemap YAML (optional)", "align_bubblemap", types=("yaml", "yml"))
         if align_bublmap:
-            st.success("✓ Bubble grid fallback enabled")
+            st.success("✓ Fast alignment mode available")
         
         st.markdown("---")
-        method = st.selectbox("Alignment method", ["auto", "aruco", "feature"], index=0)
+        method = st.selectbox(
+            "Alignment method",
+            ["auto", "fast", "slow", "aruco"],
+            index=0,
+            help="auto: fast if bubblemap provided, slow otherwise. "
+                 "fast: 72 DPI coarse + bubble grid (quick, needs bubblemap). "
+                 "slow: full-res ORB (thorough). "
+                 "aruco: ArUco markers only."
+        )
         dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1)
 
     with colB:

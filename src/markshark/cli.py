@@ -47,7 +47,13 @@ def align(
     out_pdf: str = typer.Option("aligned_scans.pdf", "--out-pdf", "-o", help="Output aligned PDF"),
     dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Render DPI for alignment & output"),
     template_page: int = typer.Option(1, "--template-page", help="Template page index to use (1-based)"),
-    align_method: str = typer.Option("auto", "--align-method", help="Alignment pipeline: auto|aruco|feature"),
+    align_method: str = typer.Option(
+        "auto", "--align-method",
+        help="Alignment method: auto|fast|slow|aruco. "
+             "fast=coarse-to-fine (72 DPI ORB + bubble grid, requires --bubblemap), "
+             "slow=full-res ORB only, "
+             "auto=fast if bubblemap provided else slow"
+    ),
     estimator_method: str = typer.Option(EST_DEFAULTS.estimator_method, "--estimator-method", help="Homography estimator: auto|ransac|usac"),
     min_markers: int = typer.Option(ALIGN_DEFAULTS.min_aruco, "--min-markers", help="Min ArUco markers to accept"),
     ransac: float = typer.Option(EST_DEFAULTS.ransac_thresh, "--ransac", help="RANSAC reprojection threshold"),
@@ -62,26 +68,39 @@ def align(
     # NEW: Bubblemap for bubble grid alignment fallback
     bubblemap_path: Optional[str] = typer.Option(
         None, "--bubblemap", "-m",
-        help="Bubblemap YAML file. If provided, enables bubble grid alignment as fallback when ArUco/ORB features fail."
+        help="Bubblemap YAML file. Enables 'fast' alignment mode (coarse-to-fine with bubble grid)."
     ),
 ):
     """
     Align raw scans to a template PDF.
     
-    NEW: If --bubblemap is provided, bubble grid alignment will be used as a fallback
-    when ArUco markers are not detected and ORB feature matching fails. This uses the
-    known bubble positions from the bubblemap to find circles in the scan and compute
-    a robust alignment.
+    ALIGNMENT METHODS:
+    
+    - auto: Uses 'fast' if --bubblemap provided, else 'slow' (recommended)
+    - fast: Coarse-to-fine alignment. Quick 72 DPI ORB pass, then bubble grid
+            refinement at full res. Requires --bubblemap. Best for bubble sheets.
+    - slow: Full resolution ORB alignment. More thorough but slower.
+            Works without bubblemap.
+    - aruco: ArUco marker alignment only. Requires markers on the sheet.
     """
     # Load bubblemap if provided (for bubble grid fallback)
     bubblemap = None
     if bubblemap_path:
         try:
             bubblemap = load_bublmap(bubblemap_path)
-            rprint(f"[cyan]Loaded bubblemap:[/cyan] {bubblemap_path} (bubble grid fallback enabled)")
+            rprint(f"[cyan]Loaded bubblemap:[/cyan] {bubblemap_path}")
+            if align_method == "auto":
+                rprint(f"[cyan]Alignment mode:[/cyan] fast (coarse-to-fine)")
+            elif align_method == "fast":
+                rprint(f"[cyan]Alignment mode:[/cyan] fast (coarse-to-fine)")
         except Exception as e:
             rprint(f"[yellow]Warning: Could not load bubblemap {bubblemap_path}: {e}[/yellow]")
-            rprint("[yellow]Bubble grid alignment fallback will not be available.[/yellow]")
+            rprint("[yellow]Falling back to slow alignment mode.[/yellow]")
+    else:
+        if align_method == "fast":
+            rprint(f"[yellow]Warning: 'fast' alignment requires --bubblemap. Using 'slow' mode.[/yellow]")
+        elif align_method in ("auto", "slow"):
+            rprint(f"[cyan]Alignment mode:[/cyan] slow (full-res ORB)")
     
     out = align_pdf_scans(
         input_pdf=input_pdf,

@@ -279,12 +279,21 @@ def align_raw_bgr_scans_multipage(
             else:
                 # Feature-based alignment with guardrails
                 # NOW: Pass bubblemap for bubble grid fallback
+                # Determine align_mode: "fast" uses coarse-to-fine, "slow" uses full-res ORB
+                align_mode = getattr(args, 'align_method', 'auto')
+                if align_mode == 'feature':
+                    align_mode = 'slow'  # "feature" is legacy name for slow mode
+                elif align_mode not in ('fast', 'slow', 'auto'):
+                    align_mode = 'auto'
+                
                 try:
                     warped, metrics = SA.align_with_guardrails(
                         template_bgr, scan_bgr, fpar, epar, args.match_ratio,
                         args.fail_med, args.fail_p95, args.fail_br,
                         bubblemap=bubblemap,
-                        page_num=template_page_idx + 1  # 1-indexed page number for bubblemap
+                        page_num=template_page_idx + 1,  # 1-indexed page number for bubblemap
+                        full_dpi=float(getattr(args, 'dpi', 300)),
+                        align_mode=align_mode
                     )
                     aligned_pages.append(warped)
                     if getattr(args, "out_dir", None):

@@ -615,7 +615,7 @@ def align_with_bubble_grid(
     2. Detects circles in the scan using Hough transform (with contour fallback)
     3. Matches detected circles to expected positions
     4. Computes homography with RANSAC
-    5. Validates and applies the transform
+    5. Validates transform including bounding box check to prevent row-shift errors
     
     Args:
         scan_bgr: Scan image (BGR)
@@ -661,6 +661,26 @@ def align_with_bubble_grid(
     if len(expected_centers) < 20:
         metrics["error"] = f"Too few bubbles in bubblemap ({len(expected_centers)})"
         return None, None, metrics
+    
+    # Compute expected bounding box (in template coordinates)
+    exp_bbox = {
+        'x_min': expected_centers[:, 0].min(),
+        'x_max': expected_centers[:, 0].max(),
+        'y_min': expected_centers[:, 1].min(),
+        'y_max': expected_centers[:, 1].max(),
+    }
+    exp_bbox['width'] = exp_bbox['x_max'] - exp_bbox['x_min']
+    exp_bbox['height'] = exp_bbox['y_max'] - exp_bbox['y_min']
+    
+    # Estimate typical row spacing from expected centers (for validation later)
+    y_coords = np.sort(expected_centers[:, 1])
+    y_diffs = np.diff(y_coords)
+    # Filter to get actual row spacing (not within-row spacing)
+    significant_diffs = y_diffs[y_diffs > radius_pct * tpl_h * 2]
+    if len(significant_diffs) > 5:
+        typical_row_spacing = np.median(significant_diffs)
+    else:
+        typical_row_spacing = exp_bbox['height'] / 50  # Fallback estimate
     
     # Estimate bubble radius in pixels
     expected_radius = radius_pct * tpl_w
@@ -745,11 +765,287 @@ def align_with_bubble_grid(
         metrics["error"] = "Homography validation failed (unreasonable transform)"
         return None, None, metrics
     
-    # Apply homography
+    # ==========================================================================
+    # BOUNDING BOX VALIDATION - Catch row/column shift errors
+    # ==========================================================================
+    # Transform detected circle centers to template space and check bounding box
+    inlier_mask = mask.ravel().astype(bool)
+    inlier_det = matched_det[inlier_mask]
+    
+    # Transform inlier points to template space
+    inlier_det_h = np.hstack([inlier_det, np.ones((len(inlier_det), 1))])  # Homogeneous
+    transformed = (H @ inlier_det_h.T).T
+    transformed = transformed[:, :2] / transformed[:, 2:3]  # Dehomogenize
+    
+    # Compute bounding box of transformed points
+    trans_bbox = {
+        'x_min': transformed[:, 0].min(),
+        'x_max': transformed[:, 0].max(),
+        'y_min': transformed[:, 1].min(),
+        'y_max': transformed[:, 1].max(),
+    }
+    
+    # Check if bounding boxes roughly match
+    # Allow some tolerance but catch shifts of ~1 row
+    bbox_tolerance = typical_row_spacing * 0.7  # Less than one row spacing
+    
+    y_min_diff = abs(trans_bbox['y_min'] - exp_bbox['y_min'])
+    y_max_diff = abs(trans_bbox['y_max'] - exp_bbox['y_max'])
+    x_min_diff = abs(trans_bbox['x_min'] - exp_bbox['x_min'])
+    x_max_diff = abs(trans_bbox['x_max'] - exp_bbox['x_max'])
+    
+    metrics["bbox_y_min_diff"] = y_min_diff
+    metrics["bbox_y_max_diff"] = y_max_diff
+    metrics["bbox_tolerance"] = bbox_tolerance
+    
+    # If top or bottom edge is off by more than tolerance, likely a row shift
+    if y_min_diff > bbox_tolerance or y_max_diff > bbox_tolerance:
+        metrics["error"] = (f"Bounding box mismatch suggests row shift: "
+                          f"y_min_diff={y_min_diff:.1f}, y_max_diff={y_max_diff:.1f}, "
+                          f"tolerance={bbox_tolerance:.1f}")
+        return None, None, metrics
+    
+    # Also check x bounds (column shift)
+    x_tolerance = bbox_tolerance * 1.5  # Be a bit more lenient on x
+    if x_min_diff > x_tolerance or x_max_diff > x_tolerance:
+        metrics["error"] = (f"Bounding box mismatch suggests column shift: "
+                          f"x_min_diff={x_min_diff:.1f}, x_max_diff={x_max_diff:.1f}")
+        return None, None, metrics
+    
+    # ==========================================================================
+    # All validation passed - apply homography
+    # ==========================================================================
     aligned = cv.warpPerspective(scan_bgr, H, (tpl_w, tpl_h))
     
     metrics["success"] = True
     return aligned, H, metrics
+
+
+# --------------------------- Coarse-to-Fine Alignment ---------------------------
+
+def _scale_homography(H: np.ndarray, from_scale: float, to_scale: float) -> np.ndarray:
+    """
+    Scale a homography matrix from one resolution to another.
+    
+    If H was computed at 72 DPI and we want to apply it at 300 DPI:
+        H_300 = _scale_homography(H_72, from_scale=72, to_scale=300)
+    
+    The math: H' = S @ H @ S^-1 where S is the scaling matrix.
+    """
+    ratio = to_scale / from_scale
+    S = np.array([
+        [ratio, 0,     0],
+        [0,     ratio, 0],
+        [0,     0,     1]
+    ], dtype=np.float64)
+    S_inv = np.array([
+        [1/ratio, 0,       0],
+        [0,       1/ratio, 0],
+        [0,       0,       1]
+    ], dtype=np.float64)
+    return S @ H @ S_inv
+
+
+def _resize_for_dpi(img: np.ndarray, current_dpi: float, target_dpi: float) -> np.ndarray:
+    """Resize image from current_dpi to target_dpi."""
+    if abs(current_dpi - target_dpi) < 1:
+        return img
+    scale = target_dpi / current_dpi
+    new_w = int(img.shape[1] * scale)
+    new_h = int(img.shape[0] * scale)
+    interp = cv.INTER_AREA if scale < 1 else cv.INTER_LINEAR
+    return cv.resize(img, (new_w, new_h), interpolation=interp)
+
+
+def align_coarse_to_fine(
+    scan_bgr: np.ndarray,
+    template_bgr: np.ndarray,
+    bubblemap: Any,
+    page_num: int = 1,
+    full_dpi: float = 300.0,
+    coarse_dpi: float = 72.0,
+    base_fpar: Optional[FeatureParams] = None,
+    base_epar: Optional[EstParams] = None,
+    base_ratio: float = 0.75,
+) -> Tuple[Optional[np.ndarray], Dict[str, Any]]:
+    """
+    Two-stage coarse-to-fine alignment:
+    
+    Stage 1 (Coarse): Fast ORB alignment at low resolution (72 DPI)
+        - Gets us "in the ballpark" - handles rotation, translation, scale
+        - Very fast due to small image size
+    
+    Stage 2 (Fine): Bubble grid refinement at full resolution
+        - Now that we're close, bubble matching is unambiguous
+        - Fine-tunes the alignment using known bubble positions
+    
+    This approach is both faster AND more reliable than either method alone:
+    - ORB at low res is fast but imprecise
+    - Bubble grid is precise but can match to wrong row if starting point is far off
+    - Combined: fast coarse alignment makes bubble grid unambiguous
+    
+    Args:
+        scan_bgr: Full resolution scan image (BGR)
+        template_bgr: Full resolution template image (BGR)
+        bubblemap: Bubblemap object for bubble grid refinement
+        page_num: Which page in bubblemap (1-indexed)
+        full_dpi: DPI of the input images (default 300)
+        coarse_dpi: DPI for coarse alignment (default 72)
+        base_fpar: FeatureParams for ORB (or None for defaults)
+        base_epar: EstParams for homography (or None for defaults)
+        base_ratio: Lowe's ratio test threshold
+        
+    Returns:
+        (aligned_image, metrics_dict)
+        If alignment fails, returns (None, metrics_dict_with_error)
+    """
+    from ..defaults import FEAT_DEFAULTS, EST_DEFAULTS
+    
+    if base_fpar is None:
+        base_fpar = FEAT_DEFAULTS
+    if base_epar is None:
+        base_epar = EST_DEFAULTS
+    
+    metrics: Dict[str, Any] = {
+        "method": "coarse_to_fine",
+        "coarse_dpi": coarse_dpi,
+        "full_dpi": full_dpi,
+        "coarse_success": False,
+        "fine_success": False,
+        "success": False,
+        "error": None,
+    }
+    
+    tpl_h, tpl_w = template_bgr.shape[:2]
+    scan_h, scan_w = scan_bgr.shape[:2]
+    
+    # ==========================================================================
+    # Stage 1: Coarse ORB alignment at low resolution
+    # ==========================================================================
+    print(f"[info] Coarse alignment at {coarse_dpi} DPI...", file=sys.stderr)
+    
+    # Downsample images
+    template_coarse = _resize_for_dpi(template_bgr, full_dpi, coarse_dpi)
+    scan_coarse = _resize_for_dpi(scan_bgr, full_dpi, coarse_dpi)
+    
+    tpl_coarse_g = _to_gray(template_coarse)
+    scan_coarse_g = _to_gray(scan_coarse)
+    
+    # Lighter ORB params for speed at low res
+    coarse_fpar = apply_feat_overrides(
+        tiles_x=4,
+        tiles_y=5,
+        topk_per_tile=80,
+        orb_nfeatures=1500,
+        orb_fast_threshold=15,
+    )
+    
+    coarse_epar = apply_est_overrides(
+        estimator_method=base_epar.estimator_method,
+        ransac_thresh=3.0,
+        max_iters=5000,
+        confidence=0.99,
+        use_ecc=False,  # Skip ECC at coarse stage
+        ecc_levels=base_epar.ecc_levels,
+        ecc_max_iters=0,
+        ecc_eps=base_epar.ecc_eps,
+    )
+    
+    try:
+        # Detect and match features at coarse resolution
+        k1, d1 = detect_orb_grid(tpl_coarse_g, coarse_fpar)
+        k2, d2 = detect_orb_grid(scan_coarse_g, coarse_fpar)
+        
+        if len(k1) < 4 or len(k2) < 4:
+            metrics["error"] = f"Coarse: Not enough keypoints (template={len(k1)}, scan={len(k2)})"
+            return None, metrics
+        
+        matches = match_descriptors(d1, d2, ratio=base_ratio, cross_check=True)
+        
+        if len(matches) < 4:
+            metrics["error"] = f"Coarse: Not enough matches ({len(matches)})"
+            return None, metrics
+        
+        src = np.float32([k1[m.queryIdx].pt for m in matches])
+        dst = np.float32([k2[m.trainIdx].pt for m in matches])
+        
+        H_coarse, inliers = estimate_homography(src, dst, coarse_epar)
+        
+        if H_coarse is None or inliers is None or inliers.sum() < 4:
+            metrics["error"] = "Coarse: Homography estimation failed"
+            return None, metrics
+        
+        metrics["coarse_inliers"] = int(inliers.sum())
+        metrics["coarse_matches"] = len(matches)
+        metrics["coarse_success"] = True
+        
+        print(f"[info] Coarse alignment: {inliers.sum()} inliers from {len(matches)} matches", file=sys.stderr)
+        
+    except Exception as e:
+        metrics["error"] = f"Coarse alignment error: {e}"
+        return None, metrics
+    
+    # ==========================================================================
+    # Scale homography to full resolution and apply coarse warp
+    # ==========================================================================
+    H_coarse_full = _scale_homography(H_coarse, coarse_dpi, full_dpi)
+    
+    # Warp scan to get coarse-aligned version at full res
+    # H_coarse maps template->scan, we need scan->template (inverse)
+    try:
+        H_coarse_inv = np.linalg.inv(H_coarse_full)
+    except:
+        H_coarse_inv = np.linalg.pinv(H_coarse_full)
+    
+    scan_coarse_aligned = cv.warpPerspective(scan_bgr, H_coarse_inv, (tpl_w, tpl_h))
+    
+    # ==========================================================================
+    # Stage 2: Fine bubble grid alignment on coarse-aligned image
+    # ==========================================================================
+    print(f"[info] Fine bubble grid alignment...", file=sys.stderr)
+    
+    try:
+        # Now bubble grid should work well - we're already close to correct alignment
+        # Use tighter tolerances since we're refining, not doing initial alignment
+        aligned_fine, H_fine, fine_metrics = align_with_bubble_grid(
+            scan_coarse_aligned,  # Already coarse-aligned
+            template_bgr,
+            bubblemap,
+            page_num=page_num,
+            ransac_thresh=3.0,  # Tighter threshold for refinement
+            min_inliers=25,
+        )
+        
+        if aligned_fine is not None and fine_metrics.get("success", False):
+            metrics["fine_success"] = True
+            metrics["fine_inliers"] = fine_metrics.get("inliers", 0)
+            metrics["fine_matched_pairs"] = fine_metrics.get("matched_pairs", 0)
+            metrics["fine_detected_circles"] = fine_metrics.get("detected_circles", 0)
+            metrics["success"] = True
+            
+            print(f"[info] Fine alignment: {fine_metrics['inliers']} inliers from {fine_metrics['matched_pairs']} matches", file=sys.stderr)
+            
+            # The final result is the fine-aligned image
+            # (H_fine was applied to the coarse-aligned image)
+            return aligned_fine, metrics
+        else:
+            # Bubble grid refinement failed - fall back to coarse alignment
+            print(f"[info] Fine alignment failed: {fine_metrics.get('error', 'unknown')}. Using coarse result.", file=sys.stderr)
+            metrics["fine_error"] = fine_metrics.get("error", "unknown")
+            
+            # Return coarse-aligned result (still better than nothing)
+            metrics["success"] = True  # Coarse worked
+            metrics["method"] = "coarse_only"
+            return scan_coarse_aligned, metrics
+            
+    except Exception as e:
+        print(f"[info] Fine alignment error: {e}. Using coarse result.", file=sys.stderr)
+        metrics["fine_error"] = str(e)
+        
+        # Return coarse-aligned result
+        metrics["success"] = True
+        metrics["method"] = "coarse_only"
+        return scan_coarse_aligned, metrics
 
 
 # --------------------------- Guardrailed Alignment ---------------------------
@@ -800,57 +1096,77 @@ def align_with_guardrails(template_bgr: np.ndarray,
                           fail_p95: float,
                           fail_br: float,
                           bubblemap: Any = None,
-                          page_num: int = 1):
+                          page_num: int = 1,
+                          full_dpi: float = 300.0,
+                          align_mode: str = "auto"):
     """
-    Try alignment with multiple fallback strategies (optimized order):
+    Try alignment with multiple fallback strategies.
     
-    When bubblemap IS provided (bubble sheets):
-      1. Bubble grid alignment (fast, reliable for bubble sheets)
-      2. Base ORB feature matching (fallback)
-      3. Page quadrilateral fallback (last resort)
+    align_mode options:
+      - "fast": Coarse-to-fine (72 DPI ORB → bubble grid → ORB light → ORB heavy → quad)
+                Requires bubblemap. Fast and accurate for bubble sheets.
+      - "slow": Full resolution ORB (ORB light → ORB heavy → quad)
+                More thorough, works without bubblemap.
+      - "auto": Use "fast" if bubblemap provided, else "slow"
     
-    When bubblemap is NOT provided (general documents):
-      1. Base ORB feature matching
-      2. Stricter ORB parameters  
+    Fallback chain for "fast" mode:
+      1. Coarse-to-fine (72 DPI ORB → bubble grid refinement)
+      2. ORB light at full res
+      3. ORB heavy at full res  
+      4. Page quadrilateral fallback
+    
+    Fallback chain for "slow" mode:
+      1. ORB light at full res
+      2. ORB heavy at full res
       3. Page quadrilateral fallback
     
     Returns (warped, metrics_dict_with_mode).
     """
     
+    # Determine effective mode
+    if align_mode == "auto":
+        effective_mode = "fast" if bubblemap is not None else "slow"
+    else:
+        effective_mode = align_mode
+    
+    # Warn if fast mode requested but no bubblemap
+    if effective_mode == "fast" and bubblemap is None:
+        print(f"[warning] Fast alignment requested but no bubblemap provided. Falling back to slow mode.", file=sys.stderr)
+        effective_mode = "slow"
+    
     # ==========================================================================
-    # FAST PATH: When bubblemap is provided, try bubble grid FIRST
-    # (This is typically faster and more reliable for bubble sheets)
+    # FAST MODE: Coarse-to-fine first
     # ==========================================================================
-    if bubblemap is not None:
+    if effective_mode == "fast" and bubblemap is not None:
         try:
-            warped_bg, H_bg, bg_metrics = align_with_bubble_grid(
+            warped_ctf, ctf_metrics = align_coarse_to_fine(
                 scan_bgr, template_bgr, bubblemap,
                 page_num=page_num,
-                ransac_thresh=5.0,
-                min_inliers=30
+                full_dpi=full_dpi,
+                coarse_dpi=72.0,
+                base_fpar=base_fpar,
+                base_epar=base_epar,
+                base_ratio=base_ratio,
             )
-            if warped_bg is not None and bg_metrics.get("success", False):
+            if warped_ctf is not None and ctf_metrics.get("success", False):
                 metrics = {
-                    "mode": "bubble_grid",
+                    "mode": ctf_metrics.get("method", "coarse_to_fine"),
                     "res_median": float("nan"),
                     "res_p95": float("nan"),
                     "res_br_p95": float("nan"),
-                    "n_inliers": bg_metrics.get("inliers", 0),
-                    "matched_pairs": bg_metrics.get("matched_pairs", 0),
-                    "detected_circles": bg_metrics.get("detected_circles", 0),
+                    "coarse_inliers": ctf_metrics.get("coarse_inliers", 0),
+                    "fine_inliers": ctf_metrics.get("fine_inliers", 0),
                 }
-                print(f"[info] Bubble grid alignment succeeded: {bg_metrics['inliers']} inliers from {bg_metrics['matched_pairs']} matches", file=sys.stderr)
-                return warped_bg, metrics
+                return warped_ctf, metrics
             else:
-                print(f"[info] Bubble grid alignment failed: {bg_metrics.get('error', 'unknown')}. Trying ORB features...", file=sys.stderr)
+                print(f"[info] Coarse-to-fine failed: {ctf_metrics.get('error', 'unknown')}. Trying ORB...", file=sys.stderr)
         except Exception as e:
-            print(f"[info] Bubble grid alignment error: {e}. Trying ORB features...", file=sys.stderr)
+            print(f"[info] Coarse-to-fine error: {e}. Trying ORB...", file=sys.stderr)
     
     # ==========================================================================
-    # Attempt: Base ORB features (with reduced ECC iterations for speed)
+    # ORB light (both fast and slow modes)
     # ==========================================================================
     try:
-        # Use reduced ECC iterations for faster processing
         faster_epar = apply_est_overrides(
             estimator_method=base_epar.estimator_method,
             ransac_thresh=base_epar.ransac_thresh,
@@ -858,7 +1174,7 @@ def align_with_guardrails(template_bgr: np.ndarray,
             confidence=base_epar.confidence,
             use_ecc=base_epar.use_ecc,
             ecc_levels=base_epar.ecc_levels,
-            ecc_max_iters=min(getattr(base_epar, "ecc_max_iters", 50), 30),  # Cap at 30 iterations
+            ecc_max_iters=min(getattr(base_epar, "ecc_max_iters", 50), 30),
             ecc_eps=base_epar.ecc_eps,
         )
         warped, metrics = align_page_once(template_bgr, scan_bgr, base_fpar, faster_epar, base_ratio)
@@ -869,38 +1185,36 @@ def align_with_guardrails(template_bgr: np.ndarray,
         pass
 
     # ==========================================================================
-    # Attempt: Stricter ORB params (only if bubblemap not provided)
-    # Skip this slow step if we already tried bubble grid
+    # ORB heavy (both modes)
     # ==========================================================================
-    if bubblemap is None:
-        ratio = max(0.68, base_ratio - 0.05)
-        
-        fpar = apply_feat_overrides(
-            tiles_x=max(base_fpar.tiles_x, 8),
-            tiles_y=max(base_fpar.tiles_y, 10),
-            orb_fast_threshold=max(6, base_fpar.orb_fast_threshold - 4),
-            topk_per_tile=base_fpar.topk_per_tile,
-            orb_nfeatures=base_fpar.orb_nfeatures,
-        )
-        
-        epar = apply_est_overrides(
-            estimator_method=base_epar.estimator_method,
-            ransac_thresh=min(base_epar.ransac_thresh, 2.0),
-            max_iters=min(base_epar.max_iters, 15000),  # Reduced from 20000
-            confidence=base_epar.confidence,
-            use_ecc=base_epar.use_ecc,
-            ecc_levels=base_epar.ecc_levels,
-            ecc_max_iters=min(getattr(base_epar, "ecc_max_iters", 50), 25),  # Reduced
-            ecc_eps=base_epar.ecc_eps,
-        )
+    ratio = max(0.68, base_ratio - 0.05)
+    
+    fpar = apply_feat_overrides(
+        tiles_x=max(base_fpar.tiles_x, 8),
+        tiles_y=max(base_fpar.tiles_y, 10),
+        orb_fast_threshold=max(6, base_fpar.orb_fast_threshold - 4),
+        topk_per_tile=base_fpar.topk_per_tile,
+        orb_nfeatures=base_fpar.orb_nfeatures,
+    )
+    
+    epar = apply_est_overrides(
+        estimator_method=base_epar.estimator_method,
+        ransac_thresh=min(base_epar.ransac_thresh, 2.0),
+        max_iters=min(base_epar.max_iters, 15000),
+        confidence=base_epar.confidence,
+        use_ecc=base_epar.use_ecc,
+        ecc_levels=base_epar.ecc_levels,
+        ecc_max_iters=min(getattr(base_epar, "ecc_max_iters", 50), 25),
+        ecc_eps=base_epar.ecc_eps,
+    )
 
-        try:
-            warped, metrics = align_page_once(template_bgr, scan_bgr, fpar, epar, ratio)
-            if not need_retry(metrics, fail_med, fail_p95, fail_br):
-                metrics['mode'] = 'retry'
-                return warped, metrics
-        except Exception:
-            pass
+    try:
+        warped, metrics = align_page_once(template_bgr, scan_bgr, fpar, epar, ratio)
+        if not need_retry(metrics, fail_med, fail_p95, fail_br):
+            metrics['mode'] = 'retry'
+            return warped, metrics
+    except Exception:
+        pass
 
     # ==========================================================================
     # Last resort: Page quadrilateral fallback (+ optional ECC micro-refine)
