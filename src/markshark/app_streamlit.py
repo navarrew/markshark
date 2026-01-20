@@ -557,15 +557,44 @@ elif page.startswith("1"):
     colA, colB = st.columns(2)
     with colA:
         scans = _tempfile_from_uploader("Raw student scans (PDF)", "align_scans", types=("pdf",))
-        template = _tempfile_from_uploader("Template bubble sheet (PDF)", "align_template", types=("pdf",))
         
-        # NEW: Optional bubblemap for bubble grid fallback
+        # Template selection - either from library or custom upload
         st.markdown("---")
-        st.markdown("**Optional: Bubblemap for enhanced alignment**")
-        st.caption("If provided, enables 'fast' alignment mode (coarse-to-fine with bubble grid)")
-        align_bublmap = _tempfile_from_uploader("Bubblemap YAML (optional)", "align_bubblemap", types=("yaml", "yml"))
-        if align_bublmap:
-            st.success("✓ Fast alignment mode available")
+        st.subheader("Template Selection")
+        
+        align_template_choice = None
+        template = None
+        align_bublmap = None
+        
+        if template_manager is not None:
+            templates = template_manager.scan_templates()
+            
+            if templates:
+                template_names = ["(Upload custom files)"] + [str(t) for t in templates]
+                selected_template = st.selectbox("Select template", template_names, key="align_template_select")
+                
+                if selected_template != "(Upload custom files)":
+                    for t in templates:
+                        if str(t) == selected_template:
+                            align_template_choice = t
+                            break
+                    
+                    if align_template_choice:
+                        st.success(f"Using template: **{align_template_choice.display_name}**")
+                        st.caption("✓ Fast alignment mode available (bubblemap included)")
+            else:
+                st.info("No templates found. Upload custom files below.")
+        
+        # Custom upload option (shown if no template selected or no templates available)
+        if align_template_choice is None:
+            st.markdown("**Upload custom files:**")
+            template = _tempfile_from_uploader("Template bubble sheet (PDF)", "align_template", types=("pdf",))
+            
+            st.markdown("**Optional: Bubblemap for fast alignment**")
+            st.caption("If provided, enables 'fast' alignment mode (coarse-to-fine with bubble grid)")
+            align_bublmap = _tempfile_from_uploader("Bubblemap YAML (optional)", "align_bubblemap", types=("yaml", "yml"))
+            if align_bublmap:
+                st.success("✓ Fast alignment mode available")
         
         st.markdown("---")
         method = st.selectbox(
@@ -626,8 +655,18 @@ elif page.startswith("1"):
         last_page = st.number_input("Last page to align in your raw scans (0 = auto)", min_value=0, value=0, step=1)
 
     if run_align_clicked:
-        if not scans or not template:
-            status.error("Please upload scans and template.")
+        # Determine template and bubblemap to use
+        if align_template_choice is not None:
+            actual_template = align_template_choice.template_pdf_path
+            actual_bublmap = align_template_choice.bubblemap_yaml_path
+        else:
+            actual_template = template
+            actual_bublmap = align_bublmap
+        
+        if not scans:
+            status.error("Please upload scans PDF.")
+        elif actual_template is None:
+            status.error("Please select a template or upload a template PDF.")
         else:
             base = WORKDIR or Path(os.getcwd())
             out_dir = Path(tempfile.mkdtemp(prefix="align_", dir=str(base)))
@@ -635,7 +674,7 @@ elif page.startswith("1"):
             args = [
                 "align",
                 str(scans),
-                "--template", str(template),
+                "--template", str(actual_template),
                 "--out-pdf", str(out_pdf),
                 "--dpi", str(int(dpi)),
                 "--align-method", method,
@@ -653,9 +692,9 @@ elif page.startswith("1"):
             if last_page > 0:
                 args += ["--last-page", str(int(last_page))]
             
-            # NEW: Pass bubblemap for bubble grid fallback
-            if align_bublmap:
-                args += ["--bubblemap", str(align_bublmap)]
+            # Pass bubblemap for fast alignment mode
+            if actual_bublmap:
+                args += ["--bubblemap", str(actual_bublmap)]
 
             try:
                 # Show progress during alignment
@@ -692,8 +731,39 @@ elif page.startswith("2"):
     colA, colB = st.columns(2)
     with colA:
         aligned = _tempfile_from_uploader("Aligned scans PDF", "score_pdf", types=("pdf",))
-        bublmap = _tempfile_from_uploader("Bubblemap (YAML)", "score_cfg", types=("yaml","yml"))
+        
+        # Template/Bubblemap selection
+        st.markdown("---")
+        st.subheader("Bubblemap Selection")
+        
+        score_template_choice = None
+        bublmap = None
+        
+        if template_manager is not None:
+            templates = template_manager.scan_templates()
+            
+            if templates:
+                template_names = ["(Upload custom bubblemap)"] + [str(t) for t in templates]
+                selected_template = st.selectbox("Select template (for bubblemap)", template_names, key="score_template_select")
+                
+                if selected_template != "(Upload custom bubblemap)":
+                    for t in templates:
+                        if str(t) == selected_template:
+                            score_template_choice = t
+                            break
+                    
+                    if score_template_choice:
+                        st.success(f"Using bubblemap from: **{score_template_choice.display_name}**")
+            else:
+                st.info("No templates found. Upload custom bubblemap below.")
+        
+        # Custom upload option
+        if score_template_choice is None:
+            bublmap = _tempfile_from_uploader("Bubblemap (YAML)", "score_cfg", types=("yaml","yml"))
+        
+        st.markdown("---")
         key_txt = _tempfile_from_uploader("Key TXT (optional)", "score_key", types=("txt",))
+        
     with colB:
         out_csv_name = st.text_input("Output results CSV", value="results.csv")
         scored_pdf_name = st.text_input("Annotated scored PDF filename", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "out_pdf", "scored_scans.pdf")))
@@ -711,8 +781,16 @@ elif page.startswith("2"):
         top2_ratio = st.text_input("Top2 ratio (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", "")))
 
     if run_score_clicked:
-        if not aligned or not bublmap:
-            score_status.error("Please upload aligned PDF and bubblemap YAML.")
+        # Determine bubblemap to use
+        if score_template_choice is not None:
+            actual_bublmap = score_template_choice.bubblemap_yaml_path
+        else:
+            actual_bublmap = bublmap
+        
+        if not aligned:
+            score_status.error("Please upload aligned PDF.")
+        elif actual_bublmap is None:
+            score_status.error("Please select a template or upload a bubblemap YAML.")
         else:
             base = WORKDIR or Path(os.getcwd())
             out_dir = Path(tempfile.mkdtemp(prefix="score_", dir=str(base)))
@@ -720,7 +798,7 @@ elif page.startswith("2"):
             args = [
                 "score",
                 str(aligned),
-                "--bublmap", str(bublmap),
+                "--bublmap", str(actual_bublmap),
                 "--out-csv", str(out_csv),
                 "--dpi", str(int(dpi)),
             ]
@@ -1043,7 +1121,7 @@ Each template needs its own folder with:
 - `master_template.pdf` 
 - `bubblemap.yaml`
 
-**NEW: Bubble Grid Alignment Fallback**
+**Bubble Grid Alignment Fallback**
 When a bubblemap is provided during alignment, MarkShark can use the known bubble positions
 to align scans even when ArUco markers are not present. This is especially useful for
 legacy bubble sheets or templates from other sources.
