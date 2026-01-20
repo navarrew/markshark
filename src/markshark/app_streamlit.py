@@ -314,11 +314,11 @@ def _zip_dir_to_bytes(dir_path: Path) -> bytes:
 # st.sidebar.image(image_url, caption="MarkShark Logo", use_column_width=True)
 st.sidebar.title("MarkShark Beta")
 page = st.sidebar.radio("Select below", [
-    "0) Quick grade (Align + Score)",
+    "0) Quick grade",
     "1) Align scans",
     "2) Score",
-    "3) Stats",
-    "4) Bblmap visualizer",
+    "3) Report",
+    "4) Map visualizer",
     "5) Template manager",
     "6) Help"
 ])
@@ -337,11 +337,11 @@ if TemplateManager is not None:
 
 # ===================== 0) QUICK GRADE (UNIFIED WORKFLOW) =====================
 if page.startswith("0"):
-    st.header("Quick Grade: Align + Score in One Step")
+    st.header("Quick Grade")
     st.markdown("""
-    Upload your **scanned answer sheets** and **answer key**, select a template, and MarkShark will:
-    1. Align the scans to the template (with bubble grid fallback if ArUco markers not found)
-    2. Score them automatically
+    Select a **template**, upload your **scanned answer sheets** and **answer key**, and MarkShark will:
+    1. Align the scans to the template
+    2. Score them automatically using default parameters
     """)
     
     # Top-of-page controls
@@ -356,12 +356,7 @@ if page.startswith("0"):
     colA, colB = st.columns(2)
     with colA:
         st.subheader("Inputs")
-        scans = _tempfile_from_uploader("Scanned answer sheets (PDF)", "quick_scans", types=("pdf",))
-        key_txt = _tempfile_from_uploader("Answer key (TXT)", "quick_key", types=("txt",))
-        
         # Template selection
-        st.markdown("---")
-        st.subheader("Template Selection")
         
         template_choice = None
         custom_template_pdf = None
@@ -371,10 +366,10 @@ if page.startswith("0"):
             templates = template_manager.scan_templates()
             
             if templates:
-                template_names = ["(Upload custom files)"] + [str(t) for t in templates]
-                selected_name = st.selectbox("Select bubble sheet template", template_names)
+                template_names = ["(none selected)"] + [str(t) for t in templates]
+                selected_name = st.selectbox("Select a pre-defined bubble sheet template", template_names)
                 
-                if selected_name != "(Upload custom files)":
+                if selected_name != "(none selected)":
                     # Find the selected template
                     for t in templates:
                         if str(t) == selected_name:
@@ -389,27 +384,37 @@ if page.startswith("0"):
                         st.caption("✓ Bubble grid alignment fallback enabled")
             else:
                 st.info("No templates found. Upload custom files below or add templates to the templates directory.")
+
+        scans = _tempfile_from_uploader("Upload your scanned answer sheets (PDF)", "quick_scans", types=("pdf",))
+        key_txt = _tempfile_from_uploader("Upload your answer key (TXT)", "quick_key", types=("txt",))
+        
         
         # Custom upload option
         if template_choice is None:
-            st.markdown("**Upload custom template files:**")
+            st.markdown("---")
+            st.markdown("**Upload custom template files below:**")
+            st.caption("*Only if you are not using a pre-defined template from the menu above*")
+
             custom_template_pdf = _tempfile_from_uploader("Master template PDF", "quick_template_pdf", types=("pdf",))
             custom_bublmap = _tempfile_from_uploader("Bubblemap YAML", "quick_bubblemap", types=("yaml", "yml"))
             if custom_bublmap:
                 st.caption("✓ Bubble grid alignment fallback enabled")
     
     with colB:
-        st.subheader("Options")
+        st.subheader("Output file options")
         
         # Output names
         out_csv_name = st.text_input("Results CSV name", value="quick_grade_results.csv")
         out_pdf_name = st.text_input("Annotated PDF name", value="quick_grade_annotated.pdf")
-        
-        st.markdown("---")
         dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1,
                               help="150 DPI is usually sufficient for bubble sheets. Higher values are slower.")
         
+        st.markdown("---")
+        
         # Scoring options
+
+        st.subheader("Adjust parameters")
+
         with st.expander("Scoring options", expanded=False):
             annotate_all = st.checkbox("Annotate all bubbles", value=True)
             label_density = st.checkbox("Show % fill labels", value=True)
@@ -419,6 +424,15 @@ if page.startswith("0"):
             min_fill = st.text_input("Min fill", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", "")))
             min_score = st.text_input("Min score", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_score", "")))
             top2_ratio = st.text_input("Top2 ratio", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", "")))
+            
+            st.markdown("---")
+            st.markdown("**Flagging & Review**")
+            generate_review_pdf = st.checkbox("Generate review PDF (flagged pages only)", value=True,
+                                              help="Creates a PDF containing only pages with blank or ambiguous answers for manual review")
+            generate_flagged_csv = st.checkbox("Generate flagged items CSV", value=True,
+                                               help="Creates a CSV listing all flagged items (blank/multi answers) with student info")
+            include_stats = st.checkbox("Include basic statistics in CSV", value=True,
+                                        help="Appends exam stats (mean, std, KR-20) and item stats (% correct, point-biserial) to the CSV. Requires answer key.")
         
         # Alignment options
         with st.expander("Alignment options", expanded=False):
@@ -515,6 +529,22 @@ if page.startswith("0"):
                 if min_score.strip():
                     score_args += ["--min-score", min_score.strip()]
                 
+                # Stats option
+                if include_stats:
+                    score_args += ["--include-stats"]
+                else:
+                    score_args += ["--no-include-stats"]
+                
+                # Flagging/review options
+                review_pdf_path = None
+                flagged_csv_path = None
+                if generate_review_pdf:
+                    review_pdf_path = work_dir / "for_review.pdf"
+                    score_args += ["--review-pdf", str(review_pdf_path)]
+                if generate_flagged_csv:
+                    flagged_csv_path = work_dir / "flagged.csv"
+                    score_args += ["--flagged-csv", str(flagged_csv_path)]
+                
                 with st.spinner("Scoring sheets..."):
                     score_out = _run_cli(score_args)
                     quick_status.success("✅ Quick Grade complete!")
@@ -529,6 +559,20 @@ if page.startswith("0"):
                     _download_file_button("📑 Download Annotated PDF", out_pdf)
                 with col3:
                     _download_file_button("📋 Download Aligned Scans", aligned_pdf)
+                
+                # Flagging downloads (if generated)
+                if review_pdf_path or flagged_csv_path:
+                    flag_col1, flag_col2 = st.columns(2)
+                    with flag_col1:
+                        if review_pdf_path and review_pdf_path.exists():
+                            _download_file_button("🔍 Download Review PDF (flagged pages)", review_pdf_path)
+                    with flag_col2:
+                        if flagged_csv_path and flagged_csv_path.exists():
+                            _download_file_button("⚠️ Download Flagged Items CSV", flagged_csv_path)
+                
+                # Stats info
+                if include_stats and key_txt:
+                    st.info("📊 Basic statistics appended to CSV (scroll to bottom)")
                 
                 # Show output logs
                 with st.expander("View processing logs", expanded=False):
@@ -556,12 +600,8 @@ elif page.startswith("1"):
 
     colA, colB = st.columns(2)
     with colA:
-        scans = _tempfile_from_uploader("Raw student scans (PDF)", "align_scans", types=("pdf",))
-        
+        st.subheader("Inputs")
         # Template selection - either from library or custom upload
-        st.markdown("---")
-        st.subheader("Template Selection")
-        
         align_template_choice = None
         template = None
         align_bublmap = None
@@ -570,10 +610,10 @@ elif page.startswith("1"):
             templates = template_manager.scan_templates()
             
             if templates:
-                template_names = ["(Upload custom files)"] + [str(t) for t in templates]
-                selected_template = st.selectbox("Select template", template_names, key="align_template_select")
+                template_names = ["(none selected)"] + [str(t) for t in templates]
+                selected_template = st.selectbox("Select a pre-defined bubblesheet template", template_names, key="align_template_select")
                 
-                if selected_template != "(Upload custom files)":
+                if selected_template != "(none selected)":
                     for t in templates:
                         if str(t) == selected_template:
                             align_template_choice = t
@@ -584,19 +624,31 @@ elif page.startswith("1"):
                         st.caption("✓ Fast alignment mode available (bubblemap included)")
             else:
                 st.info("No templates found. Upload custom files below.")
+        scans = _tempfile_from_uploader("Upload your raw student scans (PDF)", "align_scans", types=("pdf",))
+        
+
+        st.markdown("---")
         
         # Custom upload option (shown if no template selected or no templates available)
         if align_template_choice is None:
-            st.markdown("**Upload custom files:**")
+            st.markdown("**Upload custom bubblesheet files:**")
+            st.caption("*Only if you are not using a pre-defined template from the menu above*")
             template = _tempfile_from_uploader("Template bubble sheet (PDF)", "align_template", types=("pdf",))
             
-            st.markdown("**Optional: Bubblemap for fast alignment**")
-            st.caption("If provided, enables 'fast' alignment mode (coarse-to-fine with bubble grid)")
             align_bublmap = _tempfile_from_uploader("Bubblemap YAML (optional)", "align_bubblemap", types=("yaml", "yml"))
+            st.caption("*A bubblemap enables 'fast' alignment mode*")
             if align_bublmap:
                 st.success("✓ Fast alignment mode available")
         
+
+    with colB:
+        st.subheader("Output file options")
+        out_pdf_name = st.text_input("Output aligned PDF name", value="aligned_scans.pdf")
+        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1)
+
         st.markdown("---")
+        st.subheader("Alignment parameters")
+
         method = st.selectbox(
             "Alignment method",
             ["auto", "fast", "slow", "aruco"],
@@ -606,17 +658,13 @@ elif page.startswith("1"):
                  "slow: full-res ORB (thorough). "
                  "aruco: ArUco markers only."
         )
-        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1)
-
-    with colB:
-        out_pdf_name = st.text_input("Output aligned PDF name", value="aligned_scans.pdf")
         st.markdown("---")
-        st.markdown("ArUco mark alignment parameters")
+        st.markdown("**ArUco mark alignment parameters**")
         min_markers = st.number_input("Min ArUco markers to accept", min_value=0, max_value=32, value=int(_dflt(ALIGN_DEFAULTS, "min_aruco", 0)), step=1)
         dict_name = st.text_input("ArUco dictionary (if aruco)", value=str(_dflt(ALIGN_DEFAULTS, "dict_name", "DICT_4X4_50")))
 
         st.markdown("---")
-        st.markdown("Non-ArUco align parameters")
+        st.markdown("**Non-ArUco align parameters**")
         ransac = st.number_input("RANSAC reprojection threshold", min_value=0.1, max_value=20.0, value=float(_dflt(EST_DEFAULTS, "ransac_thresh", 2.0)), step=0.1)
         orb_nfeatures = st.number_input("ORB nfeatures", min_value=200, max_value=20000, value=int(_dflt(FEAT_DEFAULTS, "orb_nfeatures", 3000)), step=100)
         match_ratio = st.number_input("Match ratio (Lowe)", min_value=0.50, max_value=0.99, value=float(_dflt(MATCH_DEFAULTS, "ratio_test", 0.75)), step=0.01, format="%.2f")
@@ -650,7 +698,6 @@ elif page.startswith("1"):
             )
 
         st.markdown("---")
-        template_page = st.number_input("Template page (use if your template pdf has multiple pages)", min_value=1, value=1, step=1)
         first_page = st.number_input("First page to align in your raw scans (0 = auto)", min_value=0, value=0, step=1)
         last_page = st.number_input("Last page to align in your raw scans (0 = auto)", min_value=0, value=0, step=1)
 
@@ -679,7 +726,6 @@ elif page.startswith("1"):
                 "--dpi", str(int(dpi)),
                 "--align-method", method,
                 "--estimator-method", estimator_method,
-                "--template-page", str(int(template_page)),
                 "--ransac", str(float(ransac)),
                 "--orb-nfeatures", str(int(orb_nfeatures)),
                 "--match-ratio", str(float(match_ratio)),
@@ -730,11 +776,9 @@ elif page.startswith("2"):
 
     colA, colB = st.columns(2)
     with colA:
-        aligned = _tempfile_from_uploader("Aligned scans PDF", "score_pdf", types=("pdf",))
+        st.subheader("Input Files")
         
         # Template/Bubblemap selection
-        st.markdown("---")
-        st.subheader("Bubblemap Selection")
         
         score_template_choice = None
         bublmap = None
@@ -744,7 +788,7 @@ elif page.startswith("2"):
             
             if templates:
                 template_names = ["(Upload custom bubblemap)"] + [str(t) for t in templates]
-                selected_template = st.selectbox("Select template (for bubblemap)", template_names, key="score_template_select")
+                selected_template = st.selectbox("Select template from dropdown menu", template_names, key="score_template_select")
                 
                 if selected_template != "(Upload custom bubblemap)":
                     for t in templates:
@@ -756,18 +800,36 @@ elif page.startswith("2"):
                         st.success(f"Using bubblemap from: **{score_template_choice.display_name}**")
             else:
                 st.info("No templates found. Upload custom bubblemap below.")
+        aligned = _tempfile_from_uploader("Aligned scans PDF", "score_pdf", types=("pdf",))
+        key_txt = _tempfile_from_uploader("Key TXT (optional)", "score_key", types=("txt",))
         
+        st.markdown("Upload bubblemap below if not using a predefined template")
         # Custom upload option
         if score_template_choice is None:
             bublmap = _tempfile_from_uploader("Bubblemap (YAML)", "score_cfg", types=("yaml","yml"))
-        
+
         st.markdown("---")
-        key_txt = _tempfile_from_uploader("Key TXT (optional)", "score_key", types=("txt",))
+        st.subheader("Scoring Parameters")
+        st.caption("*Adjust these if scoring isn't working well*")
+        auto_thresh = st.checkbox("Auto-calibrate threshold", value=_dflt(SCORING_DEFAULTS, "auto_calibrate_thresh", True), key="score_auto_thresh")
+        verbose_thresh = st.checkbox("Verbose threshold calibration", value=True, key="score_verbose")
+
+        min_fill = st.text_input("Minimum bubble fill (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", "")))
+        st.caption("*The fraction of the bubble that must be filled to be considered filled.*")
+
+        min_score = st.text_input("Minimum score difference (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_score", "")))
+        st.caption("*The minimum fill difference between 1st and 2nd-most filled bubbles for 'multiple' fills.*")
+
+        top2_ratio = st.text_input("Top2 ratio (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", "")))
+        st.caption("*The minimum fill ratio between 1st and 2nd-most filled bubbles for 'multiple' fills.*")
+        st.markdown("---")
+        
+        
         
     with colB:
+        st.subheader("Output file options")
         out_csv_name = st.text_input("Output results CSV", value="results.csv")
         scored_pdf_name = st.text_input("Annotated scored PDF filename", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "out_pdf", "scored_scans.pdf")))
-        out_ann_dir = st.text_input("Annotated png directory (optional)", value="", placeholder="Enter a folder name here for png files")
         annotate_all = st.checkbox("Annotate all cells", value=True)
         label_density = st.checkbox("Label density diagnostics", value=True)
         dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1, key="score_dpi")
@@ -778,20 +840,13 @@ elif page.startswith("2"):
                                           help="Creates a separate PDF with only pages containing blank/multi answers for manual review")
         generate_flagged_csv = st.checkbox("Generate flagged items CSV", value=True,
                                            help="Creates a CSV listing all blank/multi answers with student ID and question number")
-        
-        st.markdown("---")
-        st.markdown("Adjustments if scoring isn't working well")
-        auto_thresh = st.checkbox("Auto-calibrate threshold", value=_dflt(SCORING_DEFAULTS, "auto_calibrate_thresh", True), key="score_auto_thresh")
-        verbose_thresh = st.checkbox("Verbose threshold calibration", value=True, key="score_verbose")
-
-        min_fill = st.text_input("Min fill (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", "")))
-        min_score = st.text_input("Min score (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_score", "")))
-        top2_ratio = st.text_input("Top2 ratio (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", "")))
-        
         st.markdown("---")
         st.markdown("**Statistics**")
         include_stats = st.checkbox("Include basic statistics in CSV", value=True,
                                     help="Appends exam stats (mean, std, KR-20) and item stats (% correct, point-biserial) to the CSV. Requires answer key.")
+        out_ann_dir = st.text_input("Annotated png directory (optional)", value="", placeholder="Enter a folder name here for png files")
+        st.caption("*You can save annotated output student scans as a set of images (png format) by entering a directory name here.*")
+        
 
     if run_score_clicked:
         # Determine bubblemap to use
@@ -888,9 +943,9 @@ elif page.startswith("2"):
             except Exception as e:
                 score_status.error(f"Error during scoring: {e}")
 
-# ===================== 3) STATS =====================
+# ===================== 3) REPORT =====================
 elif page.startswith("3"):
-    st.header("Compute statistics from results CSV")
+    st.header("Complete a report on your test")
     
     top_col1, top_col2 = st.columns([1, 3])
     with top_col1:

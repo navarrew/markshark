@@ -22,7 +22,7 @@ from typing import Optional, Literal
 @dataclass(frozen=True)
 class ScoringDefaults:
     #Thresholds for deciding filled area bubbles and resolving ties.
-    min_fill: float = 0.25         # minimum filled fraction to accept non-blank
+    min_fill: float = 0.45         # minimum filled fraction to accept non-blank
     top2_ratio: float = 0.80       # second-best must be <= top2_ratio * best
     min_score: float = 10.0        # absolute gap in percentage points (100*(best-second))
 
@@ -71,7 +71,7 @@ class AlignDefaults:
     out_dir: str = "aligned_pngs"               # Where per-page aligned PNGs go (if exported)
     prefix: str = "aligned_"                    # Prefix for per-page PNG filenames
     metrics_csv: str = "alignment_metrics.csv"  # CSV to append per-page residual metrics
-    dpi: int = 300                              # DPI for PDF rendering
+    dpi: int = 150                              # DPI for PDF rendering
     use_aruco: bool = True                      # Try ArUco-based coarse align first
     dict_name: str = "DICT_4X4_50"              # ArUco dictionary
     min_aruco: int = 4                          # Min detected markers to accept ArUco pose

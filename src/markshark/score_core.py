@@ -48,57 +48,54 @@ from .tools.score_tools import (
 # ----------------------------
 
 def _compute_basic_stats(
-    all_student_answers: List[List[Optional[str]]],
-    all_student_scores: List[Tuple[int, int]],  # List of (correct, total) tuples
+    all_student_data: List[Dict],  # List of {answers, correct, total, version}
     keys_dict: Optional[Dict[str, List[str]]],
     q_out: int,
 ) -> Dict:
     """
     Compute basic exam and item statistics from scoring results.
+    Handles multi-version exams properly by computing per-version item stats.
+    
+    Args:
+        all_student_data: List of dicts with keys: answers, correct, total, version
+        keys_dict: Dict mapping version -> answer key list
+        q_out: Number of questions to analyze
     
     Returns dict with:
-        - n_students: number of students
-        - mean_score: mean number correct
-        - mean_percent: mean percentage correct
-        - std_dev: standard deviation of scores
-        - high_score: highest score
-        - low_score: lowest score
-        - kr20: KR-20 reliability coefficient (if key provided)
-        - per_item_pct: list of % correct for each question
-        - per_item_pb: list of point-biserial for each question
+        - n_students: total number of students
+        - mean_score: mean number correct (pooled)
+        - mean_percent: mean percentage correct (pooled)
+        - std_dev: standard deviation of scores (pooled)
+        - high_score: highest score (pooled)
+        - low_score: lowest score (pooled)
+        - kr20_overall: KR-20 computed across all students (pooled)
+        - versions: dict of per-version stats:
+            {version: {n, mean, kr20, per_item_pct, per_item_pb}}
     """
-    n_students = len(all_student_answers)
+    n_students = len(all_student_data)
+    
+    empty_result = {
+        "n_students": 0,
+        "mean_score": 0,
+        "mean_percent": 0,
+        "std_dev": 0,
+        "high_score": 0,
+        "low_score": 0,
+        "kr20_overall": float("nan"),
+        "versions": {},
+    }
     
     if n_students == 0:
-        return {
-            "n_students": 0,
-            "mean_score": 0,
-            "mean_percent": 0,
-            "std_dev": 0,
-            "high_score": 0,
-            "low_score": 0,
-            "kr20": float("nan"),
-            "per_item_pct": [],
-            "per_item_pb": [],
-        }
+        return empty_result
     
-    # Extract scores
-    scores = [correct for correct, total in all_student_scores if total > 0]
-    totals = [total for correct, total in all_student_scores if total > 0]
+    # Extract scores for pooled stats
+    scores = [d["correct"] for d in all_student_data if d["total"] > 0]
+    totals = [d["total"] for d in all_student_data if d["total"] > 0]
     
     if not scores:
-        return {
-            "n_students": n_students,
-            "mean_score": 0,
-            "mean_percent": 0,
-            "std_dev": 0,
-            "high_score": 0,
-            "low_score": 0,
-            "kr20": float("nan"),
-            "per_item_pct": [],
-            "per_item_pb": [],
-        }
+        return empty_result
     
+    # Pooled exam-level stats
     mean_score = np.mean(scores)
     mean_total = np.mean(totals) if totals else q_out
     mean_percent = (mean_score / mean_total * 100) if mean_total > 0 else 0
@@ -106,32 +103,51 @@ def _compute_basic_stats(
     high_score = max(scores)
     low_score = min(scores)
     
-    # Build correctness matrix for item analysis (only if we have a key)
-    per_item_pct = []
-    per_item_pb = []
-    kr20_val = float("nan")
+    # Group students by version
+    students_by_version: Dict[str, List[Dict]] = {}
+    for d in all_student_data:
+        ver = d.get("version", "").rstrip("*") or "A"  # Default to A if no version
+        if ver not in students_by_version:
+            students_by_version[ver] = []
+        students_by_version[ver].append(d)
     
-    if keys_dict and all_student_answers:
-        # Get the first key for analysis (most common case)
-        first_key = list(keys_dict.values())[0][:q_out]
+    # Determine if this is a multi-version exam
+    is_multi_version = len(students_by_version) > 1 and keys_dict and len(keys_dict) > 1
+    
+    # Compute per-version stats
+    version_stats = {}
+    all_correctness_matrices = []  # For pooled KR-20
+    
+    for ver, students in sorted(students_by_version.items()):
+        ver_n = len(students)
+        ver_scores = [d["correct"] for d in students if d["total"] > 0]
         
-        # Build correctness matrix: n_students x q_out
-        correctness = np.zeros((n_students, q_out))
-        for i, answers in enumerate(all_student_answers):
+        if not ver_scores:
+            continue
+        
+        ver_mean = np.mean(ver_scores)
+        
+        # Get the key for this version
+        key = None
+        if keys_dict:
+            key = keys_dict.get(ver, keys_dict.get(list(keys_dict.keys())[0]))
+            key = key[:q_out] if key else None
+        
+        # Build correctness matrix for this version
+        correctness = np.zeros((ver_n, q_out))
+        for i, d in enumerate(students):
+            answers = d.get("answers", [])
             for j, ans in enumerate(answers[:q_out]):
-                if j < len(first_key):
-                    # Check if answer matches key (handle None/blank)
-                    if ans and ans == first_key[j]:
+                if key and j < len(key):
+                    if ans and ans == key[j]:
                         correctness[i, j] = 1
-                    elif ans is None or ans == "" or "," in str(ans):
-                        correctness[i, j] = 0  # blank or multi = wrong
-                    else:
-                        correctness[i, j] = 0
         
-        # Per-item difficulty (% correct)
-        per_item_pct = (correctness.mean(axis=0) * 100).tolist()
+        all_correctness_matrices.append(correctness)
         
-        # Per-item point-biserial
+        # Per-item stats for this version
+        per_item_pct = (correctness.mean(axis=0) * 100).tolist() if ver_n > 0 else []
+        
+        # Point-biserial for this version
         total_scores = correctness.sum(axis=1)
         per_item_pb = []
         for j in range(q_out):
@@ -140,8 +156,24 @@ def _compute_basic_stats(
             pb = _point_biserial(item_col, total_minus_item)
             per_item_pb.append(pb)
         
-        # KR-20 reliability
-        kr20_val = _kr20(correctness, total_scores)
+        # KR-20 for this version
+        ver_kr20 = _kr20(correctness, total_scores)
+        
+        version_stats[ver] = {
+            "n": ver_n,
+            "mean": round(ver_mean, 2),
+            "kr20": round(ver_kr20, 3) if not np.isnan(ver_kr20) else float("nan"),
+            "per_item_pct": [round(p, 1) for p in per_item_pct],
+            "per_item_pb": [round(p, 3) if not np.isnan(p) else float("nan") for p in per_item_pb],
+        }
+    
+    # Compute overall KR-20 (pooled across all versions)
+    # This treats each student's correctness pattern as a row, regardless of version
+    kr20_overall = float("nan")
+    if all_correctness_matrices:
+        pooled_correctness = np.vstack(all_correctness_matrices)
+        pooled_totals = pooled_correctness.sum(axis=1)
+        kr20_overall = _kr20(pooled_correctness, pooled_totals)
     
     return {
         "n_students": n_students,
@@ -150,9 +182,9 @@ def _compute_basic_stats(
         "std_dev": round(std_dev, 2),
         "high_score": high_score,
         "low_score": low_score,
-        "kr20": round(kr20_val, 3) if not np.isnan(kr20_val) else float("nan"),
-        "per_item_pct": [round(p, 1) for p in per_item_pct],
-        "per_item_pb": [round(p, 3) if not np.isnan(p) else float("nan") for p in per_item_pb],
+        "kr20_overall": round(kr20_overall, 3) if not np.isnan(kr20_overall) else float("nan"),
+        "versions": version_stats,
+        "is_multi_version": is_multi_version,
     }
 
 
@@ -787,19 +819,18 @@ def score_pdf(
     
     # ==================== STATS COLLECTION ============================
     # Collect data for computing basic statistics at the end
-    all_student_answers: List[List[Optional[str]]] = []  # Each student's answers
-    all_student_scores: List[Tuple[int, int]] = []  # (correct, total) for each student
+    # Now includes version info for multi-version support
+    # Also stores full CSV row for grouped output by version
+    all_student_data: List[Dict] = []  # {answers, correct, total, version, csv_row}
     # ==================================================================
+    
+    # Store header for later use when writing grouped output
+    csv_header = header
             
     with open(out_csv, "w", newline="", encoding="utf-8") as f:
         outputcsv = csv.writer(f)
-        outputcsv.writerow(header)
-        
-        # Write KEY row(s) - one per version if multi-version
-        if keys_dict:
-            for ver in sorted(keys_dict.keys()):
-                key_row = [ver, "0", "KEY", "KEY", "KEY"] + ["", "", "", "", ""] + keys_dict[ver][:q_out]
-                outputcsv.writerow(key_row)
+        # We no longer write header/keys here - they'll be written grouped by version at the end
+        # Just process all students and collect their data
 
         # Determine if multi-page mode
         pages_per_student = bmap.num_pages
@@ -918,7 +949,8 @@ def score_pdf(
                 
                 row += answers_csv
                 
-                outputcsv.writerow(row)
+                # Don't write here - we'll write grouped by version at the end
+                # outputcsv.writerow(row)
                 
                 # ==================== FLAGGING ====================
                 # Record flagged items for this student (multi-page)
@@ -933,12 +965,14 @@ def score_pdf(
                 # ==================================================
                 
                 # ==================== STATS COLLECTION ====================
-                # Collect data for stats computation
-                all_student_answers.append(answers_out)
-                if keys_dict:
-                    all_student_scores.append((correct, total_scored))
-                else:
-                    all_student_scores.append((0, q_out))
+                # Collect data for stats computation (with version for multi-version support)
+                all_student_data.append({
+                    "answers": answers_out,
+                    "correct": correct if keys_dict else 0,
+                    "total": total_scored if keys_dict else q_out,
+                    "version": version_used.rstrip("*") if version_used else "",
+                    "csv_row": row,  # Store for grouped output
+                })
                 # ==========================================================
                 
                 # Annotate all pages for this student
@@ -1103,7 +1137,8 @@ def score_pdf(
 
                 row += answers_csv
                 
-                outputcsv.writerow(row)
+                # Don't write here - we'll write grouped by version at the end
+                # outputcsv.writerow(row)
                 
                 # ==================== FLAGGING ====================
                 # Record flagged items for this student
@@ -1118,12 +1153,14 @@ def score_pdf(
                 # ==================================================
                 
                 # ==================== STATS COLLECTION ====================
-                # Collect data for stats computation
-                all_student_answers.append(answers_out)
-                if keys_dict:
-                    all_student_scores.append((correct, total_scored))
-                else:
-                    all_student_scores.append((0, q_out))
+                # Collect data for stats computation (with version for multi-version support)
+                all_student_data.append({
+                    "answers": answers_out,
+                    "correct": correct if keys_dict else 0,
+                    "total": total_scored if keys_dict else q_out,
+                    "version": version_used.rstrip("*") if version_used else "",
+                    "csv_row": row,  # Store for grouped output
+                })
                 # ==========================================================
 
                 # Annotated image: names/IDs in blue (with optional %), then answers overlay
@@ -1166,61 +1203,129 @@ def score_pdf(
         elif annotated_pages:
             IO.save_images_as_pdf(annotated_pages, out_pdf_path, dpi=dpi)
 
-    # ==================== COMPUTE AND APPEND STATS ====================
-    if include_stats and keys_dict and all_student_answers:
-        stats = _compute_basic_stats(
-            all_student_answers=all_student_answers,
-            all_student_scores=all_student_scores,
-            keys_dict=keys_dict,
-            q_out=q_out,
-        )
+    # ==================== WRITE GROUPED CSV + STATS ====================
+    # Write CSV grouped by version:
+    # - Version A: header, key, students
+    # - Version B: header, key, students  
+    # - Summary statistics at the end
+    
+    # Group students by version
+    students_by_version: Dict[str, List[Dict]] = {}
+    for d in all_student_data:
+        ver = d.get("version", "") or "A"  # Default to A if no version
+        if ver not in students_by_version:
+            students_by_version[ver] = []
+        students_by_version[ver].append(d)
+    
+    # Check if multi-version
+    is_multi_version_output = len(students_by_version) > 1 and keys_dict and len(keys_dict) > 1
+    
+    with open(out_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
         
-        # Append stats rows to CSV
-        with open(out_csv, "a", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
+        # Compute stats FIRST so we have per-version stats available
+        stats = None
+        if include_stats and keys_dict and all_student_data:
+            stats = _compute_basic_stats(
+                all_student_data=all_student_data,
+                keys_dict=keys_dict,
+                q_out=q_out,
+            )
+        
+        # Helper for stats rows
+        n_cols_before_q = 5 + 5 if keys_dict else 5 + 1
+        
+        def make_stats_row(label: str, value, q_values=None):
+            """Helper to create a stats row with label and optional per-Q values."""
+            row = [""] * n_cols_before_q
+            row[0] = label
+            if q_values:
+                row.extend([str(v) if v == v else "" for v in q_values])
+            else:
+                row.extend([""] * q_out)
+            if value is not None:
+                row[1] = str(value)
+            return row
+        
+        # Write each version's section (with its item stats immediately after)
+        for ver_idx, ver in enumerate(sorted(students_by_version.keys())):
+            students = students_by_version[ver]
             
-            # Empty row as separator
+            # Add blank line between versions (except before first)
+            if ver_idx > 0:
+                writer.writerow([])
+            
+            # Write section header for multi-version exams
+            if is_multi_version_output:
+                writer.writerow([f"=== VERSION {ver} ({len(students)} students) ==="])
+            
+            # Write column header
+            writer.writerow(csv_header)
+            
+            # Write KEY row for this version
+            if keys_dict and ver in keys_dict:
+                key_row = [ver, "0", "KEY", "KEY", "KEY"]
+                if keys_dict:
+                    key_row += ["", "", "", "", ""]
+                else:
+                    key_row += [""]
+                key_row += keys_dict[ver][:q_out]
+                writer.writerow(key_row)
+            
+            # Write student rows for this version
+            for student in students:
+                writer.writerow(student["csv_row"])
+            
+            # Write item stats for THIS version immediately after its students
+            if stats and stats.get("versions") and ver in stats["versions"]:
+                ver_stats = stats["versions"][ver]
+                if ver_stats.get("per_item_pct"):
+                    writer.writerow([])
+                    if is_multi_version_output:
+                        writer.writerow(make_stats_row(f"--- ITEM STATISTICS: VERSION {ver} (N={ver_stats['n']}) ---", ""))
+                    else:
+                        writer.writerow(make_stats_row("--- ITEM STATISTICS ---", ""))
+                    writer.writerow(make_stats_row(f"PCT_CORRECT{'_'+ver if is_multi_version_output else ''}", "", ver_stats["per_item_pct"]))
+                    writer.writerow(make_stats_row(f"POINT_BISERIAL{'_'+ver if is_multi_version_output else ''}", "", ver_stats["per_item_pb"]))
+        
+        # ==================== WRITE OVERALL STATS AT END ====================
+        if stats:
+            # Separator
+            writer.writerow([])
             writer.writerow([])
             
-            # Exam-level stats rows
-            # Format: label in first non-Q column, value in appropriate column
-            n_cols_before_q = 5 + 5 if keys_dict else 5 + 1  # Version,Page,Last,First,ID + metrics
-            
-            def make_stats_row(label: str, value, q_values=None):
-                """Helper to create a stats row with label and optional per-Q values."""
-                row = [""] * n_cols_before_q
-                row[0] = label  # Put label in Version column
-                if q_values:
-                    row.extend([str(v) if v == v else "" for v in q_values])  # v==v checks for NaN
-                else:
-                    row.extend([""] * q_out)
-                if value is not None:
-                    row[1] = str(value)  # Put main value in Page column
-                return row
-            
-            # Summary stats header
-            writer.writerow(make_stats_row("--- EXAM STATISTICS ---", ""))
+            # Overall exam statistics header
+            writer.writerow(make_stats_row("=== EXAM STATISTICS (ALL VERSIONS) ===", ""))
             writer.writerow(make_stats_row("N_STUDENTS", stats["n_students"]))
             writer.writerow(make_stats_row("MEAN_SCORE", stats["mean_score"]))
             writer.writerow(make_stats_row("MEAN_PERCENT", f"{stats['mean_percent']:.1f}%"))
             writer.writerow(make_stats_row("STD_DEV", stats["std_dev"]))
             writer.writerow(make_stats_row("HIGH_SCORE", stats["high_score"]))
             writer.writerow(make_stats_row("LOW_SCORE", stats["low_score"]))
-            if not np.isnan(stats["kr20"]):
-                writer.writerow(make_stats_row("KR20_RELIABILITY", stats["kr20"]))
             
-            # Per-item stats
-            if stats["per_item_pct"]:
-                writer.writerow([])
-                writer.writerow(make_stats_row("--- ITEM STATISTICS ---", ""))
-                writer.writerow(make_stats_row("PCT_CORRECT", "", stats["per_item_pct"]))
-                writer.writerow(make_stats_row("POINT_BISERIAL", "", stats["per_item_pb"]))
-        
-        # Print stats summary to stderr
-        print(f"[info] Exam stats: N={stats['n_students']}, Mean={stats['mean_score']:.1f} ({stats['mean_percent']:.1f}%), "
-              f"SD={stats['std_dev']:.2f}, Range={stats['low_score']}-{stats['high_score']}", file=sys.stderr)
-        if not np.isnan(stats["kr20"]):
-            print(f"[info] KR-20 reliability: {stats['kr20']:.3f}", file=sys.stderr)
+            # KR-20: Overall
+            if not np.isnan(stats["kr20_overall"]):
+                writer.writerow(make_stats_row("KR20_OVERALL", stats["kr20_overall"]))
+            
+            # KR-20: Per version (if multi-version)
+            if stats.get("is_multi_version") and stats.get("versions"):
+                for ver, ver_stats in sorted(stats["versions"].items()):
+                    if not np.isnan(ver_stats["kr20"]):
+                        writer.writerow(make_stats_row(f"KR20_VERSION_{ver}", f"{ver_stats['kr20']} (N={ver_stats['n']})"))
+            
+            # Note: Per-version item stats are now written immediately after each version's students
+            
+            # Print stats summary to stderr
+            print(f"[info] Exam stats: N={stats['n_students']}, Mean={stats['mean_score']:.1f} ({stats['mean_percent']:.1f}%), "
+                  f"SD={stats['std_dev']:.2f}, Range={stats['low_score']}-{stats['high_score']}", file=sys.stderr)
+            
+            if not np.isnan(stats["kr20_overall"]):
+                print(f"[info] KR-20 overall: {stats['kr20_overall']:.3f}", file=sys.stderr)
+            
+            if stats.get("is_multi_version") and stats.get("versions"):
+                for ver, ver_stats in sorted(stats["versions"].items()):
+                    if not np.isnan(ver_stats["kr20"]):
+                        print(f"[info] KR-20 version {ver}: {ver_stats['kr20']:.3f} (N={ver_stats['n']})", file=sys.stderr)
     # =================================================================
 
     # ==================== GENERATE REVIEW OUTPUTS ====================
