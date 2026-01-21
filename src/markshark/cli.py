@@ -31,7 +31,7 @@ from .defaults import (
 from .align_core import align_pdf_scans
 from .visualize_core import overlay_bublmap
 from .score_core import score_pdf
-from .tools import stats_tools as stats_mod  # has run(...)
+# stats_tools imported by report command when needed
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -268,20 +268,32 @@ def score(
         rprint(f"[yellow]Flagged CSV:[/yellow] {flagged_csv}")
 
 
-# ---------------------- STATS ----------------------
+# ---------------------- REPORT ----------------------
 @app.command()
-def stats(
+def report(
     input_csv: str = typer.Argument(..., help="Results CSV from 'score'"),
-    out_prefix: str = typer.Option("stats_", "--out-prefix", "-o", help="Prefix for output files"),
-    alpha: float = typer.Option(0.05, "--alpha", help="Significance threshold for p-values"),
+    out_xlsx: str = typer.Option("exam_report.xlsx", "--out-xlsx", "-o", help="Output Excel report"),
+    roster_csv: Optional[str] = typer.Option(None, "--roster", "-r", help="Optional class roster CSV (StudentID, LastName, FirstName)"),
 ):
     """
-    Compute item stats, KR-20, plots from a results CSV.
+    Generate an Excel report with per-version tabs, item analysis, and roster checking.
+
+    The report includes:
+    - Summary tab with overall exam statistics
+    - Per-version tabs with student results and item statistics
+    - Roster matching (if --roster provided): flags absent students and orphan scans
+    - Color-coded item quality indicators
     """
     try:
-        stats_mod.run(input_csv, out_prefix, alpha)
+        from .tools import report_tools
+        report_tools.generate_report(
+            input_csv=input_csv,
+            out_xlsx=out_xlsx,
+            roster_csv=roster_csv,
+        )
+        rprint(f"[green]Report generated:[/green] {out_xlsx}")
     except Exception as e:
-        rprint(f"[red]Stats failed:[/red] {e}")
+        rprint(f"[red]Report generation failed:[/red] {e}")
         raise typer.Exit(code=2)
 
 

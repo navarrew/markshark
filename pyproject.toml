@@ -31,6 +31,8 @@ dependencies = [
   "matplotlib>=3.8",
   "streamlit>=1.35",
   "pyyaml",
+  "openpyxl>=3.0",
+  "rapidfuzz>=3.0",
 ]
 
 [project.scripts]

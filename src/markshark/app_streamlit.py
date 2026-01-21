@@ -945,46 +945,115 @@ elif page.startswith("2"):
 
 # ===================== 3) REPORT =====================
 elif page.startswith("3"):
-    st.header("Complete a report on your test")
-    
+    st.header("Generate Excel Report")
+    st.markdown("""
+    Create a comprehensive Excel report with:
+    - **Summary tab**: Overall exam statistics and reliability
+    - **Per-version tabs**: Student results with color-coded item analysis
+    - **Roster matching** (optional): Identify absent students and ID mismatches
+    - **Visual highlighting**: Incorrect answers in red, quality indicators in green/yellow/red
+    """)
+
     top_col1, top_col2 = st.columns([1, 3])
     with top_col1:
-        run_stats_clicked = st.button("Run Stats")
+        run_report_clicked = st.button("Generate Report", type="primary")
     with top_col2:
-        stats_status = st.empty()
+        report_status = st.empty()
 
     st.divider()
 
-    results_csv = _tempfile_from_uploader("Results CSV (from score)", "stats_csv", types=("csv",))
-    out_prefix = st.text_input("Output prefix", value="stats_")
-    alpha = st.number_input("Significance alpha", min_value=0.001, max_value=0.5, value=0.05, step=0.01)
+    colA, colB = st.columns(2)
 
-    if run_stats_clicked:
+    with colA:
+        st.subheader("Required Input")
+        results_csv = _tempfile_from_uploader("Results CSV (from score)", "report_csv", types=("csv",))
+
+    with colB:
+        st.subheader("Optional Roster")
+        st.caption("Upload a class roster to check for absent students and ID mismatches")
+        roster_csv = _tempfile_from_uploader(
+            "Class Roster CSV (StudentID, LastName, FirstName)",
+            "roster_csv",
+            types=("csv",),
+        )
+        if roster_csv:
+            st.info("✓ Roster uploaded - will check for absent students and ID mismatches")
+
+    st.divider()
+
+    with st.expander("ℹ️ Roster CSV Format", expanded=False):
+        st.markdown("""
+        Your roster CSV should have these columns (case-insensitive):
+
+        **Required:**
+        - `StudentID` / `ID` / `Student_ID` - student identifier
+        - `LastName` / `Last` / `Surname` - student last name
+
+        **Optional:**
+        - `FirstName` / `First` - student first name
+
+        **Example:**
+        ```csv
+        StudentID,LastName,FirstName
+        1001,SMITH,JOHN
+        1002,JONES,SARAH
+        1003,GARCIA,MARIA
+        ```
+
+        The report will:
+        - ✓ Flag students on exam but not on roster (orphan scans)
+        - ✓ List students on roster but no exam found (absent)
+        - ✓ Use fuzzy matching to suggest possible ID matches
+        """)
+
+    out_filename = st.text_input("Output Excel filename", value="exam_report.xlsx")
+
+    if run_report_clicked:
         if not results_csv:
-            stats_status.error("Please upload a results CSV.")
+            report_status.error("Please upload a results CSV.")
         else:
             base = WORKDIR or Path(os.getcwd())
-            out_dir = Path(tempfile.mkdtemp(prefix="stats_", dir=str(base)))
+            out_dir = Path(tempfile.mkdtemp(prefix="report_", dir=str(base)))
+            out_path = out_dir / out_filename
+
             args = [
-                "stats",
+                "report",
                 str(results_csv),
-                "--out-prefix", str(out_dir / out_prefix),
-                "--alpha", str(alpha),
+                "--out-xlsx", str(out_path),
             ]
 
+            if roster_csv:
+                args.extend(["--roster", str(roster_csv)])
+
             try:
-                with st.spinner("Computing stats..."):
+                with st.spinner("Generating Excel report..."):
                     out = _run_cli(args)
-                stats_status.success("Stats finished.")
+                report_status.success("✅ Report generated!")
                 st.code(out or "Done.", language="bash")
 
-                # Offer downloads
-                for f in out_dir.glob("*"):
-                    if f.is_file():
-                        _download_file_button(f"Download {f.name}", f)
+                if out_path.exists():
+                    _download_file_button(f"📥 Download {out_filename}", out_path)
+
+                    # Show preview of what's in the report
+                    with st.expander("📊 What's in the report?", expanded=True):
+                        st.markdown("""
+                        **Summary Tab:**
+                        - Overall exam statistics (N students, mean, std dev, KR-20)
+                        - Reliability interpretation with color coding
+                        - Roster issues (if roster provided)
+
+                        **Per-Version Tabs (Version A, Version B, etc.):**
+                        - Student results with columns: LastName, FirstName, StudentID, **Issue**, correct, incorrect, blank, multi, percent, Version, Q1, Q2...
+                        - **Issue column** flags: blank answers, multi-marked, ID mismatch, fuzzy match
+                        - **Incorrect answers highlighted in light red**
+                        - **KEY row** showing correct answers
+                        - **% Correct** - Item difficulty
+                        - **Point-Biserial** - Item discrimination (green ≥0.20, yellow 0.10-0.20, red <0.10)
+                        - **Item Quality** - Visual summary (✓ Good / ⚠ Review / ✗ Problem)
+                        """)
 
             except Exception as e:
-                stats_status.error(f"Error: {e}")
+                report_status.error(f"Error: {e}")
 
 # ===================== 4) VISUALIZE =====================
 elif page.startswith("4"):
