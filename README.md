@@ -33,7 +33,7 @@ Make sure you install required dependencies (**OpenCV**, **Typer**, **Streamlit*
 
 ---
 
-# Using MarkShark
+# About MarkShark
 
 MarkShark is in development.  It currently works well after being tested in a real-world scenario of a class of 270 students with two midterms and a final (a total of over 700 scans).  You can go from 500 scanned student bubblesheets to a final report in less than five minutes. 
 
@@ -47,14 +47,12 @@ It can flag issues like unfilled buubles, rows where more than one bubble was fi
 
 If you provide MarkShark with your class roster can merge the data effortlessly with your class roster and paste it back into your course management system (Blackboard, Canvas, etc).  It can tell you who was missing from the test (absent) and flag 'orphan' scans (where the student didn't fill in their information properly.
 
-It can generate fake student data for you to test with including fake filled in bubblesheets that you can print out, rescan, and test for yourself before committing yourself to using MarkShark.
+For testing prior to use MarkShark can generate fake student data ncluding fake filled in bubblesheets that you can print out, rescan, and test for yourself before committing yourself to using MarkShark.
 
-To use the graphical interface instead of the command line - from the command line type:
-```bash
-markshark-gui
-```
+# What you provide
+If you want to use a bubblesheet you've been using in the past you will need to generate a map (bubblemap.yaml) file that tells MarkShark where the bubbles are and what the bubbles represent.  You need to provide MarkShark with a pdf of the blank bubblesheet (the master template) and its corresponding bubblemap one time.  You can save these templates into MarkShark and reuse them again and again with a single click.
 
----
+Then for each test you simply upload your scanned student sheets as a pdf. If you have folder of jpg or png images we have a utitlity that quickly connverts them to a pdf.  A key is optional but required for getting student scores (percent correct, etc).  If you also provide the class roster, MarkShark identify students who were absent and give you back scores in a format you can easily upload back to your learning management software (LMS like Blackboard, Canvas, Moodle, Sakai, Open edX).
 
 ## License
 
