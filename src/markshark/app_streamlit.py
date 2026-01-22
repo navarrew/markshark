@@ -30,9 +30,18 @@ try:
         TEMPLATE_DEFAULTS,
     )
     from markshark.template_manager import TemplateManager, BubbleSheetTemplate
+    from markshark.project_utils import (
+        sanitize_project_name,
+        create_project_structure,
+        create_run_directory,
+        find_projects,
+        get_project_info,
+        get_next_run_number,
+    )
 except Exception:  # pragma: no cover
     SCORING_DEFAULTS = FEAT_DEFAULTS = MATCH_DEFAULTS = EST_DEFAULTS = ALIGN_DEFAULTS = RENDER_DEFAULTS = TEMPLATE_DEFAULTS = None
     TemplateManager = BubbleSheetTemplate = None
+    sanitize_project_name = create_project_structure = create_run_directory = find_projects = get_project_info = get_next_run_number = None
 
 def _dflt(obj, attr: str, fallback):
     """Best-effort defaults helper when markshark.defaults is unavailable."""
@@ -150,8 +159,71 @@ def _init_workdir() -> Path:
 
     WORKDIR = typed_path
     WORKDIR.mkdir(parents=True, exist_ok=True)
-    
+
     st.sidebar.success(f"✅ Using: `{WORKDIR.name}`")
+
+    # --------------------- Project Management ---------------------
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Current Project")
+
+    # Initialize project name in session state
+    if "project_name" not in st.session_state:
+        st.session_state["project_name"] = ""
+
+    # Project name input
+    project_input = st.sidebar.text_input(
+        "Project name (optional)",
+        value=st.session_state["project_name"],
+        placeholder="e.g., FINAL EXAM BIO101 2025",
+        help="Give your project a name to organize input/output files. Leave blank to use temporary directories.",
+    )
+
+    if project_input != st.session_state["project_name"]:
+        st.session_state["project_name"] = project_input
+
+    # Show project info if name is set
+    if st.session_state["project_name"].strip():
+        sanitized = sanitize_project_name(st.session_state["project_name"]) if sanitize_project_name else st.session_state["project_name"]
+        st.sidebar.caption(f"📁 Folder: `{sanitized}`")
+
+        # Check if project exists
+        project_dir = WORKDIR / sanitized
+        if project_dir.exists() and get_project_info:
+            info = get_project_info(project_dir)
+            if info["num_runs"] > 0:
+                st.sidebar.caption(f"✓ Existing project ({info['num_runs']} run{'s' if info['num_runs'] > 1 else ''})")
+            else:
+                st.sidebar.caption("✓ Project folder exists")
+        else:
+            st.sidebar.caption("⚠️ New project (will be created)")
+    else:
+        st.sidebar.caption("💡 Using temporary directories")
+
+    # Project browser/switcher
+    if find_projects:
+        with st.sidebar.expander("📂 Recent Projects", expanded=False):
+            projects = find_projects(WORKDIR)
+
+            if projects:
+                st.caption(f"Found {len(projects)} project(s):")
+                for proj in projects[:10]:  # Show max 10
+                    proj_name = proj["name"]
+                    num_runs = proj["num_runs"]
+
+                    # Button to load this project
+                    button_label = f"📁 {proj_name}"
+                    if num_runs > 0:
+                        button_label += f" ({num_runs} run{'s' if num_runs > 1 else ''})"
+
+                    if st.button(button_label, key=f"proj_{proj_name}", use_container_width=True):
+                        st.session_state["project_name"] = proj_name.replace("_", " ")
+                        st.rerun()
+
+                if len(projects) > 10:
+                    st.caption(f"... and {len(projects) - 10} more")
+            else:
+                st.info("No projects found. Create one by entering a project name above.")
+
     return WORKDIR
     
     
@@ -328,12 +400,14 @@ _init_workdir()
 
 # Initialize template manager (used by multiple pages)
 template_manager = None
+template_manager_error = None
 if TemplateManager is not None:
     try:
         templates_dir = _dflt(TEMPLATE_DEFAULTS, "templates_dir", None)
         template_manager = TemplateManager(templates_dir)
     except Exception as e:
-        pass  # Will show warning on pages that need it
+        import traceback
+        template_manager_error = f"{str(e)}\n{traceback.format_exc()}"  # Store full error for display
 
 # ===================== 0) QUICK GRADE (UNIFIED WORKFLOW) =====================
 if page.startswith("0"):
@@ -357,14 +431,14 @@ if page.startswith("0"):
     with colA:
         st.subheader("Inputs")
         # Template selection
-        
+
         template_choice = None
         custom_template_pdf = None
         custom_bublmap = None
-        
+
         if template_manager is not None:
             templates = template_manager.scan_templates()
-            
+
             if templates:
                 template_names = ["(none selected)"] + [str(t) for t in templates]
                 selected_name = st.selectbox("Select a pre-defined bubble sheet template", template_names)
@@ -422,7 +496,7 @@ if page.startswith("0"):
             verbose_thresh = st.checkbox("Verbose threshold calibration", value=True)
             
             min_fill = st.text_input("Min fill", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", "")))
-            min_score = st.text_input("Min score", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_score", "")))
+            min_top2_diff = st.text_input("Min top2 difference", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_top2_diff", "")))
             top2_ratio = st.text_input("Top2 ratio", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", "")))
             
             st.markdown("---")
@@ -462,14 +536,57 @@ if page.startswith("0"):
             else:
                 template_pdf = custom_template_pdf
                 bublmap = custom_bublmap
-            
+
             base = WORKDIR or Path(os.getcwd())
-            work_dir = Path(tempfile.mkdtemp(prefix="quick_grade_", dir=str(base)))
-            
+
+            # Determine output directory based on project mode
+            project_name = st.session_state.get("project_name", "").strip()
+            use_project_mode = bool(project_name and sanitize_project_name and create_project_structure and create_run_directory)
+
+            if use_project_mode:
+                # Project mode: create structured directories
+                sanitized_name = sanitize_project_name(project_name)
+                project_dir = create_project_structure(base, sanitized_name)
+                work_dir, run_label = create_run_directory(project_dir)
+
+                # Save input files to project/input/ for reference
+                input_dir = project_dir / "input"
+                if scans:
+                    (input_dir / f"scans_{run_label}.pdf").write_bytes(scans.read_bytes())
+                if key_txt:
+                    (input_dir / f"answer_key_{run_label}.txt").write_bytes(key_txt.read_bytes())
+                if template_choice:
+                    # Save template reference
+                    (project_dir / "logs" / "template_used.txt").write_text(f"{template_choice.template_id}\n{template_choice.display_name}")
+
+                quick_status.info(f"📁 Project: {project_name} | Run: {run_label}")
+            else:
+                # Temporary mode: use temp directories as before
+                work_dir = Path(tempfile.mkdtemp(prefix="quick_grade_", dir=str(base)))
+
+            # Prepare log file path (for project mode)
+            log_file = None
+            if use_project_mode:
+                from datetime import datetime
+                log_file = project_dir / "logs" / f"log_{run_label}.txt"
+                log_entries = []
+                log_entries.append(f"MarkShark Quick Grade Log")
+                log_entries.append(f"{'=' * 50}")
+                log_entries.append(f"Project: {project_name}")
+                log_entries.append(f"Run: {run_label}")
+                log_entries.append(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                log_entries.append(f"{'=' * 50}\n")
+
             try:
                 # Step 1: Align (with bubblemap for bubble grid fallback)
                 quick_status.info("Step 1/2: Aligning scans to template...")
-                aligned_pdf = work_dir / "aligned_scans.pdf"
+
+                # In project mode, save aligned PDF to project/aligned/ directory
+                if use_project_mode:
+                    aligned_dir = project_dir / "aligned"
+                    aligned_pdf = aligned_dir / f"aligned_scans_{run_label}.pdf"
+                else:
+                    aligned_pdf = work_dir / "aligned_scans.pdf"
                 
                 align_args = [
                     "align",
@@ -497,7 +614,16 @@ if page.startswith("0"):
                 
                 align_progress.progress(1.0, text="✓ Alignment complete")
                 quick_status.success("✓ Alignment complete")
-                
+
+                # Save alignment log
+                if log_file:
+                    log_entries.append(f"\n{'='*50}")
+                    log_entries.append(f"STEP 1: ALIGNMENT")
+                    log_entries.append(f"{'='*50}")
+                    log_entries.append(f"Command: {' '.join(align_args)}")
+                    log_entries.append(f"\nOutput:")
+                    log_entries.append(align_out or "(no output)")
+
                 # Step 2: Score
                 quick_status.info("Step 2/2: Scoring aligned sheets...")
                 out_csv = work_dir / out_csv_name
@@ -526,8 +652,8 @@ if page.startswith("0"):
                     score_args += ["--min-fill", min_fill.strip()]
                 if top2_ratio.strip():
                     score_args += ["--top2-ratio", top2_ratio.strip()]
-                if min_score.strip():
-                    score_args += ["--min-score", min_score.strip()]
+                if min_top2_diff.strip():
+                    score_args += ["--min-top2-diff", min_top2_diff.strip()]
                 
                 # Stats option
                 if include_stats:
@@ -548,7 +674,20 @@ if page.startswith("0"):
                 with st.spinner("Scoring sheets..."):
                     score_out = _run_cli(score_args)
                     quick_status.success("✅ Quick Grade complete!")
-                
+
+                # Save scoring log
+                if log_file:
+                    log_entries.append(f"\n{'='*50}")
+                    log_entries.append(f"STEP 2: SCORING")
+                    log_entries.append(f"{'='*50}")
+                    log_entries.append(f"Command: {' '.join(score_args)}")
+                    log_entries.append(f"\nOutput:")
+                    log_entries.append(score_out or "(no output)")
+
+                    # Write complete log to file
+                    log_file.write_text('\n'.join(log_entries))
+                    st.info(f"📝 Processing log saved to: logs/{log_file.name}")
+
                 # Display results
                 st.success("Processing complete!")
                 
@@ -709,15 +848,34 @@ elif page.startswith("1"):
         else:
             actual_template = template
             actual_bublmap = align_bublmap
-        
+
         if not scans:
             status.error("Please upload scans PDF.")
         elif actual_template is None:
             status.error("Please select a template or upload a template PDF.")
         else:
             base = WORKDIR or Path(os.getcwd())
-            out_dir = Path(tempfile.mkdtemp(prefix="align_", dir=str(base)))
-            out_pdf = out_dir / out_pdf_name
+
+            # Check if we're in project mode
+            project_name = st.session_state.get("project_name", "").strip()
+            use_project_mode = bool(project_name and sanitize_project_name and create_project_structure and create_run_directory)
+
+            if use_project_mode:
+                # Project mode: save to project/aligned/
+                sanitized_name = sanitize_project_name(project_name)
+                project_dir = create_project_structure(base, sanitized_name)
+                run_num = get_next_run_number(project_dir) if get_next_run_number else 1
+                aligned_dir = project_dir / "aligned"
+                out_pdf = aligned_dir / f"aligned_scans_{run_num:03d}.pdf"
+
+                # Save input scans for reference
+                input_dir = project_dir / "input"
+                if scans:
+                    (input_dir / f"scans_{run_num:03d}.pdf").write_bytes(scans.read_bytes())
+            else:
+                # Temporary mode
+                out_dir = Path(tempfile.mkdtemp(prefix="align_", dir=str(base)))
+                out_pdf = out_dir / out_pdf_name
             args = [
                 "align",
                 str(scans),
@@ -817,8 +975,8 @@ elif page.startswith("2"):
         min_fill = st.text_input("Minimum bubble fill (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", "")))
         st.caption("*The fraction of the bubble that must be filled to be considered filled.*")
 
-        min_score = st.text_input("Minimum score difference (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_score", "")))
-        st.caption("*The minimum fill difference between 1st and 2nd-most filled bubbles for 'multiple' fills.*")
+        min_top2_diff = st.text_input("Minimum top2 difference (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_top2_diff", "")))
+        st.caption("*The minimum fill difference (in percentage points) between 1st and 2nd-most filled bubbles to not score as multi.*")
 
         top2_ratio = st.text_input("Top2 ratio (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", "")))
         st.caption("*The minimum fill ratio between 1st and 2nd-most filled bubbles for 'multiple' fills.*")
@@ -854,15 +1012,28 @@ elif page.startswith("2"):
             actual_bublmap = score_template_choice.bubblemap_yaml_path
         else:
             actual_bublmap = bublmap
-        
+
         if not aligned:
             score_status.error("Please upload aligned PDF.")
         elif actual_bublmap is None:
             score_status.error("Please select a template or upload a bubblemap YAML.")
         else:
             base = WORKDIR or Path(os.getcwd())
-            out_dir = Path(tempfile.mkdtemp(prefix="score_", dir=str(base)))
-            out_csv = out_dir / out_csv_name
+
+            # Check if we're in project mode
+            project_name = st.session_state.get("project_name", "").strip()
+            use_project_mode = bool(project_name and sanitize_project_name and create_project_structure and create_run_directory)
+
+            if use_project_mode:
+                # Project mode: save to project/results/run_XXX/
+                sanitized_name = sanitize_project_name(project_name)
+                project_dir = create_project_structure(base, sanitized_name)
+                out_dir, run_label = create_run_directory(project_dir)
+                out_csv = out_dir / out_csv_name
+            else:
+                # Temporary mode
+                out_dir = Path(tempfile.mkdtemp(prefix="score_", dir=str(base)))
+                out_csv = out_dir / out_csv_name
             args = [
                 "score",
                 str(aligned),
@@ -888,8 +1059,8 @@ elif page.startswith("2"):
                 args += ["--min-fill", min_fill.strip()]
             if top2_ratio.strip():
                 args += ["--top2-ratio", top2_ratio.strip()]
-            if min_score.strip():
-                args += ["--min-score", min_score.strip()]
+            if min_top2_diff.strip():
+                args += ["--min-top2-diff", min_top2_diff.strip()]
             
             # Stats option
             if include_stats:
@@ -968,6 +1139,10 @@ elif page.startswith("3"):
         st.subheader("Required Input")
         results_csv = _tempfile_from_uploader("Results CSV (from score)", "report_csv", types=("csv",))
 
+        # NEW: Show hint about where report will be saved
+        if results_csv and st.session_state.get("project_name", "").strip():
+            st.caption("💡 Tip: Report will be saved to the most recent run folder in your project")
+
     with colB:
         st.subheader("Optional Roster")
         st.caption("Upload a class roster to check for absent students and ID mismatches")
@@ -1013,8 +1188,59 @@ elif page.startswith("3"):
             report_status.error("Please upload a results CSV.")
         else:
             base = WORKDIR or Path(os.getcwd())
-            out_dir = Path(tempfile.mkdtemp(prefix="report_", dir=str(base)))
-            out_path = out_dir / out_filename
+
+            # Check if we're in project mode
+            project_name = st.session_state.get("project_name", "").strip()
+            use_project_mode = bool(project_name and sanitize_project_name and create_project_structure and create_run_directory)
+
+            # Try to find the run folder this CSV belongs to
+            csv_is_from_run_folder = False
+            run_label = None
+            csv_run_dir = None
+
+            if use_project_mode:
+                # Look for run folders in the current project
+                sanitized_name = sanitize_project_name(project_name)
+                project_dir = base / sanitized_name
+
+                if project_dir.exists():
+                    results_dir = project_dir / "results"
+                    if results_dir.exists():
+                        # Find the most recent run folder with a results.csv
+                        import re
+                        run_pattern = re.compile(r'^run_(\d+)_')
+
+                        run_folders_with_csv = []
+                        for run_dir in results_dir.iterdir():
+                            if run_dir.is_dir():
+                                match = run_pattern.match(run_dir.name)
+                                if match:
+                                    csv_in_run = run_dir / "results.csv"
+                                    if csv_in_run.exists():
+                                        run_num = int(match.group(1))
+                                        run_folders_with_csv.append((run_num, run_dir))
+
+                        # Get the most recent (highest number) run folder
+                        if run_folders_with_csv:
+                            run_folders_with_csv.sort(key=lambda x: x[0], reverse=True)
+                            csv_run_dir = run_folders_with_csv[0][1]
+                            run_label = csv_run_dir.name
+
+                if csv_run_dir:
+                    # Found a likely run folder - save report there
+                    csv_is_from_run_folder = True
+                    out_path = csv_run_dir / out_filename
+                    report_status.info(f"📁 Saving report to run folder: {run_label}")
+                else:
+                    # No run folder found - create new one
+                    project_dir = create_project_structure(base, sanitized_name)
+                    work_dir, run_label = create_run_directory(project_dir)
+                    out_path = work_dir / out_filename
+            else:
+                # Temporary mode
+                out_dir = Path(tempfile.mkdtemp(prefix="report_", dir=str(base)))
+                out_path = out_dir / out_filename
+                run_label = None
 
             args = [
                 "report",
@@ -1024,6 +1250,12 @@ elif page.startswith("3"):
 
             if roster_csv:
                 args.extend(["--roster", str(roster_csv)])
+
+            # Add project metadata if in project mode
+            if use_project_mode:
+                args.extend(["--project-name", project_name])
+                if run_label:
+                    args.extend(["--run-label", run_label])
 
             try:
                 with st.spinner("Generating Excel report..."):
@@ -1081,8 +1313,21 @@ elif page.startswith("4"):
             viz_status.error("Please upload PDF and bubblemap YAML.")
         else:
             base = WORKDIR or Path(os.getcwd())
-            out_dir = Path(tempfile.mkdtemp(prefix="viz_", dir=str(base)))
-            out_path = out_dir / out_image
+
+            # Check if we're in project mode
+            project_name = st.session_state.get("project_name", "").strip()
+            use_project_mode = bool(project_name and sanitize_project_name and create_project_structure and create_run_directory)
+
+            if use_project_mode:
+                # Project mode: save to project/logs/
+                sanitized_name = sanitize_project_name(project_name)
+                project_dir = create_project_structure(base, sanitized_name)
+                logs_dir = project_dir / "logs"
+                out_path = logs_dir / out_image
+            else:
+                # Temporary mode
+                out_dir = Path(tempfile.mkdtemp(prefix="viz_", dir=str(base)))
+                out_path = out_dir / out_image
 
             args = [
                 "visualize",

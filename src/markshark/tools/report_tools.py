@@ -262,6 +262,8 @@ COLOR_GOOD = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="so
 COLOR_WARNING = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
 COLOR_PROBLEM = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
 COLOR_ORPHAN = PatternFill(start_color="FFE699", end_color="FFE699", fill_type="solid")
+COLOR_BLANK = PatternFill(start_color="F056E3", end_color="F056E3", fill_type="solid")  # Pink-purple for blank answers
+COLOR_MULTI = PatternFill(start_color="FFB366", end_color="FFB366", fill_type="solid")  # Orange for multi-answer
 
 FONT_HEADER = Font(bold=True, color="FFFFFF")
 FONT_BOLD = Font(bold=True)
@@ -408,6 +410,8 @@ def generate_report(
     out_xlsx: str,
     roster_csv: Optional[str] = None,
     item_pattern: str = r"Q\d+",
+    project_name: Optional[str] = None,
+    run_label: Optional[str] = None,
 ):
     r"""
     Generate comprehensive Excel report from scored CSV.
@@ -417,6 +421,8 @@ def generate_report(
         out_xlsx: Path to output Excel file
         roster_csv: Optional path to class roster CSV
         item_pattern: Regex pattern for item columns (default: Q\d+)
+        project_name: Optional project name for report header
+        run_label: Optional run label (e.g., "run_001_2025-01-21_1430")
     """
     # Load scored results - handle messy CSV from score with include_stats
     df = _load_score_csv_robust(input_csv)
@@ -515,7 +521,7 @@ def generate_report(
     # ========== SUMMARY TAB ==========
     create_summary_tab(
         wb, k, len(students_df), mean_total, std_total, kr20_val, kr21_val,
-        len(versions), orphan_scans, absent_students
+        len(versions), orphan_scans, absent_students, project_name, run_label
     )
 
     # ========== PER-VERSION TABS ==========
@@ -534,17 +540,39 @@ def generate_report(
 
 def create_summary_tab(
     wb, k, n_students, mean_total, std_total, kr20_val, kr21_val,
-    n_versions, orphan_scans, absent_students
+    n_versions, orphan_scans, absent_students, project_name=None, run_label=None
 ):
     """Create summary tab with overall exam statistics."""
+    from datetime import datetime
+
     ws = wb.create_sheet("Summary", 0)
 
     # Title
     ws['A1'] = "MarkShark Exam Report"
     ws['A1'].font = Font(size=16, bold=True)
 
+    # Project metadata (if provided)
+    row = 2
+    if project_name:
+        ws[f'A{row}'] = "Project:"
+        ws[f'A{row}'].font = FONT_BOLD
+        ws[f'B{row}'] = project_name
+        row += 1
+
+    if run_label:
+        ws[f'A{row}'] = "Run:"
+        ws[f'A{row}'].font = FONT_BOLD
+        ws[f'B{row}'] = run_label
+        row += 1
+
+    # Always show generation timestamp
+    ws[f'A{row}'] = "Generated:"
+    ws[f'A{row}'].font = FONT_BOLD
+    ws[f'B{row}'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    row += 2
+
     # Overall stats
-    row = 3
+    # row = 3
     ws[f'A{row}'] = "Overall Exam Statistics"
     ws[f'A{row}'].font = FONT_BOLD
     row += 1
@@ -751,15 +779,38 @@ def create_version_tab(
                     cell.fill = COLOR_WARNING
             else:
                 value = student_row.get(col_name, '')
-                cell = ws.cell(row=row_num, column=col_idx, value=value)
+                student_answer = str(value).strip().upper()
 
-                # Highlight incorrect answers in light red
-                if col_name in item_cols and key_answers.get(col_name):
-                    student_answer = str(value).strip().upper()
-                    correct_answer = key_answers[col_name]
-                    if student_answer and student_answer != correct_answer:
-                        # Light red fill for incorrect answers
-                        cell.fill = PatternFill(start_color="FFD7D7", end_color="FFD7D7", fill_type="solid")
+                # Check for blank or multi-answer cells in question columns
+                if col_name in item_cols:
+                    # Detect blank answers (empty, whitespace, or common blank indicators)
+                    is_blank = not student_answer or student_answer in ('', 'BLANK', 'NONE', '?')
+
+                    # Detect multi-answer (contains comma, multiple letters, or "MULTI" indicator)
+                    is_multi = (
+                        ',' in student_answer or
+                        (len(student_answer) > 1 and student_answer not in ('BLANK', 'NONE', 'MULTI')) or
+                        student_answer == 'MULTI'
+                    )
+
+                    # Apply formatting based on answer type
+                    if is_blank:
+                        cell = ws.cell(row=row_num, column=col_idx, value="BLANK")
+                        cell.fill = COLOR_BLANK
+                    elif is_multi:
+                        cell = ws.cell(row=row_num, column=col_idx, value=value)
+                        cell.fill = COLOR_MULTI
+                    else:
+                        cell = ws.cell(row=row_num, column=col_idx, value=value)
+                        # Highlight incorrect answers in light red (only if not blank/multi)
+                        if key_answers.get(col_name):
+                            correct_answer = key_answers[col_name]
+                            if student_answer and student_answer != correct_answer:
+                                # Light red fill for incorrect answers
+                                cell.fill = PatternFill(start_color="FFD7D7", end_color="FFD7D7", fill_type="solid")
+                else:
+                    # Non-question columns - just write the value
+                    cell = ws.cell(row=row_num, column=col_idx, value=value)
 
         row_num += 1
 
