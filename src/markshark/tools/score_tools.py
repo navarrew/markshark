@@ -397,6 +397,188 @@ def calibrate_fixed_thresh_for_page(
 
 
 # ------------------------------------------------------------------------------
+# Adaptive rescoring helpers
+# ------------------------------------------------------------------------------
+
+def count_blank_and_multi_answers(answers: List[Optional[str]]) -> Tuple[int, int]:
+    """
+    Count blank and multi-answer questions.
+
+    Returns:
+        (blank_count, multi_count)
+    """
+    blank_count = sum(1 for a in answers if a is None or a == "")
+    multi_count = sum(1 for a in answers if a and ("," in a or len(a) > 1))
+    return blank_count, multi_count
+
+
+def adaptive_rescore_page(
+    img_bgr: np.ndarray,
+    bmap: Bubblemap,
+    initial_threshold: int,
+    initial_answers: List[Optional[str]],
+    min_fill: float,
+    top2_ratio: float,
+    min_top2_diff: float,
+    calibrate_background: bool,
+    background_percentile: float,
+    adaptive_min_above_floor: float,
+    adaptive_max_adjustment: int = 30,
+    verbose: bool = False,
+) -> Tuple[List[Optional[str]], int, bool]:
+    """
+    Attempt adaptive rescoring for pages with blank answers.
+
+    Strategy:
+    - Try progressively higher thresholds (more permissive for light marks) in steps of 10
+    - For each threshold: re-scan, re-calibrate, re-score
+    - Pick the threshold that minimizes blanks without increasing multis
+    - If no improvement or multis increase, return original results
+
+    Returns:
+        (best_answers, best_threshold, adapted)
+        - best_answers: The best scoring results
+        - best_threshold: The threshold that produced best results
+        - adapted: True if we used an adapted threshold, False if original was best
+    """
+    initial_blanks, initial_multis = count_blank_and_multi_answers(initial_answers)
+
+    # If no blanks, no need to adapt
+    if initial_blanks == 0:
+        return initial_answers, initial_threshold, False
+
+    if verbose:
+        print(f"  Adaptive rescoring: detected {initial_blanks} blanks, trying higher thresholds (more permissive)...")
+
+    # Track results for each threshold
+    results = []
+    results.append({
+        'threshold': initial_threshold,
+        'answers': initial_answers,
+        'blanks': initial_blanks,
+        'multis': initial_multis,
+    })
+
+    # Try progressively lighter thresholds (higher = lighter/more permissive)
+    for adjustment in range(10, adaptive_max_adjustment + 1, 10):
+        new_threshold = initial_threshold + adjustment
+
+        # Re-score the entire page with new threshold
+        info, answers, backgrounds = process_page_all(
+            img_bgr, bmap,
+            min_fill=min_fill,
+            top2_ratio=top2_ratio,
+            min_top2_diff=min_top2_diff,
+            fixed_thresh=new_threshold,
+            calibrate_background=calibrate_background,
+            background_percentile=background_percentile,
+            adaptive_min_above_floor=adaptive_min_above_floor,
+            verbose_calibration=False,
+        )
+
+        blanks, multis = count_blank_and_multi_answers(answers)
+
+        results.append({
+            'threshold': new_threshold,
+            'answers': answers,
+            'blanks': blanks,
+            'multis': multis,
+        })
+
+        if verbose:
+            print(f"    Threshold {new_threshold} (-{adjustment}): {blanks} blanks, {multis} multis")
+
+    # Find the best threshold: minimize blanks, but don't increase multis
+    best_result = results[0]  # Start with original
+
+    for result in results[1:]:
+        # Only consider if multis didn't increase
+        if result['multis'] <= initial_multis:
+            # Prefer if it reduces blanks
+            if result['blanks'] < best_result['blanks']:
+                best_result = result
+            # If same blanks, prefer one closer to original (more conservative)
+            elif result['blanks'] == best_result['blanks'] and abs(result['threshold'] - initial_threshold) < abs(best_result['threshold'] - initial_threshold):
+                best_result = result
+
+    # Check if we actually improved
+    adapted = best_result['threshold'] != initial_threshold
+
+    if adapted and verbose:
+        adjustment = best_result['threshold'] - initial_threshold
+        print(f"  ✓ Adaptive rescoring: increased threshold by {adjustment} ({initial_threshold}→{best_result['threshold']})")
+        print(f"    Resolved {initial_blanks - best_result['blanks']} blanks, multis: {initial_multis}→{best_result['multis']}")
+
+    return best_result['answers'], best_result['threshold'], adapted
+
+
+# ------------------------------------------------------------------------------
+# Background calibration
+# ------------------------------------------------------------------------------
+
+def calibrate_column_backgrounds(
+    scores: List[float],
+    rows: int,
+    cols: int,
+    percentile: float = 10.0,
+) -> List[float]:
+    """
+    Compute per-column background scores to remove letter printing bias.
+
+    For each column position (A, B, C, D, E), finds the Nth percentile score
+    across all rows. This represents the "unfilled" baseline for that column,
+    accounting for differences in letter printing darkness.
+
+    Args:
+        scores: Flat list of fill scores (length = rows * cols)
+        rows: Number of rows in the grid
+        cols: Number of columns in the grid
+        percentile: Percentile to use for background (default: 10.0)
+
+    Returns:
+        List of background values, one per column
+    """
+    arr = np.asarray(scores, dtype=float).reshape(rows, cols)
+    backgrounds = []
+
+    for col_idx in range(cols):
+        col_scores = arr[:, col_idx]
+        background = float(np.percentile(col_scores, percentile))
+        backgrounds.append(background)
+
+    return backgrounds
+
+
+def subtract_column_backgrounds(
+    scores: List[float],
+    rows: int,
+    cols: int,
+    backgrounds: List[float],
+) -> List[float]:
+    """
+    Subtract per-column backgrounds from scores.
+
+    Args:
+        scores: Flat list of fill scores (length = rows * cols)
+        rows: Number of rows in the grid
+        cols: Number of columns in the grid
+        backgrounds: List of background values, one per column
+
+    Returns:
+        Corrected scores with backgrounds subtracted (clipped to 0.0 minimum)
+    """
+    arr = np.asarray(scores, dtype=float).reshape(rows, cols)
+    corrected = arr.copy()
+
+    for col_idx in range(cols):
+        corrected[:, col_idx] -= backgrounds[col_idx]
+
+    # Clip to 0.0 minimum (can't have negative fill scores)
+    corrected = np.maximum(corrected, 0.0)
+
+    return corrected.flatten().tolist()
+
+
 # Bubble selection (per-row or per-column)
 # ------------------------------------------------------------------------------
 
@@ -404,7 +586,7 @@ def _pick_single_from_scores(
     scores: np.ndarray,
     min_fill: float,
     top2_ratio: float,
-    min_score: float,
+    min_top2_diff: float,
 ) -> Optional[int]:
     """Pick a single bubble index from a row/col, or None if unclear."""
     if scores.size == 0:
@@ -423,7 +605,7 @@ def _pick_single_from_scores(
         second_val = float(scores[sorted_idx[1]])
         if second_val > top2_ratio * best_val:
             return None  # ambiguous
-        if 100.0 * (best_val - second_val) < min_score:
+        if 100.0 * (best_val - second_val) < min_top2_diff:
             return None  # too close
     
     return best_idx
@@ -435,7 +617,7 @@ def select_per_row(
     cols: int,
     min_fill: float = SCORING_DEFAULTS.min_fill,
     top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
-    min_score: float = SCORING_DEFAULTS.min_score,
+    min_top2_diff: float = SCORING_DEFAULTS.min_top2_diff,
 ) -> List[Optional[int]]:
     """For each row, pick one column index or None."""
     arr = np.asarray(scores, dtype=float)
@@ -446,7 +628,7 @@ def select_per_row(
     cols_i = int(cols)
     for r in range(int(rows)):
         row_slice = arr[r * cols_i : (r + 1) * cols_i]
-        picked.append(_pick_single_from_scores(row_slice, min_fill, top2_ratio, min_score))
+        picked.append(_pick_single_from_scores(row_slice, min_fill, top2_ratio, min_top2_diff))
     return picked
 
 
@@ -456,7 +638,7 @@ def select_per_col(
     cols: int,
     min_fill: float = SCORING_DEFAULTS.min_fill,
     top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
-    min_score: float = SCORING_DEFAULTS.min_score,
+    min_top2_diff: float = SCORING_DEFAULTS.min_top2_diff,
 ) -> List[Optional[int]]:
     """For each column, pick one row index or None."""
     arr = np.asarray(scores, dtype=float)
@@ -467,7 +649,7 @@ def select_per_col(
     cols_i = int(cols)
     for c in range(cols_i):
         col_slice = arr[c::cols_i]
-        picked.append(_pick_single_from_scores(col_slice, min_fill, top2_ratio, min_score))
+        picked.append(_pick_single_from_scores(col_slice, min_fill, top2_ratio, min_top2_diff))
     return picked
 
 
@@ -483,9 +665,12 @@ def scores_to_labels_row(
     *,
     min_fill: float = SCORING_DEFAULTS.min_fill,
     top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
-    min_score: float = SCORING_DEFAULTS.min_score,
+    min_top2_diff: float = SCORING_DEFAULTS.min_top2_diff,
     multi_top_k: int = 2,
     multi_delim: str = ",",
+    calibrate_background: bool = SCORING_DEFAULTS.calibrate_background,
+    background_percentile: float = SCORING_DEFAULTS.background_percentile,
+    adaptive_min_above_floor: float = SCORING_DEFAULTS.adaptive_min_above_floor,
 ) -> List[Optional[str]]:
     """Convert per-ROI scores into per-row labels.
 
@@ -496,12 +681,24 @@ def scores_to_labels_row(
 
     The "clear single" vs "multi" decision matches _pick_single_from_scores():
       a single winner is accepted if either:
-        - absolute separation >= min_score (in percentage points), OR
+        - absolute separation >= min_top2_diff (in percentage points), OR
         - ratio separation: second <= top * top2_ratio
+
+    Background calibration:
+      If calibrate_background is True, per-column backgrounds are computed and subtracted
+      to remove systematic bias from letter printing (e.g., "B" bubbles scoring higher than "A").
     """
     arr = np.asarray(scores, dtype=float)
     if arr.size != int(rows) * int(cols):
         raise ValueError(f"scores length {arr.size} != rows*cols {rows*cols}")
+
+    # Apply background calibration if enabled
+    if calibrate_background and rows > 1:
+        backgrounds = calibrate_column_backgrounds(scores, rows, cols, background_percentile)
+        scores_calibrated = subtract_column_backgrounds(scores, rows, cols, backgrounds)
+        arr = np.asarray(scores_calibrated, dtype=float)
+    else:
+        backgrounds = None
 
     out: List[Optional[str]] = []
     cols_i = int(cols)
@@ -529,6 +726,15 @@ def scores_to_labels_row(
         second_idx = int(order[1])
         second = float(row_slice[second_idx])
 
+        # Check adaptive floor: winner must be significantly above the lowest bubble
+        if adaptive_min_above_floor > 0:
+            floor = float(row_slice[order[-1]])  # Lowest score in the row
+            above_floor = (top - floor) * 100.0
+            if above_floor < adaptive_min_above_floor:
+                # Not clearly above floor - treat as blank
+                out.append(None)
+                continue
+
         # If the runner-up is below min_fill, we treat as a single mark.
         if second < float(min_fill):
             out.append(choice_labels[best_idx] if best_idx < len(choice_labels) else None)
@@ -537,7 +743,7 @@ def scores_to_labels_row(
         sep_score = (top - second) * 100.0
         sep_ratio_ok = (second <= top * float(top2_ratio))
 
-        if (sep_score >= float(min_score)) or sep_ratio_ok:
+        if (sep_score >= float(min_top2_diff)) or sep_ratio_ok:
             out.append(choice_labels[best_idx] if best_idx < len(choice_labels) else None)
             continue
 
@@ -578,15 +784,18 @@ def scores_to_labels_row_detailed(
     *,
     min_fill: float = SCORING_DEFAULTS.min_fill,
     top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
-    min_score: float = SCORING_DEFAULTS.min_score,
+    min_top2_diff: float = SCORING_DEFAULTS.min_top2_diff,
     multi_top_k: int = 2,
     multi_delim: str = ",",
     low_confidence_threshold: float = 0.15,  # Flag if separation < this
     question_offset: int = 0,  # For multi-page: offset to add to question numbers
+    calibrate_background: bool = SCORING_DEFAULTS.calibrate_background,
+    background_percentile: float = SCORING_DEFAULTS.background_percentile,
+    adaptive_min_above_floor: float = SCORING_DEFAULTS.adaptive_min_above_floor,
 ) -> Tuple[List[Optional[str]], List[AnswerDetail]]:
     """
     Like scores_to_labels_row but also returns detailed info for flagging.
-    
+
     Returns:
         (answers, details) where:
         - answers: List of answer strings (same as scores_to_labels_row)
@@ -595,6 +804,14 @@ def scores_to_labels_row_detailed(
     arr = np.asarray(scores, dtype=float)
     if arr.size != int(rows) * int(cols):
         raise ValueError(f"scores length {arr.size} != rows*cols {rows*cols}")
+
+    # Apply background calibration if enabled
+    if calibrate_background and rows > 1:
+        backgrounds = calibrate_column_backgrounds(scores, rows, cols, background_percentile)
+        scores_calibrated = subtract_column_backgrounds(scores, rows, cols, backgrounds)
+        arr = np.asarray(scores_calibrated, dtype=float)
+    else:
+        backgrounds = None
 
     answers: List[Optional[str]] = []
     details: List[AnswerDetail] = []
@@ -676,7 +893,7 @@ def scores_to_labels_row_detailed(
         sep_score = (top - second) * 100.0
         sep_ratio_ok = (second <= top * float(top2_ratio))
 
-        if (sep_score >= float(min_score)) or sep_ratio_ok:
+        if (sep_score >= float(min_top2_diff)) or sep_ratio_ok:
             # Single mark accepted
             ans = choice_labels[best_idx] if best_idx < len(choice_labels) else None
             # Check for low confidence
@@ -726,10 +943,17 @@ def decode_layout(
     *,
     min_fill: float = SCORING_DEFAULTS.min_fill,
     top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
-    min_score: float = SCORING_DEFAULTS.min_score,
+    min_top2_diff: float = SCORING_DEFAULTS.min_top2_diff,
     fixed_thresh: Optional[int] = None,
+    calibrate_background: bool = False,  # Note: default False to preserve backward compat
+    background_percentile: float = SCORING_DEFAULTS.background_percentile,
 ) -> Tuple[List[Optional[int]], List[Tuple[int, int, int, int]], List[float]]:
-    """Decode a single GridLayout, returning (picked, rois, scores)."""
+    """
+    Decode a single GridLayout, returning (picked, rois, scores).
+
+    If calibrate_background is True, applies per-column background subtraction
+    to the scores before selection. The returned scores will be calibrated.
+    """
     h, w = gray.shape[:2]
 
     x0 = getattr(layout, "x0_pct", getattr(layout, "x_topleft"))
@@ -752,10 +976,15 @@ def decode_layout(
     rois = centers_to_circle_rois(centers, w, h, layout.radius_pct)
     scores = roi_fill_scores(gray, rois, fixed_thresh=fixed_thresh)
 
+    # Apply background calibration if enabled (for answer layouts with row-based selection)
+    if calibrate_background and layout.selection_axis == "row" and layout.numrows > 1:
+        backgrounds = calibrate_column_backgrounds(scores, layout.numrows, layout.numcols, background_percentile)
+        scores = subtract_column_backgrounds(scores, layout.numrows, layout.numcols, backgrounds)
+
     if layout.selection_axis == "row":
-        picked = select_per_row(scores, layout.numrows, layout.numcols, min_fill, top2_ratio, min_score)
+        picked = select_per_row(scores, layout.numrows, layout.numcols, min_fill, top2_ratio, min_top2_diff)
     else:
-        picked = select_per_col(scores, layout.numrows, layout.numcols, min_fill, top2_ratio, min_score)
+        picked = select_per_col(scores, layout.numrows, layout.numcols, min_fill, top2_ratio, min_top2_diff)
 
     return picked, rois, scores
 
@@ -879,7 +1108,7 @@ def detect_version_from_bubble(
     *,
     min_fill: float = SCORING_DEFAULTS.min_fill,
     top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
-    min_score: float = SCORING_DEFAULTS.min_score,
+    min_top2_diff: float = SCORING_DEFAULTS.min_top2_diff,
     fixed_thresh: Optional[int] = None,
 ) -> Tuple[str, bool]:
     """
@@ -901,7 +1130,7 @@ def detect_version_from_bubble(
         bmap.version_layout,
         min_fill=min_fill,
         top2_ratio=top2_ratio,
-        min_score=min_score,
+        min_top2_diff=min_top2_diff,
         fixed_thresh=fixed_thresh,
     )
     
@@ -1023,10 +1252,22 @@ def process_page_all(
     *,
     min_fill: float = SCORING_DEFAULTS.min_fill,
     top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
-    min_score: float = SCORING_DEFAULTS.min_score,
+    min_top2_diff: float = SCORING_DEFAULTS.min_top2_diff,
     fixed_thresh: Optional[int] = None,
-) -> Tuple[dict, List[Optional[str]]]:
-    """Decode names/ID/version and all answers from an aligned page."""
+    calibrate_background: bool = SCORING_DEFAULTS.calibrate_background,
+    background_percentile: float = SCORING_DEFAULTS.background_percentile,
+    adaptive_min_above_floor: float = SCORING_DEFAULTS.adaptive_min_above_floor,
+    verbose_calibration: bool = False,
+) -> Tuple[dict, List[Optional[str]], Optional[List[float]]]:
+    """
+    Decode names/ID/version and all answers from an aligned page.
+
+    Returns:
+        (info, answers, backgrounds) where:
+        - info: dict with last_name, first_name, student_id, version
+        - answers: List of answer strings
+        - backgrounds: List of per-column background values (if calibration enabled), else None
+    """
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
 
     info = {"last_name": "", "first_name": "", "student_id": "", "version": ""}
@@ -1037,7 +1278,7 @@ def process_page_all(
             bmap.last_name_layout,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
-            min_score=min_score,
+            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["last_name"] = indices_to_text_col(
@@ -1050,7 +1291,7 @@ def process_page_all(
             bmap.first_name_layout,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
-            min_score=min_score,
+            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["first_name"] = indices_to_text_col(
@@ -1063,7 +1304,7 @@ def process_page_all(
             bmap.id_layout,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
-            min_score=min_score,
+            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["student_id"] = indices_to_text_col(picked, bmap.id_layout.labels or "0123456789").strip()
@@ -1073,24 +1314,36 @@ def process_page_all(
             img_bgr, bmap,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
-            min_score=min_score,
+            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["version"] = version_str
         info["version_confident"] = confident
 
     answers: List[Optional[str]] = []
+    all_backgrounds: List[List[float]] = []  # Collect backgrounds from all answer layouts
+
     for layout in bmap.answer_layouts:
         picked, _, scores = decode_layout(
             gray,
             layout,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
-            min_score=min_score,
+            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         choice_labels = list(layout.labels) if layout.labels else [chr(ord("A") + k) for k in range(layout.numcols)]
         if layout.selection_axis == "row":
+            # Compute backgrounds before conversion if calibration is enabled
+            if calibrate_background and layout.numrows > 1:
+                backgrounds = calibrate_column_backgrounds(scores, layout.numrows, layout.numcols, background_percentile)
+                all_backgrounds.append(backgrounds)
+
+                if verbose_calibration:
+                    # Format backgrounds for logging
+                    bg_str = ", ".join(f"{bg:.3f}" for bg in backgrounds)
+                    print(f"  Background calibration: [{bg_str}]")
+
             answers.extend(
                 scores_to_labels_row(
                     scores,
@@ -1099,10 +1352,15 @@ def process_page_all(
                     choice_labels,
                     min_fill=min_fill,
                     top2_ratio=top2_ratio,
-                    min_score=min_score,
+                    min_top2_diff=min_top2_diff,
+                    calibrate_background=calibrate_background,
+                    background_percentile=background_percentile,
+                    adaptive_min_above_floor=adaptive_min_above_floor,
                 )
             )
         else:
             answers.extend(indices_to_labels_row(picked, layout.numcols, choice_labels))
 
-    return info, answers
+    # Return the first set of backgrounds (if any) for logging purposes
+    backgrounds_out = all_backgrounds[0] if all_backgrounds else None
+    return info, answers, backgrounds_out

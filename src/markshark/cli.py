@@ -187,11 +187,11 @@ def score(
         Increase to require more completely filled bubbles; decrease to accept lighter or partially filled marks."""
     ),
     top2_ratio: Optional[float] = typer.Option(None, "--top2-ratio", help=f"default {SCORING_DEFAULTS.top2_ratio}"),
-    min_score: Optional[float] = typer.Option(
+    min_top2_diff: Optional[float] = typer.Option(
         None,
-        "--min-score",
-        help=f"""Minimum score required to accept a bubble as filled (default: {SCORING_DEFAULTS.min_score}).
-        Increase to require higher confidence in filled bubbles; decrease to accept lower scores."""
+        "--min-top2-diff",
+        help=f"""Minimum difference (in percentage points) between top 2 bubbles to not score as multi (default: {SCORING_DEFAULTS.min_top2_diff}).
+        Increase to require larger separation; decrease to accept closer scores."""
     ),
     fixed_thresh: Optional[int] = typer.Option(None, "--fixed-thresh", help=f"default {SCORING_DEFAULTS.fixed_thresh}"),
     auto_thresh: bool = typer.Option(
@@ -229,7 +229,7 @@ def score(
         scoring = apply_scoring_overrides(
             min_fill=min_fill if min_fill is not None else SCORING_DEFAULTS.min_fill,
             top2_ratio=top2_ratio if top2_ratio is not None else SCORING_DEFAULTS.top2_ratio,
-            min_score=min_score if min_score is not None else SCORING_DEFAULTS.min_score,
+            min_top2_diff=min_top2_diff if min_top2_diff is not None else SCORING_DEFAULTS.min_top2_diff,
             fixed_thresh=SCORING_DEFAULTS.fixed_thresh,
             auto_calibrate_thresh=auto_thresh,
             verbose_calibration=verbose_calibration,
@@ -245,10 +245,15 @@ def score(
             dpi=dpi,
             min_fill=scoring.min_fill,
             top2_ratio=scoring.top2_ratio,
-            min_score=scoring.min_score,
+            min_top2_diff=scoring.min_top2_diff,
             fixed_thresh=fixed_thresh if fixed_thresh is not None else scoring.fixed_thresh,
             auto_calibrate_thresh=scoring.auto_calibrate_thresh,
             verbose_calibration=scoring.verbose_calibration,
+            calibrate_background=scoring.calibrate_background,
+            background_percentile=scoring.background_percentile,
+            adaptive_rescoring=scoring.adaptive_rescoring,
+            adaptive_max_adjustment=scoring.adaptive_max_adjustment,
+            adaptive_min_above_floor=scoring.adaptive_min_above_floor,
             annotate_all_cells=annotate_all_cells,
             label_density=label_density,
             review_pdf=review_pdf,
@@ -274,6 +279,8 @@ def report(
     input_csv: str = typer.Argument(..., help="Results CSV from 'score'"),
     out_xlsx: str = typer.Option("exam_report.xlsx", "--out-xlsx", "-o", help="Output Excel report"),
     roster_csv: Optional[str] = typer.Option(None, "--roster", "-r", help="Optional class roster CSV (StudentID, LastName, FirstName)"),
+    project_name: Optional[str] = typer.Option(None, "--project-name", help="Project name to include in report header"),
+    run_label: Optional[str] = typer.Option(None, "--run-label", help="Run label (e.g., run_001_2025-01-21_1430) to include in report header"),
 ):
     """
     Generate an Excel report with per-version tabs, item analysis, and roster checking.
@@ -283,6 +290,7 @@ def report(
     - Per-version tabs with student results and item statistics
     - Roster matching (if --roster provided): flags absent students and orphan scans
     - Color-coded item quality indicators
+    - Project metadata (if --project-name or --run-label provided)
     """
     try:
         from .tools import report_tools
@@ -290,6 +298,8 @@ def report(
             input_csv=input_csv,
             out_xlsx=out_xlsx,
             roster_csv=roster_csv,
+            project_name=project_name,
+            run_label=run_label,
         )
         rprint(f"[green]Report generated:[/green] {out_xlsx}")
     except Exception as e:
@@ -360,7 +370,7 @@ def quick_grade(
     # Scoring options
     min_fill: Optional[float] = typer.Option(None, "--min-fill", help=f"Min fill threshold (default: {SCORING_DEFAULTS.min_fill})"),
     top2_ratio: Optional[float] = typer.Option(None, "--top2-ratio", help=f"Top2 ratio (default: {SCORING_DEFAULTS.top2_ratio})"),
-    min_score: Optional[float] = typer.Option(None, "--min-score", help=f"Min score (default: {SCORING_DEFAULTS.min_score})"),
+    min_top2_diff: Optional[float] = typer.Option(None, "--min-top2-diff", help=f"Min difference between top 2 bubbles (default: {SCORING_DEFAULTS.min_top2_diff})"),
     annotate_all_cells: bool = typer.Option(False, "--annotate-all-cells", help="Draw every bubble in each row"),
     label_density: bool = typer.Option(False, "--label-density", help="Overlay % fill text"),
     auto_thresh: bool = typer.Option(SCORING_DEFAULTS.auto_calibrate_thresh, "--auto-thresh/--no-auto-thresh", help="Auto-calibrate threshold"),
@@ -422,10 +432,10 @@ def quick_grade(
         scoring = apply_scoring_overrides(
             min_fill=min_fill if min_fill is not None else SCORING_DEFAULTS.min_fill,
             top2_ratio=top2_ratio if top2_ratio is not None else SCORING_DEFAULTS.top2_ratio,
-            min_score=min_score if min_score is not None else SCORING_DEFAULTS.min_score,
+            min_top2_diff=min_top2_diff if min_top2_diff is not None else SCORING_DEFAULTS.min_top2_diff,
             auto_calibrate_thresh=auto_thresh,
         )
-        
+
         score_pdf(
             input_path=str(aligned_pdf),
             bublmap_path=str(template.bubblemap_yaml_path),
@@ -435,8 +445,13 @@ def quick_grade(
             dpi=dpi,
             min_fill=scoring.min_fill,
             top2_ratio=scoring.top2_ratio,
-            min_score=scoring.min_score,
+            min_top2_diff=scoring.min_top2_diff,
             auto_calibrate_thresh=scoring.auto_calibrate_thresh,
+            calibrate_background=scoring.calibrate_background,
+            background_percentile=scoring.background_percentile,
+            adaptive_rescoring=scoring.adaptive_rescoring,
+            adaptive_max_adjustment=scoring.adaptive_max_adjustment,
+            adaptive_min_above_floor=scoring.adaptive_min_above_floor,
             annotate_all_cells=annotate_all_cells,
             label_density=label_density,
         )

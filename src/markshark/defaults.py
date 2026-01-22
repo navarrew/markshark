@@ -24,7 +24,16 @@ class ScoringDefaults:
     #Thresholds for deciding filled area bubbles and resolving ties.
     min_fill: float = 0.45         # minimum filled fraction to accept non-blank
     top2_ratio: float = 0.80       # second-best must be <= top2_ratio * best
-    min_score: float = 10.0        # absolute gap in percentage points (100*(best-second))
+    min_top2_diff: float = 10.0    # minimum difference between top 2 bubbles in percentage points (100*(best-second)) to not score as multi
+
+    # Background subtraction calibration
+    calibrate_background: bool = True     # subtract per-column background to remove letter printing bias
+    background_percentile: float = 10.0   # percentile to use for background calculation (10th = robust to noise)
+
+    # Adaptive rescoring for light pencil marks
+    adaptive_rescoring: bool = True               # enable adaptive threshold reduction for blank rows
+    adaptive_max_adjustment: int = 30             # maximum threshold reduction to try (in steps of 10)
+    adaptive_min_above_floor: float = 30.0        # winner must be this many points above lowest bubble (after calibration)
 
     # Global binarization threshold (only used when bin_method == "global") for gray pixels
     fixed_thresh: int = 180

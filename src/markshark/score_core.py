@@ -263,7 +263,7 @@ def _process_single_page(
     *,
     min_fill: float,
     top2_ratio: float,
-    min_score: float,
+    min_top2_diff: float,
     fixed_thresh: Optional[int] = None,
 ) -> Tuple[dict, List[Optional[str]]]:
     """
@@ -283,7 +283,7 @@ def _process_single_page(
             page_layout.last_name_layout,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
-            min_score=min_score,
+            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["last_name"] = indices_to_text_col(
@@ -296,7 +296,7 @@ def _process_single_page(
             page_layout.first_name_layout,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
-            min_score=min_score,
+            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["first_name"] = indices_to_text_col(
@@ -309,7 +309,7 @@ def _process_single_page(
             page_layout.id_layout,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
-            min_score=min_score,
+            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["student_id"] = indices_to_text_col(
@@ -323,7 +323,7 @@ def _process_single_page(
             page_layout.version_layout,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
-            min_score=min_score,
+            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         if picked and len(picked) > 0 and picked[0] is not None:
@@ -338,7 +338,7 @@ def _process_single_page(
             layout,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
-            min_score=min_score,
+            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         choice_labels = list(layout.labels) if layout.labels else [chr(ord("A") + k) for k in range(layout.numcols)]
@@ -352,7 +352,7 @@ def _process_single_page(
                     choice_labels,
                     min_fill=min_fill,
                     top2_ratio=top2_ratio,
-                    min_score=min_score,
+                    min_top2_diff=min_top2_diff,
                 )
             )
         else:
@@ -431,9 +431,11 @@ label_density: bool,
 annotate_all_cells: bool,
 min_fill: float,
 top2_ratio: float,
-min_score: float,
+min_top2_diff: float,
 answers_for_annotation: Optional[List[Optional[str]]] = None,
 fixed_thresh: Optional[int] = None,
+calibrate_background: bool = False,
+background_percentile: float = SCORING_DEFAULTS.background_percentile,
 color_correct=None,
 color_incorrect=None,
 color_blank=None,
@@ -518,6 +520,16 @@ box_top_extra: Optional[int] = None,
         )
         rois = centers_to_circle_rois(centers, W, H, layout.radius_pct)
         M = _rowwise_scores(gray, rois, layout.numrows, layout.numcols, fixed_thresh=fixed_thresh,)
+
+        # Apply background calibration if enabled
+        if calibrate_background and layout.numrows > 1:
+            from .tools.score_tools import calibrate_column_backgrounds, subtract_column_backgrounds
+            flat_scores = [score for row in M for score in row]  # Flatten to list
+            backgrounds = calibrate_column_backgrounds(flat_scores, layout.numrows, layout.numcols, background_percentile)
+            calibrated_flat = subtract_column_backgrounds(flat_scores, layout.numrows, layout.numcols, backgrounds)
+            # Reshape back to rows x cols
+            M = [calibrated_flat[r * layout.numcols:(r + 1) * layout.numcols] for r in range(layout.numrows)]
+
         choice_labels = list(layout.labels) if layout.labels else [chr(ord("A") + i) for i in range(layout.numcols)]
         label_to_idx = {str(lab).strip().upper(): i for i, lab in enumerate(choice_labels)}
 
@@ -661,7 +673,7 @@ def score_pdf(
     out_csv: str,
     min_fill: float,
     top2_ratio: float,
-    min_score: float,
+    min_top2_diff: float,
     fixed_thresh: Optional[int] = None,
     key_txt: Optional[str] = None,
     out_annotated_dir: Optional[str] = None,
@@ -672,6 +684,13 @@ def score_pdf(
     pdf_renderer: str = "auto",
     auto_calibrate_thresh: bool = True,
     verbose_calibration: bool = False,
+    # Background calibration
+    calibrate_background: bool = SCORING_DEFAULTS.calibrate_background,
+    background_percentile: float = SCORING_DEFAULTS.background_percentile,
+    # Adaptive rescoring
+    adaptive_rescoring: bool = SCORING_DEFAULTS.adaptive_rescoring,
+    adaptive_max_adjustment: int = SCORING_DEFAULTS.adaptive_max_adjustment,
+    adaptive_min_above_floor: float = SCORING_DEFAULTS.adaptive_min_above_floor,
     # NEW: Review/flagging options
     review_pdf: Optional[str] = None,  # Output PDF containing only flagged pages
     flagged_csv: Optional[str] = None,  # Output CSV listing flagged items
@@ -888,7 +907,7 @@ def score_pdf(
                         img_bgr, page_layout,
                         min_fill=min_fill,
                         top2_ratio=top2_ratio,
-                        min_score=min_score,
+                        min_top2_diff=min_top2_diff,
                         fixed_thresh=page_fixed_thresh,
                     )
                     
@@ -1046,8 +1065,10 @@ def score_pdf(
                             annotate_all_cells=annotate_all_cells,
                             min_fill=min_fill,
                             top2_ratio=top2_ratio,
-                            min_score=min_score,
+                            min_top2_diff=min_top2_diff,
                             fixed_thresh=page_fixed_thresh,
+                            calibrate_background=calibrate_background,
+                            background_percentile=background_percentile,
                             annotation_defaults=ANNOTATION_DEFAULTS,
                         )
                         
@@ -1080,13 +1101,34 @@ def score_pdf(
                         verbose=verbose_calibration,
                     )
                 # Decode all fields using the shared axis-mode pipeline
-                info, answers = process_page_all(
+                info, answers, backgrounds = process_page_all(
                     img_bgr, bmap,
                     min_fill=min_fill,
                     top2_ratio=top2_ratio,
-                    min_score=min_score,
+                    min_top2_diff=min_top2_diff,
                     fixed_thresh=page_fixed_thresh,
+                    calibrate_background=calibrate_background,
+                    background_percentile=background_percentile,
+                    adaptive_min_above_floor=adaptive_min_above_floor,
+                    verbose_calibration=verbose_calibration,
                 )
+
+                # Try adaptive rescoring if enabled and there are blanks
+                if adaptive_rescoring:
+                    from .tools.score_tools import adaptive_rescore_page
+                    answers, page_fixed_thresh, adapted = adaptive_rescore_page(
+                        img_bgr, bmap,
+                        initial_threshold=page_fixed_thresh,
+                        initial_answers=answers,
+                        min_fill=min_fill,
+                        top2_ratio=top2_ratio,
+                        min_top2_diff=min_top2_diff,
+                        calibrate_background=calibrate_background,
+                        background_percentile=background_percentile,
+                        adaptive_min_above_floor=adaptive_min_above_floor,
+                        adaptive_max_adjustment=adaptive_max_adjustment,
+                        verbose=verbose_calibration,
+                    )
 
                 # Limit answers to the Qs we output (based on key length if present)
                 answers_out = answers[:q_out]
@@ -1180,8 +1222,10 @@ def score_pdf(
                         annotate_all_cells=annotate_all_cells,
                         min_fill=min_fill,
                         top2_ratio=top2_ratio,
-                        min_score=min_score,
+                        min_top2_diff=min_top2_diff,
                         fixed_thresh=page_fixed_thresh,
+                        calibrate_background=calibrate_background,
+                        background_percentile=background_percentile,
                         annotation_defaults=ANNOTATION_DEFAULTS,
                     )
                     if out_annotated_dir:
