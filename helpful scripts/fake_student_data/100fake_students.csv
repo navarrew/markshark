@@ -1,101 +1,101 @@
-﻿version,student_id,first_name,last_name
-A,1102813327,Alan,Berg  
-B,1105314617,Omar,Kumar  
-A,1131063313,Jared,Rahman  
-B,1151062420,Zara,Klein  
-A,1159280833,Quinn,Ramirez  
-B,1168901634,Pearl,Novak  
-A,1177667540,Blair,Silva  
-B,1205833526,Fiona,Brown  
-A,1229073325,Carla,Popescu  
-B,1242153171,Carla,Barros  
-A,1260505187,Jenna,Tanaka
-B,1261533811,Tyler,Anderson  
-A,1281412997,Owen,Li  
-B,1284579801,Rosie,Voinova
-A,1308555820,Clara,Costa  
-B,1341087713,Nina,Flores  
-A,1356288654,Brent,Wilson
-B,1365441522,Diana,Kowalski  
-A,1376916782,Wade,Blanco  
-B,1400023252,Molly,Bishop  
-A,1406042822,Anna,Desai  
-B,1419529775,Zack,Ford  
-A,1438316110,Mason,Allen  
-B,1441264963,Derek,Hassan  
-A,1451161454,Adam,Banerjee  
-B,1527446257,Abby,Andersson  
-A,1595199473,Yara,Espinoza  
-B,1616823229,Nate,Davis  
-A,1620816045,Avery,Garcia  
-B,1650244388,Jack,Ma  
-A,1651387751,Zoey,Martin  
-B,1671709525,Brian,Ahmed  
-A,1678002587,Jane,Patel  
-B,1678659366,Craig,Duran  
-A,1717894834,Emily,Ali  
-B,1727919647,Grant,Edwards  
-A,1757721819,Caleb,O'Brien  
-B,1793857343,David,Ghosh  
-A,1828359332,Cindy,Singh  
-B,1832337083,Carol,Bhat  
-A,1838135889,Ariel,Farah  
-B,1862539934,Jason,Saito  
-A,1865404100,Andy,Cohen  
-B,1916663322,Beau,Reddy  
-A,1928771253,Felix,Bianchi  
-B,1936439651,Cathy,Black  
-A,1959660295,Xena,Dubois  
-B,1985027931,Neil,Dong  
-A,1999223055,Edith,Lopez  
-B,2109862114,Wyatt,De la Cruz  
-A,2134235296,Zia,Lima  
-B,2141956848,Frank,Chen  
-A,2144626146,Ben,Kobayashi  
-B,2151949129,Blake,Laurent  
-A,2194938586,Alice,Carter  
-B,2212230385,Aaron,Adams  
-A,2223519896,Bruce,Araya  
-B,2248074062,Vera,Baker  
-A,2249914669,Esme,Rossi  
-B,2253144052,Megan,Bae  
-A,2352796135,Dylan,Le  
-B,2364182591,Reese,Santos  
-A,2375259398,Ellie,Mehta  
-B,2389713979,Gina,Dominguez  
-A,2447575915,Bella,Hall  
-B,2459731357,April,Delgado  
-A,2477034091,Brett,Lin  
-B,2486409992,Erin,Qureshi  
-A,2500011359,Will,Clark  
-B,2513822486,Ethan,Becker  
-A,2519828693,Casey,Rivera  
-B,2528246165,Daisy,Fernandez  
-A,2528645902,Emma,Aung  
-B,2575397633,Axel,Petrov  
-A,2589418884,Holly,Hernandez  
-B,2615063357,Nadia,Burke  
-A,2620001805,Noah,Green  
-B,2632662573,Brock,Martinez  
-A,2637945182,Cody,Diaz  
-B,2643888840,Hazel,Gonzalez  
-A,2648178440,Faith,Suzuki  
-B,2654387282,Paige,Machado  
-A,2656715480,Alex,Bianchi  
-B,2682035000,Chris,Chang  
-A,2687428812,Peter,Pereira  
-B,2689265850,Nick,El-Sayed  
-A,2702484635,Hank,Fischer  
-B,2707509254,Zane,Gupta  
-A,2710045439,Elsie,Ortega  
-B,2728138818,Vince,Bennett  
-A,2797227582,Jamie,Moreno  
-B,2800275776,Wayne,Campbell  
-A,2819508121,Isaac,Kruger  
-B,2827794190,Ivan,Lee  
-A,2831230839,Olive,Kimura  
-B,2837815687,Miles,Bell  
-A,2852226046,Zuri,Nunez  
-B,2900739255,Naomi,Choi  
-A,2918483168,Zeke,Kuznetsov  
-B,2996873456,Gabe,Cruz  
+﻿version,student_id,first_name,last_name,Q1,Q2,Q3,Q4,Q5,Q6,Q7,Q8,Q9,Q10,Q11,Q12,Q13,Q14,Q15,Q16,Q17,Q18,Q19,Q20,Q21,Q22,Q23,Q24,Q25,Q26,Q27,Q28,Q29,Q30,Q31,Q32,Q33,Q34,Q35,Q36,Q37,Q38,Q39,Q40,Q41,Q42,Q43,Q44,Q45,Q46,Q47,Q48,Q49,Q50,Q51,Q52,Q53,Q54,Q55,Q56,Q57,Q58,Q59,Q60,Q61,Q62,Q63
+A,1102813327,Alan,Berg  ,A,"A,B",D,A,E,B,A,C,A,B,E,B,E,A,D,D,E,C,A,D,D,A,E,A,D,B,E,C,B,B,A,E,B,D,C,C,D,E,A,B,A,B,D,E,C,D,B,C,B,B,C,B,E,B,B,A,E,E,E,D,B,D,E
+B,1105314617,Omar,Kumar  ,C,A,D,A,E,E,A,C,E,A,B,B,A,B,B,D,D,B,A,E,C,A,A,A,B,B,A,E,E,A,A,E,D,D,A,A,B,D,C,B,A,B,D,E,C,A,A,B,B,C,C,B,B,A,D,A,A,A,B,D,B,A,E
+A,1131063313,Jared,Rahman  ,A,B,D,A,E,E,A,A,D,A,E,C,A,D,A,D,B,B,A,E,D,C,E,A,B,D,E,E,E,C,A,E,D,B,C,D,D,E,A,B,E,B,E,E,A,E,D,D,C,A,A,B,B,A,B,E,B,A,E,E,B,D,E
+B,1151062420,Zara,Klein  ,C,B,D,A,A,B,A,C,E,A,E,B,A,A,D,D,A,B,A,E,A,C,E,A,B,B,A,E,E,D,A,E,C,C,A,A,E,E,A,B,A,B,D,E,A,A,B,C,B,C,C,D,A,A,D,C,E,C,D,D,B,B,E
+A,1159280833,Quinn,Ramirez  ,D,C,D,A,C,E,A,C,A,E,D,D,D,D,B,D,C,B,A,C,D,A,C,D,B,B,A,E,E,E,C,E,D,E,E,A,C,C,A,A,A,B,D,A,E,A,B,D,C,D,C,D,B,A,D,A,E,A,D,D,B,D,A
+B,1168901634,Pearl,Novak  ,C,A,D,C,D,E,A,C,E,B,E,B,C,A,D,D,A,B,A,E,D,E,E,B,B,B,C,E,E,D,D,E,C,D,A,B,B,A,A,B,A,B,D,E,A,A,B,D,B,C,C,B,C,A,B,A,D,A,E,D,C,C,A
+A,1177667540,Blair,Silva  ,E,B,D,A,A,E,A,C,D,D,E,B,A,A,B,D,A,B,A,E,A,A,E,A,B,C,A,E,E,D,A,E,D,D,A,A,D,E,A,D,A,B,D,E,C,A,D,D,B,C,B,B,C,C,E,A,E,A,E,D,A,D,E
+B,1205833526,Fiona,Brown  ,A,D,A,E,D,E,C,D,E,C,C,B,A,D,C,E,A,B,E,A,D,B,B,E,C,A,C,A,D,C,A,D,B,B,E,A,E,A,C,C,E,D,D,B,D,E,E,A,B,B,D,A,C,A,A,E,B,B,A,C,A,D,B
+A,1229073325,Carla,Popescu  ,C,B,D,C,A,B,A,C,E,A,A,B,A,A,D,D,A,E,A,E,A,C,D,A,B,D,A,E,D,D,A,E,D,C,A,D,E,E,A,B,D,A,B,E,D,B,B,D,B,C,C,B,B,A,D,A,E,D,E,D,B,D,E
+B,1242153171,Carla,Barros  ,E,E,B,A,A,E,A,C,C,A,E,D,A,A,D,D,B,B,A,E,D,A,E,A,C,D,A,E,E,B,A,E,D,E,D,A,C,B,D,C,A,D,A,B,C,A,B,D,B,C,C,B,D,A,D,E,E,D,D,D,B,E,A
+A,1260505187,Jenna,Tanaka,C,B,E,E,A,E,A,C,E,A,E,B,A,A,E,D,A,B,A,E,D,D,B,A,A,A,A,E,A,D,A,E,D,C,A,A,E,E,C,D,A,B,E,C,C,A,B,D,C,C,C,B,B,A,E,A,E,A,E,D,B,D,E
+B,1261533811,Tyler,Anderson  ,C,B,E,D,B,D,C,B,E,C,A,B,E,A,D,D,A,B,A,D,D,A,E,A,A,E,A,E,A,D,A,E,D,A,A,A,D,E,A,B,B,C,E,E,A,E,B,D,B,C,B,A,B,A,D,A,E,A,E,C,B,B,E
+A,1281412997,Owen,Li  ,C,B,A,A,B,B,E,C,E,E,E,B,E,A,D,E,A,B,C,E,D,A,D,D,E,B,B,D,E,B,B,B,B,A,A,C,D,B,A,E,D,C,B,E,B,A,B,D,B,C,C,B,B,A,E,D,A,E,D,D,D,D,E
+B,1284579801,Rosie,Voinova,C,B,D,A,A,D,C,C,E,A,A,A,A,A,A,D,A,B,A,E,D,A,A,A,B,E,A,E,C,D,A,C,B,B,E,A,D,E,A,B,A,B,D,E,C,D,D,D,B,C,A,E,B,A,D,A,D,A,E,D,A,D,E
+A,1308555820,Clara,Costa  ,C,A,A,A,A,E,C,A,A,A,D,B,C,C,C,D,C,B,A,B,D,D,E,C,C,B,A,E,E,B,A,E,D,D,A,C,D,C,A,B,A,B,D,B,C,C,B,D,B,C,C,B,B,A,D,A,E,D,D,A,B,D,D
+B,1341087713,Nina,Flores  ,C,B,A,A,A,C,C,A,D,A,D,A,A,A,D,D,A,B,A,D,D,A,E,A,B,B,A,D,E,D,E,B,D,D,A,A,D,E,E,B,E,B,D,E,C,A,B,D,E,B,C,B,B,A,D,A,E,B,C,E,A,D,E
+A,1356288654,Brent,Wilson,C,E,B,A,A,A,A,B,E,A,E,E,A,C,A,D,A,A,A,E,A,A,D,A,B,E,A,E,E,C,A,E,E,A,B,E,D,E,C,E,A,E,D,E,A,A,B,D,B,C,D,B,A,A,C,A,A,E,A,A,A,D,D
+B,1365441522,Diana,Kowalski  ,A,C,D,A,E,A,A,C,A,A,E,D,A,D,E,D,A,B,A,B,D,A,E,A,B,A,A,D,A,D,A,E,A,D,C,A,B,E,A,B,A,B,D,D,C,A,C,D,B,B,E,B,B,C,C,B,E,B,E,D,B,A,A
+A,1376916782,Wade,Blanco  ,A,B,D,E,A,A,C,C,D,A,A,B,D,A,E,D,A,E,D,E,C,A,D,D,C,B,A,E,E,D,C,E,D,B,A,A,D,D,A,B,D,B,D,E,C,D,B,A,A,C,C,B,D,D,C,E,C,A,A,E,B,C,E
+B,1400023252,Molly,Bishop  ,C,B,D,C,A,E,A,C,E,A,D,B,C,A,A,D,A,B,B,E,B,E,E,A,E,B,A,E,E,D,A,E,D,E,A,B,D,E,A,B,A,B,D,E,C,A,B,D,B,C,B,B,B,A,D,A,E,A,E,D,B,D,E
+A,1406042822,Anna,Desai  ,C,B,D,E,D,E,A,C,E,B,E,B,A,A,D,D,E,A,D,E,B,B,E,D,E,B,B,E,E,D,A,E,A,E,C,E,A,E,E,B,A,B,D,C,C,A,E,D,A,E,C,B,B,A,B,A,D,C,E,D,B,C,E
+B,1419529775,Zack,Ford  ,C,A,B,A,A,A,A,C,E,A,E,B,A,A,D,D,A,B,A,E,D,B,B,A,B,B,A,E,E,D,A,E,D,D,A,A,D,C,A,B,A,B,D,A,C,A,B,D,B,C,C,B,B,B,D,B,E,D,E,D,D,E,E
+A,1438316110,Mason,Allen  ,C,B,D,E,A,A,A,C,E,A,E,B,A,A,C,D,A,E,A,E,D,B,D,A,B,E,A,E,E,D,A,E,D,D,E,A,D,E,A,B,A,B,E,E,C,A,B,D,B,C,C,B,B,A,E,A,E,E,E,D,B,A,E
+B,1441264963,Derek,Hassan  ,C,C,D,A,D,A,A,C,B,C,C,B,A,B,B,D,A,D,C,D,D,A,C,A,A,B,A,E,A,D,B,A,D,B,A,A,D,E,A,B,A,B,B,E,C,A,B,D,A,C,A,A,C,B,D,A,E,A,A,D,B,D,D
+A,1451161454,Adam,Banerjee  ,C,B,D,C,A,E,A,C,E,A,C,B,A,A,D,D,C,E,A,E,C,A,E,A,B,E,A,E,C,D,A,E,D,C,D,D,D,D,A,D,D,C,D,E,C,B,B,A,C,C,C,C,E,A,E,A,E,E,E,D,C,D,E
+B,1527446257,Abby,Andersson  ,C,C,D,A,A,E,A,E,B,A,E,B,A,A,E,D,C,B,A,E,D,A,E,A,D,B,A,C,E,D,E,D,D,D,A,A,D,C,A,E,A,B,D,E,C,A,C,B,B,D,C,B,B,A,D,A,E,A,E,D,B,D,E
+A,1595199473,Yara,Espinoza  ,E,D,E,A,A,E,A,D,E,A,E,D,D,A,B,E,A,D,B,E,B,E,C,B,E,B,E,B,D,B,D,E,B,A,A,A,B,E,A,B,A,B,A,B,C,A,B,E,B,D,C,A,B,C,D,C,E,A,B,E,B,E,A
+B,1616823229,Nate,Davis  ,C,B,C,B,A,E,C,C,E,A,E,B,A,C,D,B,B,C,B,C,D,B,E,D,B,B,A,E,A,C,C,E,D,C,A,A,B,E,A,B,A,B,D,B,D,B,B,D,B,C,C,B,B,B,E,A,E,B,E,D,B,D,E
+A,1620816045,Avery,Garcia  ,C,B,D,D,C,D,A,C,E,E,E,B,A,A,D,D,A,B,A,C,E,A,E,A,B,E,A,E,E,D,A,E,D,D,A,D,D,E,E,B,A,B,D,E,C,A,B,D,D,C,C,B,B,A,D,A,E,A,E,D,B,D,E
+B,1650244388,Jack,Ma  ,C,B,A,E,E,E,D,C,E,A,E,A,A,E,D,D,A,C,D,E,E,A,B,E,C,D,A,E,E,D,A,E,E,D,A,A,E,E,A,B,B,D,D,B,C,A,B,D,B,C,C,B,B,A,E,E,B,A,C,D,A,D,A
+A,1651387751,Zoey,Martin  ,C,C,D,A,A,E,A,C,E,A,E,B,A,A,D,D,A,B,A,E,D,A,E,A,C,D,A,D,E,D,A,E,D,D,A,A,D,E,A,A,A,B,D,E,C,A,B,D,E,C,C,B,B,A,D,A,E,D,E,D,B,D,E
+B,1671709525,Brian,Ahmed  ,D,B,D,D,D,E,A,C,E,A,E,B,B,A,D,E,A,B,A,E,A,A,E,A,B,B,E,B,E,B,D,E,D,E,A,A,D,D,A,B,A,B,D,E,E,D,B,D,B,C,C,B,D,A,B,A,E,A,E,D,B,A,E
+A,1678002587,Jane,Patel  ,A,B,E,B,A,D,A,E,A,A,E,C,D,B,C,D,B,D,A,B,B,A,A,A,E,B,D,E,E,D,A,E,E,D,E,E,D,B,B,B,A,B,D,E,C,B,C,B,B,A,E,D,B,D,C,E,E,B,E,B,B,D,E
+B,1678659366,Craig,Duran  ,E,B,B,C,D,E,A,E,C,A,D,C,A,A,A,D,B,B,B,A,A,A,C,E,B,C,A,E,E,C,A,D,A,E,E,A,A,E,A,B,A,B,A,A,B,B,B,B,A,B,C,B,B,A,E,A,C,A,D,E,B,A,E
+A,1717894834,Emily,Ali  ,C,B,D,A,A,E,A,C,A,A,E,B,A,A,D,D,D,B,A,E,B,A,E,D,B,A,A,E,E,D,A,E,D,D,A,A,A,E,C,B,C,D,C,E,C,A,B,D,A,C,C,B,C,C,B,A,E,A,C,B,A,D,E
+B,1727919647,Grant,Edwards  ,C,E,A,A,A,D,A,C,E,A,E,B,A,A,D,D,A,B,A,A,D,A,E,A,B,B,B,C,D,D,A,E,D,D,A,A,D,C,B,B,A,B,D,E,C,A,B,D,B,C,C,B,C,A,D,A,D,A,E,D,B,D,E
+A,1757721819,Caleb,O'Brien  ,A,B,D,A,D,E,A,D,E,A,C,D,A,A,D,D,A,C,A,E,D,A,E,A,B,B,C,D,E,D,B,E,D,C,C,A,D,A,A,B,A,B,A,E,C,A,C,C,E,C,C,B,A,A,E,A,E,A,E,D,B,D,E
+B,1793857343,David,Ghosh  ,D,B,D,D,A,E,A,D,E,A,C,B,E,A,D,D,B,D,C,E,A,D,E,B,B,B,A,B,E,D,A,E,D,C,C,E,C,E,D,D,A,B,D,E,C,A,D,D,B,C,E,B,B,A,D,D,A,D,E,D,B,E,C
+A,1828359332,Cindy,Singh  ,C,E,E,A,C,E,A,D,B,D,E,D,E,A,C,B,E,A,B,E,E,C,E,B,A,D,A,E,C,B,E,B,E,D,A,A,D,A,A,D,A,B,B,E,B,E,E,D,C,C,E,C,C,C,A,E,E,D,C,E,B,B,E
+B,1832337083,Carol,Bhat  ,B,B,B,A,A,E,A,A,E,A,E,B,D,E,D,D,C,B,E,E,A,C,A,A,E,B,B,E,D,A,A,E,D,D,A,A,D,E,E,B,D,B,D,E,A,A,B,D,B,C,C,B,A,D,C,B,E,A,E,D,B,D,C
+A,1838135889,Ariel,Farah  ,C,B,D,E,A,A,A,C,A,C,C,C,E,A,B,D,B,E,B,C,A,A,A,C,A,E,E,E,C,D,A,E,E,B,A,D,E,E,C,E,A,B,E,A,E,A,B,E,C,B,A,E,B,B,E,D,E,D,E,D,A,D,E
+B,1862539934,Jason,Saito  ,C,E,D,A,A,E,A,C,E,B,E,B,D,A,D,D,E,B,A,E,D,D,E,D,B,B,A,E,E,D,A,E,D,D,A,B,E,C,A,B,A,B,D,D,C,B,D,D,A,C,C,B,E,E,D,A,A,C,C,D,E,D,E
+A,1865404100,Andy,Cohen  ,C,B,B,B,C,E,A,C,B,A,C,B,C,A,C,D,A,B,A,D,D,A,A,A,B,C,A,A,B,D,A,A,D,B,A,A,D,E,A,C,C,B,D,B,B,A,B,D,B,C,B,B,B,C,D,C,E,C,E,D,A,D,C
+B,1916663322,Beau,Reddy  ,C,B,E,A,A,A,A,A,E,A,B,B,E,A,D,D,B,B,A,E,D,A,E,A,B,B,A,D,D,E,C,E,C,D,A,A,D,E,A,B,D,B,A,D,B,A,B,E,B,E,C,B,B,C,D,A,C,A,E,E,B,D,D
+A,1928771253,Felix,Bianchi  ,D,B,A,A,A,E,D,C,D,C,E,B,D,D,D,D,B,E,A,C,D,D,E,A,D,D,C,E,D,A,A,A,D,B,E,D,B,E,E,B,D,C,D,D,A,A,B,D,B,A,C,B,B,E,A,A,D,D,D,C,B,D,B
+B,1936439651,Cathy,Black  ,D,B,E,E,A,E,A,C,E,A,E,B,A,A,B,D,A,B,A,E,D,A,E,B,B,B,C,A,D,D,A,E,D,A,E,D,C,E,A,D,A,C,D,E,B,E,D,D,B,C,B,D,C,A,D,A,A,B,C,E,B,D,E
+A,1959660295,Xena,Dubois  ,D,E,D,E,A,C,A,C,E,B,E,B,A,A,C,D,C,B,A,E,A,B,A,E,D,B,A,E,E,D,A,A,D,D,A,B,A,C,E,C,E,B,D,E,C,A,A,E,E,B,C,D,B,A,C,E,D,A,E,C,B,D,E
+B,1985027931,Neil,Dong  ,B,A,A,E,C,B,B,B,E,B,B,C,A,C,D,A,E,C,B,A,D,C,B,E,A,B,B,C,E,D,B,E,E,C,A,A,C,E,D,B,C,C,A,C,E,A,C,D,E,C,E,B,C,C,D,A,E,A,E,D,C,D,E
+A,1999223055,Edith,Lopez  ,C,E,E,A,A,B,A,C,D,C,E,B,A,A,A,D,A,B,C,B,D,D,E,A,B,C,C,E,C,E,A,E,C,A,D,A,D,A,E,B,D,B,C,D,C,A,A,D,B,C,C,D,B,B,C,A,B,A,C,D,E,D,E
+B,2109862114,Wyatt,De la Cruz  ,C,B,C,A,B,B,A,C,E,B,B,B,A,A,D,C,D,E,A,B,D,A,B,A,B,B,A,D,E,E,A,B,E,C,A,B,D,E,D,E,C,C,C,E,B,E,D,B,A,A,C,B,B,E,D,A,B,A,D,C,A,D,E
+A,2134235296,Zia,Lima  ,D,B,A,E,D,E,E,C,E,D,E,B,A,C,A,D,A,B,D,B,A,A,E,B,B,B,A,C,A,D,A,E,D,D,D,A,D,A,A,B,A,B,E,E,C,C,B,E,B,D,C,E,D,B,A,D,D,A,A,B,B,D,E
+B,2141956848,Frank,Chen  ,C,B,D,A,A,B,A,C,A,D,A,B,A,B,A,D,C,A,D,E,D,B,E,D,B,B,A,A,E,C,A,C,A,A,A,D,E,E,C,B,A,E,E,A,C,A,C,D,B,E,A,B,E,E,D,A,E,A,A,D,B,D,E
+A,2144626146,Ben,Kobayashi  ,C,E,C,A,A,D,B,E,E,A,D,B,A,B,B,B,A,A,E,E,D,B,E,A,B,B,A,E,B,C,A,D,D,D,A,A,D,E,A,C,E,B,D,A,D,A,B,A,B,D,E,B,B,E,A,A,C,D,D,D,A,D,C
+B,2151949129,Blake,Laurent  ,C,B,B,A,A,D,A,C,E,A,E,B,A,A,D,E,C,B,A,E,A,E,D,A,B,A,A,D,D,D,B,E,D,D,A,B,C,E,A,B,A,C,D,E,C,A,B,D,B,C,B,B,B,A,D,A,E,B,E,D,B,D,E
+A,2194938586,Alice,Carter  ,C,B,D,A,A,E,A,C,E,A,E,B,A,A,D,D,A,B,A,E,D,A,E,A,B,B,A,E,E,D,A,E,D,D,A,A,D,E,A,B,A,B,D,E,C,A,B,D,B,C,C,B,B,A,D,A,E,A,E,D,B,D,E
+B,2212230385,Aaron,Adams  ,C,A,D,D,D,E,A,C,E,D,C,E,A,A,D,D,A,B,E,B,E,A,B,C,D,B,A,D,D,D,A,E,D,B,A,A,D,E,A,B,A,B,B,E,C,A,B,A,B,C,C,B,A,A,D,C,A,A,E,A,C,B,D
+A,2223519896,Bruce,Araya  ,C,B,D,A,A,E,C,A,E,A,D,B,A,A,D,E,E,B,A,D,D,E,C,A,B,E,D,E,B,E,A,E,D,D,A,A,D,E,A,E,A,B,A,B,C,E,E,D,B,C,C,B,B,C,C,A,D,B,E,E,B,A,E
+B,2248074062,Vera,Baker  ,C,B,D,A,A,E,A,C,E,A,E,B,A,A,D,D,A,B,A,E,D,A,E,A,B,B,A,E,E,D,A,E,D,D,A,A,D,E,A,B,A,B,D,E,C,A,B,D,B,C,C,B,B,A,D,A,E,A,E,D,B,D,E
+A,2249914669,Esme,Rossi  ,C,B,D,C,A,D,B,A,E,A,E,B,D,C,D,B,B,E,E,E,D,A,E,A,A,A,A,B,E,D,E,A,D,D,B,A,C,E,B,A,A,B,D,E,E,A,B,B,B,E,B,B,D,B,C,C,D,A,E,D,B,E,E
+B,2253144052,Megan,Bae  ,C,D,D,A,A,E,A,C,E,A,E,B,D,A,D,C,D,D,A,E,D,A,E,A,A,A,A,D,B,A,A,A,D,D,A,A,A,E,E,B,A,B,D,E,C,A,D,D,E,C,B,B,B,A,D,C,E,C,B,A,B,D,A
+A,2352796135,Dylan,Le  ,C,D,D,A,A,B,A,E,E,A,B,B,A,A,D,D,C,B,C,E,A,A,E,C,B,B,A,D,E,D,A,E,D,D,E,A,D,D,C,D,D,B,D,E,C,A,E,D,A,C,D,C,B,D,D,A,D,A,A,D,B,C,C
+B,2364182591,Reese,Santos  ,C,B,D,A,A,E,A,C,E,A,E,C,A,A,D,D,A,B,A,E,D,A,A,A,B,A,A,E,E,D,B,E,D,C,A,A,D,E,A,B,E,B,D,B,C,A,A,D,B,C,C,B,E,A,D,A,E,A,E,D,B,D,E
+A,2375259398,Ellie,Mehta  ,D,B,D,A,A,E,A,A,B,A,B,D,B,A,D,D,A,B,A,E,B,A,E,A,E,C,A,B,E,C,E,E,D,B,A,A,D,E,C,B,A,B,D,D,C,A,B,A,B,C,A,B,B,A,D,C,B,A,A,C,E,D,E
+B,2389713979,Gina,Dominguez  ,C,B,D,A,A,E,A,C,E,A,E,B,A,A,A,D,B,B,B,C,D,A,E,E,B,B,A,E,E,D,A,B,D,D,D,C,D,E,A,A,A,B,C,A,C,A,C,B,B,C,C,B,B,E,B,B,B,A,E,E,B,D,D
+A,2447575915,Bella,Hall  ,C,B,A,C,A,B,A,C,B,D,C,B,A,A,A,D,B,C,A,C,D,A,D,A,B,B,A,E,D,D,A,B,D,D,A,A,B,E,A,D,A,D,C,A,C,A,A,B,B,C,C,B,B,A,A,A,E,A,C,C,A,D,E
+B,2459731357,April,Delgado  ,C,E,D,A,A,E,A,C,E,A,A,D,A,A,D,C,A,E,A,E,D,A,E,A,B,A,A,E,E,D,A,E,D,D,E,A,D,E,A,B,A,A,D,E,C,A,B,D,C,C,D,B,B,E,D,A,B,C,E,D,B,E,E
+A,2477034091,Brett,Lin  ,C,B,D,B,D,C,A,C,A,A,D,B,D,A,B,C,A,C,E,C,D,B,A,A,B,D,A,E,D,E,A,A,D,C,E,B,B,C,C,C,A,B,E,E,E,E,D,D,C,D,C,B,B,E,B,D,E,D,A,D,D,E,E
+B,2486409992,Erin,Qureshi  ,C,C,E,A,A,E,A,C,E,C,E,B,A,A,D,B,A,B,A,D,D,A,E,A,C,B,E,B,E,E,A,B,D,D,A,A,D,D,A,B,A,A,D,E,C,A,B,D,E,C,C,B,B,C,D,A,E,C,C,E,B,D,E
+A,2500011359,Will,Clark  ,C,B,A,C,D,E,A,C,E,A,E,B,A,A,D,A,A,D,A,B,B,A,A,A,A,B,A,E,E,D,A,D,C,D,A,B,D,D,A,B,A,B,D,E,D,A,B,D,B,C,C,B,B,A,D,B,D,A,D,D,D,E,E
+B,2513822486,Ethan,Becker  ,D,B,C,A,A,E,A,C,E,A,D,B,A,A,D,C,A,B,A,C,D,A,E,D,B,C,A,E,C,D,A,E,D,D,C,A,D,E,C,B,A,B,D,E,C,D,D,D,B,C,C,B,B,C,D,A,E,A,E,B,D,D,C
+A,2519828693,Casey,Rivera  ,E,B,D,A,A,B,A,E,E,A,E,B,A,A,D,D,A,B,A,E,D,A,E,A,B,B,A,B,E,D,A,E,D,D,C,A,D,D,A,D,A,A,D,E,C,C,B,D,D,C,C,C,B,A,D,A,E,A,E,D,A,D,E
+B,2528246165,Daisy,Fernandez  ,D,B,D,C,A,E,B,B,B,E,E,B,A,A,D,D,E,E,C,E,D,A,E,D,B,A,C,E,E,C,A,E,B,A,C,A,D,A,A,B,C,B,A,B,A,A,E,B,C,D,C,D,B,A,A,A,B,B,E,E,B,D,E
+A,2528645902,Emma,Aung  ,C,E,C,C,A,E,B,C,E,A,A,B,A,A,C,D,A,D,A,E,D,A,E,A,B,B,A,E,D,D,E,E,C,D,A,A,B,D,D,B,A,B,E,C,C,A,B,D,B,C,C,A,D,B,E,D,E,A,D,A,D,D,E
+B,2575397633,Axel,Petrov  ,D,B,D,A,C,B,C,D,A,C,C,D,E,D,A,B,D,B,A,E,D,B,C,D,D,D,A,E,E,D,A,E,D,C,A,A,A,B,A,B,C,B,B,B,C,A,B,A,B,C,E,B,E,A,D,B,A,A,E,C,D,D,E
+A,2589418884,Holly,Hernandez  ,C,B,D,A,A,E,A,E,E,A,E,D,C,A,D,C,A,A,B,E,A,B,C,A,A,C,A,D,E,D,A,D,A,A,B,A,C,D,A,A,C,A,D,D,A,E,A,D,C,A,C,B,C,C,A,C,E,D,A,D,A,B,B
+B,2615063357,Nadia,Burke  ,E,D,E,A,A,E,A,C,E,A,A,B,A,B,D,D,A,A,C,E,D,A,E,E,A,B,A,E,E,D,A,E,E,D,D,D,D,E,A,A,A,B,D,E,E,A,B,D,A,C,C,B,D,A,A,E,C,A,E,D,B,D,B
+A,2620001805,Noah,Green  ,C,E,D,D,A,E,A,C,E,A,E,B,C,A,D,D,A,B,A,E,D,A,E,A,B,B,A,E,C,D,A,E,D,D,A,A,D,E,A,B,A,C,D,E,E,A,E,D,B,C,C,B,B,A,D,A,E,A,E,D,B,D,E
+B,2632662573,Brock,Martinez  ,C,B,D,D,A,E,A,C,E,A,E,B,A,A,E,D,A,B,A,E,D,A,E,E,C,B,A,E,E,D,A,E,D,D,E,A,D,E,A,B,D,B,D,C,C,A,B,D,B,C,C,B,B,A,C,A,B,A,E,D,B,D,E
+A,2637945182,Cody,Diaz  ,B,B,C,A,B,E,D,C,E,A,C,B,A,E,D,A,B,B,A,E,D,A,B,A,B,B,C,E,E,D,A,D,C,D,C,C,A,A,A,C,B,E,D,B,A,A,B,D,B,C,C,E,B,B,D,A,E,A,E,A,A,D,E
+B,2643888840,Hazel,Gonzalez  ,C,E,D,C,C,A,A,C,E,A,E,B,A,A,D,A,B,B,A,E,C,D,E,A,A,B,A,E,E,B,A,E,D,A,D,A,B,E,D,B,A,B,B,E,C,A,B,D,D,B,C,B,B,A,B,C,E,C,D,C,B,D,E
+A,2648178440,Faith,Suzuki  ,A,B,D,B,A,D,B,A,B,A,E,A,A,B,D,D,A,D,B,C,A,B,E,E,B,E,D,E,A,D,A,E,D,D,A,A,D,B,A,E,A,C,E,E,C,E,B,D,A,E,C,B,B,A,B,E,C,B,A,C,B,D,C
+B,2654387282,Paige,Machado  ,C,D,D,D,A,A,B,C,E,B,E,C,A,E,E,B,D,B,C,E,D,D,E,A,B,B,A,E,E,D,A,B,D,B,A,A,B,E,A,B,A,B,D,D,A,C,B,D,E,C,C,B,A,A,D,A,E,A,E,A,C,C,C
+A,2656715480,Alex,Bianchi  ,C,E,D,A,E,E,E,C,E,D,C,E,B,A,A,C,D,B,A,E,D,D,D,B,D,D,C,D,E,D,C,A,B,D,A,C,B,E,A,E,B,C,D,D,C,B,D,B,A,B,D,A,E,A,A,E,E,A,E,D,B,D,E
+B,2682035000,Chris,Chang  ,C,B,A,A,A,E,D,D,E,A,E,B,A,A,D,A,A,B,A,E,D,A,E,D,B,A,A,E,E,D,A,E,D,D,C,E,D,E,A,B,A,B,E,E,C,C,B,D,E,C,E,D,C,A,C,D,E,A,E,D,B,D,D
+A,2687428812,Peter,Pereira  ,C,D,D,A,A,A,A,C,E,A,E,E,D,E,D,B,A,A,C,E,D,C,E,A,B,B,A,E,E,A,A,E,D,B,A,B,D,E,A,E,A,B,D,B,C,B,B,D,B,C,C,B,B,A,D,A,E,A,E,D,D,D,B
+B,2689265850,Nick,El-Sayed  ,C,E,D,A,A,D,A,E,B,D,B,C,A,A,D,D,B,B,A,D,B,A,E,A,B,B,A,E,D,D,A,E,D,B,A,C,D,E,A,B,A,A,D,E,C,A,B,D,B,D,D,C,B,A,D,B,E,E,E,D,E,D,B
+A,2702484635,Hank,Fischer  ,C,E,D,A,A,E,C,A,E,B,B,B,A,A,D,D,A,E,A,B,C,A,A,D,B,C,A,E,B,E,E,E,E,C,E,A,B,E,A,E,A,B,D,E,C,B,E,D,B,C,C,B,B,A,C,B,E,B,E,D,B,D,A
+B,2707509254,Zane,Gupta  ,C,B,D,A,A,E,D,C,E,C,B,B,E,A,A,D,A,B,A,E,D,A,E,A,B,B,A,A,E,D,A,E,D,D,A,A,D,E,A,D,E,A,D,E,C,E,B,D,B,A,C,E,D,A,D,A,E,A,E,D,B,D,E
+A,2710045439,Elsie,Ortega  ,C,B,D,E,D,E,A,C,E,D,E,C,A,A,A,E,A,E,D,E,D,A,E,A,B,B,A,E,B,D,D,E,D,D,A,A,D,C,A,B,A,B,C,E,C,A,B,D,B,C,D,B,B,E,D,A,D,A,E,C,B,D,C
+B,2728138818,Vince,Bennett  ,C,B,A,C,C,E,A,C,E,A,E,C,C,A,C,E,A,B,A,D,C,B,D,B,B,E,B,C,E,B,B,E,D,B,A,B,D,A,A,A,A,A,D,A,B,A,A,D,C,D,E,A,B,E,B,D,C,D,E,D,B,D,E
+A,2797227582,Jamie,Moreno  ,C,B,D,A,A,E,A,C,E,A,E,B,D,E,D,D,A,B,A,E,D,A,E,A,B,B,A,E,E,D,A,E,C,D,A,C,D,E,A,B,A,B,D,E,C,A,B,D,B,D,C,B,B,A,D,A,E,A,E,D,B,D,E
+B,2800275776,Wayne,Campbell  ,C,B,D,A,A,E,A,C,A,A,E,B,A,A,D,D,C,B,A,C,D,A,E,A,B,B,D,E,E,D,A,E,D,D,A,A,D,E,A,B,A,D,D,E,C,A,B,D,B,C,C,B,B,A,D,A,E,A,D,D,B,D,B
+A,2819508121,Isaac,Kruger  ,C,B,D,E,C,E,B,E,C,A,E,B,A,C,D,D,A,A,A,C,D,D,E,A,E,B,D,C,C,C,C,B,D,B,C,B,D,B,D,B,C,B,B,D,D,C,B,B,C,A,C,B,B,C,E,A,E,A,C,C,B,B,B
+B,2827794190,Ivan,Lee  ,C,B,B,A,A,E,A,C,E,C,E,D,A,A,D,D,A,B,A,E,D,A,E,A,B,B,A,E,C,D,A,E,D,D,A,A,D,E,A,B,A,B,D,E,C,A,B,D,B,C,D,B,B,A,D,A,E,A,E,D,B,D,E
+A,2831230839,Olive,Kimura  ,C,B,E,A,B,E,B,E,E,B,B,C,D,A,D,A,A,B,A,C,D,A,E,C,B,C,A,E,E,D,C,E,A,A,C,A,D,E,D,D,E,B,B,E,D,C,B,C,E,C,C,B,E,A,B,A,C,B,D,B,B,B,C
+B,2837815687,Miles,Bell  ,C,D,D,A,C,E,E,C,C,A,E,B,D,A,C,B,A,B,C,B,D,A,D,B,B,E,C,A,E,A,C,B,D,E,A,A,D,B,B,B,D,C,D,B,E,A,B,E,B,C,B,B,A,B,C,C,E,A,E,E,B,A,C
+A,2852226046,Zuri,Nunez  ,C,B,D,A,E,E,A,B,E,D,E,B,A,A,B,D,A,B,A,E,A,A,E,A,B,A,A,E,E,D,A,E,D,D,A,A,D,A,A,B,A,B,D,A,A,D,B,D,B,C,C,B,B,A,D,A,C,A,E,E,B,A,E
+B,2900739255,Naomi,Choi  ,C,B,D,A,D,E,A,B,E,A,E,B,A,A,D,D,A,B,A,E,D,A,C,A,B,E,A,C,A,D,A,E,D,D,A,A,D,E,A,B,A,B,B,E,C,A,B,D,D,C,A,B,B,A,D,A,E,D,E,D,B,B,E
+A,2918483168,Zeke,Kuznetsov  ,C,B,D,B,E,E,A,C,E,E,D,B,D,A,D,D,A,D,A,E,D,A,E,A,B,B,A,E,E,D,A,E,D,C,B,A,D,E,C,B,C,B,A,E,C,A,B,D,B,C,A,B,B,A,D,A,E,A,E,D,B,D,E
+B,2996873456,Gabe,Cruz  ,C,A,D,A,A,E,A,C,D,A,E,B,A,D,D,E,A,B,A,E,D,A,E,A,B,B,A,E,E,D,D,E,B,D,A,A,C,E,A,B,A,B,D,E,C,D,B,B,C,C,B,E,B,A,D,A,B,A,E,A,C,D,E
