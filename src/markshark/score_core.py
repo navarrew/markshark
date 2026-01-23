@@ -26,6 +26,7 @@ from .defaults import (
     ANNOTATION_DEFAULTS,
     AnnotationDefaults,
     SCORING_DEFAULTS,
+    RENDER_DEFAULTS,
     resolve_scored_pdf_path,
 )
 

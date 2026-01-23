@@ -26,6 +26,7 @@ import numpy as np
 from .tools.bubblemap_io import load_bublmap, Bubblemap
 from .tools.visualizer_tools import draw_layout_circles
 from .tools import io_pages as IO
+from .defaults import RENDER_DEFAULTS
 
 
 def _load_input_image(path: str, dpi: int = 300, pdf_renderer: str = "auto") -> np.ndarray:
