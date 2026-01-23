@@ -10,6 +10,8 @@ Each template consists of:
 """
 
 import os
+import json
+import shutil
 import yaml
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
@@ -65,10 +67,15 @@ class TemplateManager:
         
         self.templates_dir = Path(templates_dir).expanduser().resolve()
         self._templates_cache: Optional[List[BubbleSheetTemplate]] = None
-        
+        self._archived_templates_cache: Optional[List[BubbleSheetTemplate]] = None
+
         # Create templates directory if it doesn't exist
         self.templates_dir.mkdir(parents=True, exist_ok=True)
-        
+
+        # Archive directory and preferences file paths
+        self.archived_dir = self.templates_dir / ".archived"
+        self.preferences_file = self.templates_dir / ".preferences.json"
+
         logger.info(f"TemplateManager initialized with directory: {self.templates_dir}")
     
     @staticmethod
@@ -99,7 +106,48 @@ class TemplateManager:
         
         # Fall back to current directory
         return Path.cwd() / "templates"
-    
+
+    def _load_preferences(self) -> Dict[str, any]:
+        """
+        Load template preferences from .preferences.json file.
+
+        Returns:
+            Dictionary with preferences:
+            {
+                "order": ["template_id1", "template_id2", ...],
+                "favorites": ["template_id1", ...]
+            }
+        """
+        if not self.preferences_file.exists():
+            return {"order": [], "favorites": []}
+
+        try:
+            with open(self.preferences_file, 'r') as f:
+                prefs = json.load(f)
+                # Ensure required keys exist
+                if "order" not in prefs:
+                    prefs["order"] = []
+                if "favorites" not in prefs:
+                    prefs["favorites"] = []
+                return prefs
+        except Exception as e:
+            logger.warning(f"Error loading preferences from {self.preferences_file}: {e}")
+            return {"order": [], "favorites": []}
+
+    def _save_preferences(self, preferences: Dict[str, any]) -> None:
+        """
+        Save template preferences to .preferences.json file.
+
+        Args:
+            preferences: Dictionary with order and favorites lists
+        """
+        try:
+            with open(self.preferences_file, 'w') as f:
+                json.dump(preferences, f, indent=2)
+            logger.debug(f"Saved preferences to {self.preferences_file}")
+        except Exception as e:
+            logger.error(f"Error saving preferences to {self.preferences_file}: {e}")
+
     @staticmethod
     def _find_answer_layouts_in_yaml(yaml_data: dict) -> Tuple[bool, Optional[int], Optional[int]]:
         """
@@ -167,40 +215,26 @@ class TemplateManager:
         
         return False, None, None
     
-    def scan_templates(self, force_refresh: bool = False) -> List[BubbleSheetTemplate]:
+    def _scan_templates_in_dir(self, directory: Path) -> List[BubbleSheetTemplate]:
         """
-        Scan the templates directory and return a list of available templates.
-        
-        Directory structure expected:
-        templates/
-            template_name_1/
-                master_template.pdf
-                bubblemap.yaml
-            template_name_2/
-                master_template.pdf
-                bubblemap.yaml
-        
+        Internal method to scan templates in a specific directory.
+
         Args:
-            force_refresh: If True, ignore cache and rescan directory
-            
+            directory: Directory to scan for templates
+
         Returns:
             List of BubbleSheetTemplate objects
         """
-        if self._templates_cache is not None and not force_refresh:
-            return self._templates_cache
-        
         templates = []
-        
-        if not self.templates_dir.exists():
-            logger.warning(f"Templates directory does not exist: {self.templates_dir}")
-            self._templates_cache = templates
+
+        if not directory.exists():
             return templates
-        
+
         # Iterate through subdirectories
-        for subdir in sorted(self.templates_dir.iterdir()):
+        for subdir in sorted(directory.iterdir()):
             if not subdir.is_dir():
                 continue
-            
+
             # Skip hidden directories
             if subdir.name.startswith('.'):
                 continue
@@ -260,12 +294,115 @@ class TemplateManager:
                 num_questions=num_questions,
                 num_choices=num_choices,
             )
-            
+
+
             templates.append(template)
             logger.debug(f"Found template: {template}")
-        
+
+        return templates
+
+    def scan_templates(self, force_refresh: bool = False, apply_ordering: bool = True) -> List[BubbleSheetTemplate]:
+        """
+        Scan the templates directory and return a list of available (non-archived) templates.
+
+        Directory structure expected:
+        templates/
+            template_name_1/
+                master_template.pdf
+                bubblemap.yaml
+            template_name_2/
+                master_template.pdf
+                bubblemap.yaml
+            .archived/
+                old_template/
+                    master_template.pdf
+                    bubblemap.yaml
+
+        Args:
+            force_refresh: If True, ignore cache and rescan directory
+            apply_ordering: If True, apply custom ordering from preferences
+
+        Returns:
+            List of BubbleSheetTemplate objects (ordered by preferences if apply_ordering=True)
+        """
+        if self._templates_cache is not None and not force_refresh:
+            return self._templates_cache
+
+        if not self.templates_dir.exists():
+            logger.warning(f"Templates directory does not exist: {self.templates_dir}")
+            self._templates_cache = []
+            return []
+
+        templates = self._scan_templates_in_dir(self.templates_dir)
+
+        # Apply custom ordering if requested
+        if apply_ordering:
+            templates = self._apply_ordering(templates)
+
         self._templates_cache = templates
         return templates
+
+    def scan_archived_templates(self, force_refresh: bool = False) -> List[BubbleSheetTemplate]:
+        """
+        Scan the .archived directory and return a list of archived templates.
+
+        Args:
+            force_refresh: If True, ignore cache and rescan directory
+
+        Returns:
+            List of archived BubbleSheetTemplate objects
+        """
+        if self._archived_templates_cache is not None and not force_refresh:
+            return self._archived_templates_cache
+
+        if not self.archived_dir.exists():
+            self._archived_templates_cache = []
+            return []
+
+        templates = self._scan_templates_in_dir(self.archived_dir)
+        self._archived_templates_cache = templates
+        return templates
+
+    def _apply_ordering(self, templates: List[BubbleSheetTemplate]) -> List[BubbleSheetTemplate]:
+        """
+        Apply custom ordering to templates based on preferences.
+
+        Args:
+            templates: List of templates to order
+
+        Returns:
+            Ordered list of templates (favorites first, then custom order, then alphabetical)
+        """
+        preferences = self._load_preferences()
+        order = preferences.get("order", [])
+        favorites = preferences.get("favorites", [])
+
+        # Create dictionaries for fast lookup
+        template_dict = {t.template_id: t for t in templates}
+        ordered_templates = []
+        remaining_templates = set(template_dict.keys())
+
+        # First, add favorites in their specified order
+        for fav_id in favorites:
+            if fav_id in order:
+                # Favorite is in custom order, will be added in order section
+                continue
+            if fav_id in template_dict:
+                ordered_templates.append(template_dict[fav_id])
+                remaining_templates.discard(fav_id)
+
+        # Then, add templates in custom order
+        for template_id in order:
+            if template_id in template_dict:
+                ordered_templates.append(template_dict[template_id])
+                remaining_templates.discard(template_id)
+
+        # Finally, add remaining templates alphabetically
+        remaining_sorted = sorted(remaining_templates, key=lambda tid: template_dict[tid].display_name.lower())
+        for template_id in remaining_sorted:
+            ordered_templates.append(template_dict[template_id])
+
+        return ordered_templates
     
     def get_template(self, template_id: str) -> Optional[BubbleSheetTemplate]:
         """
@@ -410,6 +547,223 @@ class TemplateManager:
         
         is_valid = len(errors) == 0
         return is_valid, errors
+
+    def archive_template(self, template_id: str) -> bool:
+        """
+        Archive a template by moving it to the .archived directory.
+
+        Args:
+            template_id: The template identifier (directory name)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        template = self.get_template(template_id)
+        if not template:
+            logger.error(f"Template '{template_id}' not found")
+            return False
+
+        # Create archive directory if it doesn't exist
+        self.archived_dir.mkdir(parents=True, exist_ok=True)
+
+        # Source and destination paths
+        src_dir = self.templates_dir / template_id
+        dst_dir = self.archived_dir / template_id
+
+        # Check if destination already exists
+        if dst_dir.exists():
+            logger.error(f"Archived template '{template_id}' already exists in archive")
+            return False
+
+        try:
+            # Move the template directory
+            shutil.move(str(src_dir), str(dst_dir))
+            logger.info(f"Archived template '{template_id}' to {dst_dir}")
+
+            # Clear caches
+            self._templates_cache = None
+            self._archived_templates_cache = None
+
+            return True
+        except Exception as e:
+            logger.error(f"Error archiving template '{template_id}': {e}")
+            return False
+
+    def unarchive_template(self, template_id: str) -> bool:
+        """
+        Unarchive a template by moving it from .archived back to the main templates directory.
+
+        Args:
+            template_id: The template identifier (directory name)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        # Source and destination paths
+        src_dir = self.archived_dir / template_id
+        dst_dir = self.templates_dir / template_id
+
+        # Check if source exists
+        if not src_dir.exists():
+            logger.error(f"Archived template '{template_id}' not found in archive")
+            return False
+
+        # Check if destination already exists
+        if dst_dir.exists():
+            logger.error(f"Template '{template_id}' already exists in active templates")
+            return False
+
+        try:
+            # Move the template directory back
+            shutil.move(str(src_dir), str(dst_dir))
+            logger.info(f"Unarchived template '{template_id}' to {dst_dir}")
+
+            # Clear caches
+            self._templates_cache = None
+            self._archived_templates_cache = None
+
+            return True
+        except Exception as e:
+            logger.error(f"Error unarchiving template '{template_id}': {e}")
+            return False
+
+    def set_template_order(self, ordered_template_ids: List[str]) -> bool:
+        """
+        Set custom ordering for templates.
+
+        Args:
+            ordered_template_ids: List of template IDs in desired order
+
+        Returns:
+            True if successful, False otherwise
+        """
+        preferences = self._load_preferences()
+        preferences["order"] = ordered_template_ids
+
+        try:
+            self._save_preferences(preferences)
+            # Clear cache to force reordering on next scan
+            self._templates_cache = None
+            logger.info(f"Updated template order: {ordered_template_ids}")
+            return True
+        except Exception as e:
+            logger.error(f"Error setting template order: {e}")
+            return False
+
+    def toggle_favorite(self, template_id: str) -> bool:
+        """
+        Toggle a template as favorite (pinned to top).
+
+        Args:
+            template_id: The template identifier
+
+        Returns:
+            True if now favorited, False if unfavorited, None on error
+        """
+        preferences = self._load_preferences()
+        favorites = preferences.get("favorites", [])
+
+        if template_id in favorites:
+            favorites.remove(template_id)
+            is_favorite = False
+            logger.info(f"Removed '{template_id}' from favorites")
+        else:
+            favorites.append(template_id)
+            is_favorite = True
+            logger.info(f"Added '{template_id}' to favorites")
+
+        preferences["favorites"] = favorites
+
+        try:
+            self._save_preferences(preferences)
+            # Clear cache to force reordering on next scan
+            self._templates_cache = None
+            return is_favorite
+        except Exception as e:
+            logger.error(f"Error toggling favorite for '{template_id}': {e}")
+            return None
+
+    def is_favorite(self, template_id: str) -> bool:
+        """
+        Check if a template is marked as favorite.
+
+        Args:
+            template_id: The template identifier
+
+        Returns:
+            True if template is favorite, False otherwise
+        """
+        preferences = self._load_preferences()
+        favorites = preferences.get("favorites", [])
+        return template_id in favorites
+
+    def move_template_up(self, template_id: str) -> bool:
+        """
+        Move a template up one position in the custom order.
+
+        Args:
+            template_id: The template identifier
+
+        Returns:
+            True if successful, False otherwise
+        """
+        preferences = self._load_preferences()
+        order = preferences.get("order", [])
+
+        # If template is not in order yet, add all current templates to order first
+        if template_id not in order:
+            templates = self.scan_templates(apply_ordering=False)
+            order = [t.template_id for t in templates]
+
+        try:
+            idx = order.index(template_id)
+            if idx > 0:
+                order[idx], order[idx - 1] = order[idx - 1], order[idx]
+                preferences["order"] = order
+                self._save_preferences(preferences)
+                self._templates_cache = None
+                logger.debug(f"Moved template '{template_id}' up in order")
+                return True
+            else:
+                logger.debug(f"Template '{template_id}' is already at the top")
+                return False
+        except ValueError:
+            logger.error(f"Template '{template_id}' not found in order")
+            return False
+
+    def move_template_down(self, template_id: str) -> bool:
+        """
+        Move a template down one position in the custom order.
+
+        Args:
+            template_id: The template identifier
+
+        Returns:
+            True if successful, False otherwise
+        """
+        preferences = self._load_preferences()
+        order = preferences.get("order", [])
+
+        # If template is not in order yet, add all current templates to order first
+        if template_id not in order:
+            templates = self.scan_templates(apply_ordering=False)
+            order = [t.template_id for t in templates]
+
+        try:
+            idx = order.index(template_id)
+            if idx < len(order) - 1:
+                order[idx], order[idx + 1] = order[idx + 1], order[idx]
+                preferences["order"] = order
+                self._save_preferences(preferences)
+                self._templates_cache = None
+                logger.debug(f"Moved template '{template_id}' down in order")
+                return True
+            else:
+                logger.debug(f"Template '{template_id}' is already at the bottom")
+                return False
+        except ValueError:
+            logger.error(f"Template '{template_id}' not found in order")
+            return False
 
 
 # Convenience functions for CLI/GUI integration
