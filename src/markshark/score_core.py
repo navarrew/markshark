@@ -678,7 +678,8 @@ def score_pdf(
     key_txt: Optional[str] = None,
     out_annotated_dir: Optional[str] = None,
     out_pdf: Optional[str] = None,
-    dpi: int = 300,
+    dpi: int = RENDER_DEFAULTS.dpi,
+    pdf_quality: int = RENDER_DEFAULTS.pdf_quality,
     annotate_all_cells: bool = False,
     label_density: bool = False,
     pdf_renderer: str = "auto",
@@ -1245,7 +1246,7 @@ def score_pdf(
         if pdf_writer is not None:
             pdf_writer.close(save=True)
         elif annotated_pages:
-            IO.save_images_as_pdf(annotated_pages, out_pdf_path, dpi=dpi)
+            IO.save_images_as_pdf(annotated_pages, out_pdf_path, dpi=dpi, quality=pdf_quality)
 
     # ==================== WRITE GROUPED CSV + STATS ====================
     # Write CSV grouped by version:
@@ -1401,8 +1402,8 @@ def score_pdf(
                 review_writer.add_page(img)
             review_writer.close(save=True)
         except Exception:
-            # Fallback to PIL-based saving
-            IO.save_images_as_pdf(review_pages, review_pdf, dpi=dpi)
+            # Fallback to PyMuPDF-based saving
+            IO.save_images_as_pdf(review_pages, review_pdf, dpi=dpi, quality=pdf_quality)
         
         print(f"[info] Wrote review PDF with {len(review_pages)} flagged pages to {review_pdf}", file=__import__('sys').stderr)
     elif review_pdf and not flagged_page_images:

@@ -29,6 +29,7 @@ def align_pdf_scans(
     template: str,
     out_pdf: str = "aligned_scans.pdf",
     dpi: int = RENDER_DEFAULTS.dpi,
+    pdf_quality: int = RENDER_DEFAULTS.pdf_quality,
     pdf_renderer: str = "auto",
     template_page: int = 1,  # Deprecated for multi-page, kept for backward compat
     estimator_method: str = EST_DEFAULTS.estimator_method,
@@ -141,7 +142,7 @@ def align_pdf_scans(
 
     # Write outputs
     if args.out and aligned_pages:
-        IO.save_images_as_pdf(aligned_pages, args.out, dpi=args.dpi)
+        IO.save_images_as_pdf(aligned_pages, args.out, dpi=args.dpi, quality=pdf_quality)
 
     return out_pdf
 

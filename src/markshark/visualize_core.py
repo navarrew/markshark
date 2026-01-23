@@ -48,7 +48,8 @@ def overlay_bublmap(
     bublmap_path: str,
     input_path: str,
     out_image: str,
-    dpi: int = 300,
+    dpi: int = RENDER_DEFAULTS.dpi,
+    pdf_quality: int = RENDER_DEFAULTS.pdf_quality,
     color: Tuple[int, int, int] = (0, 255, 0),
     thickness: int = 2,
     pdf_renderer: str = "auto",  # options: 'auto', 'fitz', or 'pdf2image'
@@ -86,7 +87,7 @@ def overlay_bublmap(
         out_p.parent.mkdir(parents=True, exist_ok=True)
 
         if out_p.suffix.lower() == ".pdf":
-            IO.save_images_as_pdf([img], str(out_p), dpi=dpi)
+            IO.save_images_as_pdf([img], str(out_p), dpi=dpi, quality=pdf_quality)
             return str(out_p)
 
         if not cv2.imwrite(str(out_p), img):
@@ -141,7 +142,7 @@ def overlay_bublmap(
         out_p.parent.mkdir(parents=True, exist_ok=True)
 
         if out_p.suffix.lower() == ".pdf":
-            IO.save_images_as_pdf(overlaid_pages, str(out_p), dpi=dpi)
+            IO.save_images_as_pdf(overlaid_pages, str(out_p), dpi=dpi, quality=pdf_quality)
             print(f"[info] Saved {num_pages}-page visualization to {out_p}")
             return str(out_p)
         

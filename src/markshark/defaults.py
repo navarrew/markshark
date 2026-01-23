@@ -163,10 +163,11 @@ def apply_match_overrides(**kwargs) -> MatchParams:
 # ---------------------------
 @dataclass(frozen=True)
 class RenderParams:
-    """Rendering controls for intermediate images."""
-    dpi: int = 300
+    """Rendering controls for intermediate images and PDF output."""
+    dpi: int = 150                          # DPI for rendering (150 is good balance of quality/size)
     image_format: Literal["png", "jpg"] = "png"
     jpeg_quality: int = 85                  # if image_format='jpg'
+    pdf_quality: int = 85                   # JPEG quality for PDF compression (1-100, higher=better quality)
     keep_intermediates: bool = False        # store pre/post align debug layers
 
 RENDER_DEFAULTS = RenderParams()
