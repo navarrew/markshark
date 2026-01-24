@@ -33,6 +33,7 @@ dependencies = [
   "pyyaml",
   "openpyxl>=3.0",
   "rapidfuzz>=3.0",
+  "streamlit-antd-components>=0.3.2",
 ]
 
 [project.scripts]

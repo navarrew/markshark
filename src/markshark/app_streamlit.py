@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Optional, List
 
 import streamlit as st
+import streamlit_antd_components as sac
 import yaml  # For template creation
+import platform
 
 # Optional, pull defaults from MarkShark so GUI matches CLI defaults.
 try:
@@ -38,10 +40,15 @@ try:
         get_project_info,
         get_next_run_number,
     )
+    from markshark.preferences import (
+        get_preference,
+        set_preference,
+    )
 except Exception:  # pragma: no cover
     SCORING_DEFAULTS = FEAT_DEFAULTS = MATCH_DEFAULTS = EST_DEFAULTS = ALIGN_DEFAULTS = RENDER_DEFAULTS = TEMPLATE_DEFAULTS = None
     TemplateManager = BubbleSheetTemplate = None
     sanitize_project_name = create_project_structure = create_run_directory = find_projects = get_project_info = get_next_run_number = None
+    get_preference = set_preference = None
 
 def _dflt(obj, attr: str, fallback):
     """Best-effort defaults helper when markshark.defaults is unavailable."""
@@ -52,177 +59,345 @@ def _dflt(obj, attr: str, fallback):
 # --------------------- Working directory handling ---------------------
 WORKDIR: Path | None = None
 
-def _safe_list_subdirs(p: Path, max_entries: int = 300) -> list[Path]:
-    try:
-        subdirs = [x for x in p.iterdir() if x.is_dir()]
-        subdirs.sort(key=lambda x: x.name.lower())
-        return subdirs[:max_entries]
-    except Exception:
+
+def _get_known_folder(name: str) -> Path | None:
+    """Get platform-specific known folder path (cross-platform compatible)."""
+    home = Path.home()
+    candidate = home / name
+
+    # On Windows, also check for OneDrive-redirected folders
+    if platform.system() == "Windows":
+        onedrive_candidate = home / "OneDrive" / name
+        if onedrive_candidate.exists():
+            return onedrive_candidate
+
+    return candidate if candidate.exists() else None
+
+
+def _build_folder_tree(base_path: Path, max_depth: int = 2, current_depth: int = 0) -> list:
+    """
+    Recursively build tree items from directory structure for sac.tree().
+
+    Returns list of sac.TreeItem objects representing the folder hierarchy.
+    Skips macOS protected directories to avoid privacy permission prompts.
+    """
+    if current_depth >= max_depth:
         return []
 
-def _init_workdir() -> Path:
-    global WORKDIR
-    default_dir = Path(os.getcwd()).expanduser()
+    # macOS protected directories that trigger permission prompts
+    MACOS_PROTECTED = {
+        "Music", "Movies", "Pictures", "Photos", "Library",
+        "Mail", "Messages", "Contacts", "Calendars",
+        "Application Support", "Caches",
+    }
 
+    items = []
+    try:
+        subdirs = sorted(
+            [
+                d for d in base_path.iterdir()
+                if d.is_dir()
+                and not d.name.startswith(".")
+                and d.name not in MACOS_PROTECTED
+            ],
+            key=lambda x: x.name.lower()
+        )[:25]  # Limit for performance
+
+        for subdir in subdirs:
+            # Only recurse if we haven't hit max depth
+            children = []
+            if current_depth < max_depth - 1:
+                children = _build_folder_tree(subdir, max_depth, current_depth + 1)
+
+            items.append(sac.TreeItem(
+                label=subdir.name,
+                icon="folder",
+                children=children if children else None,
+            ))
+    except (PermissionError, OSError):
+        pass
+
+    return items
+
+
+def _init_workdir() -> Path:
+    """
+    Initialize and render the project + working directory picker in the sidebar.
+
+    Uses streamlit-antd-components for a modern, clean UI with:
+    - Project selection first (most common action)
+    - Persistent preferences for default working directory
+    - Segmented quick-location buttons
+    - Interactive folder tree (no page reloads on expand/collapse)
+    """
+    global WORKDIR
+
+    # Load saved preferences
+    saved_workdir = get_preference("default_workdir") if get_preference else None
+    saved_project = get_preference("last_project") if get_preference else None
+
+    # Determine default directory (preference > cwd)
+    if saved_workdir and Path(saved_workdir).exists():
+        default_dir = Path(saved_workdir)
+    else:
+        default_dir = Path(os.getcwd()).expanduser()
+
+    # Initialize session state
     if "workdir" not in st.session_state:
         st.session_state["workdir"] = str(default_dir)
+    if "tree_base" not in st.session_state:
+        st.session_state["tree_base"] = str(default_dir)
+    if "project_name" not in st.session_state:
+        st.session_state["project_name"] = saved_project or ""
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Working directory")
-
-    # Text input with better help text
-    dir_str = st.sidebar.text_input(
-        "Working directory path",
-        value=st.session_state["workdir"],
-        help="💡 Tip: Copy/paste a path, or use the folder browser below",
-    )
-    if dir_str:
-        st.session_state["workdir"] = dir_str
-
-    # Simplified browser with common locations
-    with st.sidebar.expander("📁 Browse for folder", expanded=False):
-        # Quick access to common locations
-        st.caption("**Quick locations:**")
-        col1, col2 = st.columns(2)
-        
-        if col1.button("🏠 Home", use_container_width=True):
-            st.session_state["workdir"] = str(Path.home())
-            st.rerun()
-        
-        if col2.button("💼 Desktop", use_container_width=True):
-            desktop = Path.home() / "Desktop"
-            if desktop.exists():
-                st.session_state["workdir"] = str(desktop)
-                st.rerun()
-        
-        col3, col4 = st.columns(2)
-        
-        if col3.button("📄 Documents", use_container_width=True):
-            docs = Path.home() / "Documents"
-            if docs.exists():
-                st.session_state["workdir"] = str(docs)
-                st.rerun()
-        
-        if col4.button("⬇️ Downloads", use_container_width=True):
-            downloads = Path.home() / "Downloads"
-            if downloads.exists():
-                st.session_state["workdir"] = str(downloads)
-                st.rerun()
-        
-        st.divider()
-        
-        # Current location browser
-        if "workdir_browse_cursor" not in st.session_state:
-            st.session_state["workdir_browse_cursor"] = st.session_state["workdir"]
-        
-        cursor = Path(st.session_state["workdir_browse_cursor"]).expanduser()
-        
-        if not cursor.exists() or not cursor.is_dir():
-            cursor = default_dir
-            st.session_state["workdir_browse_cursor"] = str(cursor)
-        
-        st.caption(f"**Current location:**")
-        st.code(str(cursor), language=None)
-        
-        # Navigation buttons
-        cols = st.columns(2)
-        if cols[0].button("⬆️ Up one level", use_container_width=True):
-            st.session_state["workdir_browse_cursor"] = str(cursor.parent)
-            st.rerun()
-        
-        if cols[1].button("✅ Use this folder", use_container_width=True, type="primary"):
-            st.session_state["workdir"] = str(cursor)
-            st.rerun()
-        
-        # Subdirectories list
-        subdirs = _safe_list_subdirs(cursor) or []
-        subdirs = [d for d in subdirs if not d.name.startswith(".")]
-        if subdirs:
-            st.caption("**Subfolders:**")
-            for subdir in subdirs[:15]:  # Limit to 10 for cleaner UI
-                
-                if st.button(f"📁 {subdir.name}", use_container_width=True, key=f"nav_{subdir.name}"):
-                    st.session_state["workdir_browse_cursor"] = str(subdir)
-                    st.rerun()
-            
-            if len(subdirs) > 15:
-                st.caption(f"... and {len(subdirs) - 15} more folders")
-        else:
-            st.info("No subfolders here")
-
-    # Validation
+    # We need WORKDIR set before project section can reference it
     typed_path = Path(st.session_state["workdir"]).expanduser()
-    if not typed_path.exists():
-        st.sidebar.warning("⚠️ This folder doesn't exist yet. It will be created when needed.")
-    elif not typed_path.is_dir():
-        st.sidebar.error("❌ This path is not a folder!")
-
     WORKDIR = typed_path
     WORKDIR.mkdir(parents=True, exist_ok=True)
 
-    st.sidebar.success(f"✅ Using: `{WORKDIR.name}`")
-
-    # --------------------- Project Management ---------------------
     st.sidebar.markdown("---")
-    st.sidebar.subheader("Current Project")
 
-    # Initialize project name in session state
-    if "project_name" not in st.session_state:
-        st.session_state["project_name"] = ""
+    # ===================== PROJECT SECTION (First!) =====================
+    st.sidebar.markdown("##### Project")
 
-    # Project name input
-    project_input = st.sidebar.text_input(
-        "Project name (optional)",
-        value=st.session_state["project_name"],
-        placeholder="e.g., FINAL EXAM BIO101 2025",
-        help="Give your project a name to organize input/output files. Leave blank to use temporary directories.",
-    )
+    with st.sidebar:
+        # Project name input
+        project_input = st.text_input(
+            "Project name",
+            value=st.session_state["project_name"],
+            placeholder="e.g., BIO101 Final Exam",
+            label_visibility="collapsed",
+            key="project_input",
+        )
 
-    if project_input != st.session_state["project_name"]:
-        st.session_state["project_name"] = project_input
+        if project_input != st.session_state["project_name"]:
+            st.session_state["project_name"] = project_input
+            # Save to preferences
+            if set_preference:
+                set_preference("last_project", project_input)
 
-    # Show project info if name is set
-    if st.session_state["project_name"].strip():
-        sanitized = sanitize_project_name(st.session_state["project_name"]) if sanitize_project_name else st.session_state["project_name"]
-        st.sidebar.caption(f"📁 Folder: `{sanitized}`")
+        # Show project status
+        if st.session_state["project_name"].strip():
+            sanitized = sanitize_project_name(st.session_state["project_name"]) if sanitize_project_name else st.session_state["project_name"]
+            project_dir = WORKDIR / sanitized
 
-        # Check if project exists
-        project_dir = WORKDIR / sanitized
-        if project_dir.exists() and get_project_info:
-            info = get_project_info(project_dir)
-            if info["num_runs"] > 0:
-                st.sidebar.caption(f"✓ Existing project ({info['num_runs']} run{'s' if info['num_runs'] > 1 else ''})")
+            if project_dir.exists() and get_project_info:
+                info = get_project_info(project_dir)
+                run_text = f"{info['num_runs']} run{'s' if info['num_runs'] != 1 else ''}" if info['num_runs'] > 0 else "No runs yet"
+                sac.alert(
+                    label=sanitized,
+                    description=run_text,
+                    icon="folder2",
+                    color="info",
+                    size="sm",
+                )
             else:
-                st.sidebar.caption("✓ Project folder exists")
+                sac.alert(
+                    label=sanitized,
+                    description="New project",
+                    icon="folder-plus",
+                    color="warning",
+                    size="sm",
+                )
         else:
-            st.sidebar.caption("⚠️ New project (will be created)")
-    else:
-        st.sidebar.caption("💡 Using temporary directories")
+            st.caption("No project — using temp directories")
 
-    # Project browser/switcher
-    if find_projects:
-        with st.sidebar.expander("📂 Recent Projects", expanded=False):
+        # Recent projects browser
+        if find_projects:
             projects = find_projects(WORKDIR)
 
             if projects:
-                st.caption(f"Found {len(projects)} project(s):")
-                for proj in projects[:10]:  # Show max 10
+                st.caption("**Recent projects:**")
+
+                # Build project items for tree display
+                project_items = []
+                for proj in projects[:8]:
                     proj_name = proj["name"]
                     num_runs = proj["num_runs"]
+                    tag = sac.Tag(f"{num_runs} runs", color="blue") if num_runs > 0 else None
+                    project_items.append(sac.TreeItem(
+                        label=proj_name.replace("_", " "),
+                        icon="folder2",
+                        tag=tag,
+                    ))
 
-                    # Button to load this project
-                    button_label = f"📁 {proj_name}"
-                    if num_runs > 0:
-                        button_label += f" ({num_runs} run{'s' if num_runs > 1 else ''})"
+                selected_project = sac.tree(
+                    items=project_items,
+                    icon="archive",
+                    size="sm",
+                    height=150 if len(projects) > 3 else None,
+                    checkbox=False,
+                    return_index=False,
+                    key="project_tree",
+                )
 
-                    if st.button(button_label, key=f"proj_{proj_name}", use_container_width=True):
-                        st.session_state["project_name"] = proj_name.replace("_", " ")
-                        st.rerun()
+                if selected_project:
+                    proj_name = selected_project[-1] if isinstance(selected_project, list) else selected_project
+                    if proj_name != st.session_state["project_name"]:
+                        st.session_state["project_name"] = proj_name
+                        if set_preference:
+                            set_preference("last_project", proj_name)
 
-                if len(projects) > 10:
-                    st.caption(f"... and {len(projects) - 10} more")
-            else:
-                st.info("No projects found. Create one by entering a project name above.")
+    # ===================== WORKING DIRECTORY SECTION =====================
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("##### Working Directory")
+
+    # Build quick locations (only show ones that exist)
+    quick_locations = []
+    location_paths = {}
+
+    home_path = Path.home()
+    quick_locations.append(sac.SegmentedItem(label="Home", icon="house"))
+    location_paths["Home"] = home_path
+
+    desktop = _get_known_folder("Desktop")
+    if desktop:
+        quick_locations.append(sac.SegmentedItem(label="Desktop", icon="display"))
+        location_paths["Desktop"] = desktop
+
+    docs = _get_known_folder("Documents")
+    if docs:
+        quick_locations.append(sac.SegmentedItem(label="Documents", icon="file-earmark-text"))
+        location_paths["Documents"] = docs
+
+    downloads = _get_known_folder("Downloads")
+    if downloads:
+        quick_locations.append(sac.SegmentedItem(label="Downloads", icon="download"))
+        location_paths["Downloads"] = downloads
+
+    # Segmented control for quick locations
+    with st.sidebar:
+        selected_location = sac.segmented(
+            items=quick_locations,
+            size="sm",
+            radius="lg",
+            color="blue",
+            use_container_width=True,
+            key="quick_location",
+        )
+
+    # Update tree base when quick location changes
+    if selected_location and selected_location in location_paths:
+        new_base = str(location_paths[selected_location])
+        if new_base != st.session_state["tree_base"]:
+            st.session_state["tree_base"] = new_base
+
+    # Current tree base path
+    tree_base = Path(st.session_state["tree_base"])
+    if not tree_base.exists():
+        tree_base = Path.home()
+        st.session_state["tree_base"] = str(tree_base)
+
+    # Build folder tree
+    tree_items = _build_folder_tree(tree_base, max_depth=3)
+
+    # Show current selection and path input
+    with st.sidebar:
+        # Compact path display with edit capability
+        current_path = st.text_input(
+            "Path",
+            value=st.session_state["workdir"],
+            key="workdir_input",
+            label_visibility="collapsed",
+            placeholder="Enter or paste a path...",
+        )
+        if current_path != st.session_state["workdir"]:
+            st.session_state["workdir"] = current_path
+            # Update WORKDIR immediately
+            WORKDIR = Path(current_path).expanduser()
+            WORKDIR.mkdir(parents=True, exist_ok=True)
+
+        # Folder tree browser
+        if tree_items:
+            st.caption(f"Browse from: **{tree_base.name}/**")
+            selected_folders = sac.tree(
+                items=tree_items,
+                icon="folder2-open",
+                open_all=False,
+                show_line=True,
+                size="sm",
+                height=200,
+                checkbox=False,
+                return_index=False,
+                key="folder_tree",
+            )
+
+            # When user selects a folder in the tree
+            if selected_folders:
+                # Reconstruct full path from selection
+                selected_name = selected_folders[-1] if isinstance(selected_folders, list) else selected_folders
+
+                # Search for the actual path (handles nested selections)
+                def find_path(base: Path, name: str, depth: int = 3) -> Path | None:
+                    if depth <= 0:
+                        return None
+                    try:
+                        for item in base.iterdir():
+                            if item.is_dir() and item.name == name:
+                                return item
+                            if item.is_dir() and not item.name.startswith("."):
+                                found = find_path(item, name, depth - 1)
+                                if found:
+                                    return found
+                    except (PermissionError, OSError):
+                        pass
+                    return None
+
+                found_path = find_path(tree_base, selected_name)
+                if found_path:
+                    st.session_state["workdir"] = str(found_path)
+                    WORKDIR = found_path
+        else:
+            st.info("No accessible subfolders")
+
+        # Action buttons row
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📂 Use this", use_container_width=True, type="primary", key="use_tree_base"):
+                st.session_state["workdir"] = st.session_state["tree_base"]
+                WORKDIR = Path(st.session_state["tree_base"])
+
+        with col2:
+            if st.button("💾 Set default", use_container_width=True, key="save_default"):
+                if set_preference:
+                    set_preference("default_workdir", st.session_state["workdir"])
+                    st.toast("Default directory saved!", icon="✅")
+
+    # Final validation and status display
+    typed_path = Path(st.session_state["workdir"]).expanduser()
+    WORKDIR = typed_path
+    WORKDIR.mkdir(parents=True, exist_ok=True)
+
+    with st.sidebar:
+        if not typed_path.exists():
+            sac.alert(
+                label="Folder will be created",
+                description=typed_path.name,
+                icon="folder-plus",
+                color="warning",
+                size="sm",
+            )
+        elif not typed_path.is_dir():
+            sac.alert(
+                label="Not a folder",
+                description="Please select a directory",
+                icon="exclamation-triangle",
+                color="error",
+                size="sm",
+            )
+        else:
+            # Show if this is the saved default
+            is_default = saved_workdir and str(typed_path) == saved_workdir
+            desc = str(typed_path.parent)
+            if is_default:
+                desc += " ⭐"
+            sac.alert(
+                label=typed_path.name,
+                description=desc,
+                icon="folder-check",
+                color="success",
+                size="sm",
+            )
 
     return WORKDIR
     

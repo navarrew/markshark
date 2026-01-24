@@ -243,6 +243,22 @@ def apply_template_overrides(**kwargs) -> TemplateDefaults:
 
 
 # ---------------------------
+# GUI Preferences (persistent user settings)
+# ---------------------------
+@dataclass(frozen=True)
+class GUIPreferences:
+    """User preferences for the Streamlit GUI, persisted to disk."""
+    default_workdir: Optional[str] = None  # Default working directory path
+    last_project: Optional[str] = None     # Last used project name
+    remember_workdir: bool = True          # Whether to remember working directory
+
+GUI_PREFERENCES = GUIPreferences()
+
+def apply_gui_preferences_overrides(**kwargs) -> GUIPreferences:
+    return _dc_replace(GUI_PREFERENCES, **kwargs)
+
+
+# ---------------------------
 # Convenience: compile all knobs into a single object if desired
 # ---------------------------
 @dataclass(frozen=True)
@@ -260,8 +276,8 @@ ALL_DEFAULTS = AllDefaults()
 
 
 __all__ = [
-    "ScoringDefaults", "AlignDefaults", "EstParams", "FeatureParams", "MatchParams", "RenderParams", "AllDefaults", "AnnotationDefaults", "TemplateDefaults",
-    "SCORING_DEFAULTS", "ALIGN_DEFAULTS", "EST_DEFAULTS", "FEAT_DEFAULTS", "MATCH_DEFAULTS", "RENDER_DEFAULTS", "ALL_DEFAULTS", "ANNOTATION_DEFAULTS", "TEMPLATE_DEFAULTS",
+    "ScoringDefaults", "AlignDefaults", "EstParams", "FeatureParams", "MatchParams", "RenderParams", "AllDefaults", "AnnotationDefaults", "TemplateDefaults", "GUIPreferences",
+    "SCORING_DEFAULTS", "ALIGN_DEFAULTS", "EST_DEFAULTS", "FEAT_DEFAULTS", "MATCH_DEFAULTS", "RENDER_DEFAULTS", "ALL_DEFAULTS", "ANNOTATION_DEFAULTS", "TEMPLATE_DEFAULTS", "GUI_PREFERENCES",
     "apply_scoring_overrides", "apply_align_overrides", "apply_est_overrides", "apply_feat_overrides", "apply_match_overrides", "apply_render_overrides",
-    "apply_annotation_overrides", "apply_template_overrides", "resolve_scored_pdf_path",
+    "apply_annotation_overrides", "apply_template_overrides", "apply_gui_preferences_overrides", "resolve_scored_pdf_path",
 ]
