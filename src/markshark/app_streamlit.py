@@ -556,6 +556,72 @@ def _zip_dir_to_bytes(dir_path: Path) -> bytes:
     buf.seek(0)
     return buf.read()
 
+def _template_selector_with_archive(key_prefix: str, label: str = "Select a pre-defined bubble sheet template"):
+    """
+    Unified template selector that shows active templates and optionally archived ones.
+
+    Args:
+        key_prefix: Unique prefix for Streamlit widget keys
+        label: Label for the selectbox
+
+    Returns:
+        Selected BubbleSheetTemplate or None
+    """
+    if template_manager is None:
+        return None
+
+    # Get active and archived templates
+    active_templates = template_manager.scan_templates()
+    archived_templates = template_manager.scan_archived_templates()
+
+    template_choice = None
+
+    if active_templates:
+        # Add favorite indicators
+        template_options = []
+        for t in active_templates:
+            is_fav = template_manager.is_favorite(t.template_id)
+            prefix = "⭐ " if is_fav else ""
+            template_options.append(f"{prefix}{str(t)}")
+
+        template_names = ["(none selected)"] + template_options
+        selected_name = st.selectbox(label, template_names, key=f"{key_prefix}_active_select")
+
+        if selected_name != "(none selected)":
+            # Remove star prefix if present
+            display_str = selected_name.replace("⭐ ", "")
+            # Find the selected template
+            for t in active_templates:
+                if str(t) == display_str:
+                    template_choice = t
+                    break
+
+            if template_choice:
+                st.success(f"Using template: **{template_choice.display_name}**")
+                if template_choice.num_questions:
+                    st.caption(f"Questions: {template_choice.num_questions} | Choices: {template_choice.num_choices or 'N/A'}")
+    else:
+        st.info("No active templates found. Check archived templates below or upload custom files.")
+
+    # Show archived templates in an expander
+    if archived_templates:
+        with st.expander(f"📦 Archived Templates ({len(archived_templates)})", expanded=False):
+            st.caption("These templates have been archived. Select one to use it or unarchive from Template Manager.")
+            archived_names = ["(none selected)"] + [str(t) for t in archived_templates]
+            selected_archived = st.selectbox("Select archived template", archived_names, key=f"{key_prefix}_archived_select")
+
+            if selected_archived != "(none selected)":
+                # Find the selected archived template
+                for t in archived_templates:
+                    if str(t) == selected_archived:
+                        template_choice = t
+                        st.info(f"Using archived template: **{t.display_name}**")
+                        if t.num_questions:
+                            st.caption(f"Questions: {t.num_questions} | Choices: {t.num_choices or 'N/A'}")
+                        break
+
+    return template_choice
+
 # --------------------- Sidebar ---------------------
 # image_url = "https://github.com/navarrew/markshark/blob/main/images/shark.png" 
 # st.sidebar.image(image_url, caption="MarkShark Logo", use_column_width=True)
@@ -606,33 +672,12 @@ if page.startswith("0"):
     with colA:
         st.subheader("Inputs")
         # Template selection
+        template_choice = _template_selector_with_archive("quick_grade")
+        if template_choice:
+            st.caption("✓ Bubble grid alignment fallback enabled")
 
-        template_choice = None
         custom_template_pdf = None
         custom_bublmap = None
-
-        if template_manager is not None:
-            templates = template_manager.scan_templates()
-
-            if templates:
-                template_names = ["(none selected)"] + [str(t) for t in templates]
-                selected_name = st.selectbox("Select a pre-defined bubble sheet template", template_names)
-                
-                if selected_name != "(none selected)":
-                    # Find the selected template
-                    for t in templates:
-                        if str(t) == selected_name:
-                            template_choice = t
-                            break
-                    
-                    if template_choice:
-                        st.success(f"Using template: **{template_choice.display_name}**")
-                        if template_choice.num_questions:
-                            st.caption(f"Questions: {template_choice.num_questions} | Choices: {template_choice.num_choices or 'N/A'}")
-                        # NEW: Show bubble grid info
-                        st.caption("✓ Bubble grid alignment fallback enabled")
-            else:
-                st.info("No templates found. Upload custom files below or add templates to the templates directory.")
 
         scans = _tempfile_from_uploader("Upload your scanned answer sheets (PDF)", "quick_scans", types=("pdf",))
         key_txt = _tempfile_from_uploader("Upload your answer key (TXT)", "quick_key", types=("txt",))
@@ -916,28 +961,13 @@ elif page.startswith("1"):
     with colA:
         st.subheader("Inputs")
         # Template selection - either from library or custom upload
-        align_template_choice = None
+        align_template_choice = _template_selector_with_archive("align", "Select a pre-defined bubblesheet template")
+        if align_template_choice:
+            st.caption("✓ Fast alignment mode available (bubblemap included)")
+
         template = None
         align_bublmap = None
-        
-        if template_manager is not None:
-            templates = template_manager.scan_templates()
-            
-            if templates:
-                template_names = ["(none selected)"] + [str(t) for t in templates]
-                selected_template = st.selectbox("Select a pre-defined bubblesheet template", template_names, key="align_template_select")
-                
-                if selected_template != "(none selected)":
-                    for t in templates:
-                        if str(t) == selected_template:
-                            align_template_choice = t
-                            break
-                    
-                    if align_template_choice:
-                        st.success(f"Using template: **{align_template_choice.display_name}**")
-                        st.caption("✓ Fast alignment mode available (bubblemap included)")
-            else:
-                st.info("No templates found. Upload custom files below.")
+
         scans = _tempfile_from_uploader("Upload your raw student scans (PDF)", "align_scans", types=("pdf",))
         
 
@@ -1110,32 +1140,15 @@ elif page.startswith("2"):
     colA, colB = st.columns(2)
     with colA:
         st.subheader("Input Files")
-        
+
         # Template/Bubblemap selection
-        
-        score_template_choice = None
+        score_template_choice = _template_selector_with_archive("score", "Select template from dropdown menu")
+
         bublmap = None
-        
-        if template_manager is not None:
-            templates = template_manager.scan_templates()
-            
-            if templates:
-                template_names = ["(Upload custom bubblemap)"] + [str(t) for t in templates]
-                selected_template = st.selectbox("Select template from dropdown menu", template_names, key="score_template_select")
-                
-                if selected_template != "(Upload custom bubblemap)":
-                    for t in templates:
-                        if str(t) == selected_template:
-                            score_template_choice = t
-                            break
-                    
-                    if score_template_choice:
-                        st.success(f"Using bubblemap from: **{score_template_choice.display_name}**")
-            else:
-                st.info("No templates found. Upload custom bubblemap below.")
+
         aligned = _tempfile_from_uploader("Aligned scans PDF", "score_pdf", types=("pdf",))
         key_txt = _tempfile_from_uploader("Key TXT (optional)", "score_key", types=("txt",))
-        
+
         st.markdown("Upload bubblemap below if not using a predefined template")
         # Custom upload option
         if score_template_choice is None:
@@ -1540,24 +1553,33 @@ elif page.startswith("5"):
         st.error("Template manager not available. Please ensure markshark.template_manager is installed.")
     
     if template_manager:
-        # Refresh button
-        if st.button("🔄 Refresh Template List"):
-            template_manager._templates_cache = None
-            st.rerun()
-        
+        # Top controls
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            if st.button("🔄 Refresh Template List"):
+                template_manager._templates_cache = None
+                template_manager._archived_templates_cache = None
+                st.rerun()
+
         st.divider()
-        
-        # Display existing templates
+
+        # Display existing templates with management controls
         templates = template_manager.scan_templates(force_refresh=False)
-        
+        archived_templates = template_manager.scan_archived_templates(force_refresh=False)
+
         if templates:
-            st.subheader(f"Available Templates ({len(templates)})")
-            
-            for template in templates:
-                with st.expander(f"📋 {template.display_name}", expanded=False):
-                    col1, col2 = st.columns([2, 1])
-                    
-                    with col1:
+            st.subheader(f"📚 Active Templates ({len(templates)})")
+            st.caption("Templates shown in order below will appear in the same order in dropdown menus throughout the app.")
+
+            for idx, template in enumerate(templates):
+                is_fav = template_manager.is_favorite(template.template_id)
+                fav_icon = "⭐" if is_fav else "☆"
+
+                with st.expander(f"{fav_icon} {template.display_name}", expanded=False):
+                    # Template info
+                    info_col, actions_col = st.columns([2, 1])
+
+                    with info_col:
                         st.markdown(f"**Template ID:** `{template.template_id}`")
                         if template.description:
                             st.markdown(f"**Description:** {template.description}")
@@ -1565,11 +1587,11 @@ elif page.startswith("5"):
                             st.markdown(f"**Questions:** {template.num_questions}")
                         if template.num_choices:
                             st.markdown(f"**Choices per question:** {template.num_choices}")
-                        
+
                         st.markdown(f"**PDF:** `{template.template_pdf_path.name}`")
                         st.markdown(f"**YAML:** `{template.bubblemap_yaml_path.name}`")
-                    
-                    with col2:
+
+                    with actions_col:
                         # Validate template
                         is_valid, errors = template_manager.validate_template(template)
                         if is_valid:
@@ -1578,13 +1600,77 @@ elif page.startswith("5"):
                             st.error("❌ Invalid")
                             for error in errors:
                                 st.caption(f"• {error}")
-                    
-                    # Show full paths (use checkbox instead of nested expander)
+
+                    # Management controls
+                    st.markdown("**Manage Template:**")
+                    action_col1, action_col2, action_col3, action_col4, action_col5 = st.columns(5)
+
+                    with action_col1:
+                        if st.button(f"{'⭐ Unfav' if is_fav else '☆ Favorite'}", key=f"fav_{template.template_id}", use_container_width=True):
+                            template_manager.toggle_favorite(template.template_id)
+                            st.rerun()
+
+                    with action_col2:
+                        if st.button("⬆️ Up", key=f"up_{template.template_id}", disabled=(idx == 0), use_container_width=True):
+                            template_manager.move_template_up(template.template_id)
+                            st.rerun()
+
+                    with action_col3:
+                        if st.button("⬇️ Down", key=f"down_{template.template_id}", disabled=(idx == len(templates) - 1), use_container_width=True):
+                            template_manager.move_template_down(template.template_id)
+                            st.rerun()
+
+                    with action_col4:
+                        if st.button("📦 Archive", key=f"archive_{template.template_id}", use_container_width=True):
+                            if template_manager.archive_template(template.template_id):
+                                st.success(f"Archived {template.display_name}")
+                                st.rerun()
+                            else:
+                                st.error("Failed to archive template")
+
+                    with action_col5:
+                        pass  # Reserved for future actions
+
+                    # Show full paths
                     if st.checkbox("Show full paths", key=f"paths_{template.template_id}"):
                         st.code(str(template.template_pdf_path))
                         st.code(str(template.bubblemap_yaml_path))
         else:
-            st.warning("No templates found in the templates directory.")
+            st.warning("No active templates found in the templates directory.")
+
+        # Archived templates section
+        if archived_templates:
+            st.divider()
+            st.subheader(f"📦 Archived Templates ({len(archived_templates)})")
+            st.caption("These templates are hidden from dropdown menus but can be restored.")
+
+            for template in archived_templates:
+                with st.expander(f"📋 {template.display_name} (archived)", expanded=False):
+                    # Template info
+                    info_col, actions_col = st.columns([2, 1])
+
+                    with info_col:
+                        st.markdown(f"**Template ID:** `{template.template_id}`")
+                        if template.description:
+                            st.markdown(f"**Description:** {template.description}")
+                        if template.num_questions:
+                            st.markdown(f"**Questions:** {template.num_questions}")
+
+                    with actions_col:
+                        # Validate template
+                        is_valid, errors = template_manager.validate_template(template)
+                        if is_valid:
+                            st.success("✅ Valid")
+                        else:
+                            st.error("❌ Invalid")
+
+                    # Unarchive button
+                    if st.button(f"↩️ Restore to Active", key=f"unarchive_{template.template_id}"):
+                        if template_manager.unarchive_template(template.template_id):
+                            st.success(f"Restored {template.display_name}")
+                            st.rerun()
+                        else:
+                            st.error("Failed to restore template")
         
         st.divider()
         
