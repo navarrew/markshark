@@ -118,7 +118,7 @@ def create_project_structure(base_dir: Path, project_name: str) -> Path:
         ├── input/
         ├── aligned/
         ├── results/
-        └── config/
+        └── logs/
 
     Args:
         base_dir: Base working directory
@@ -133,7 +133,7 @@ def create_project_structure(base_dir: Path, project_name: str) -> Path:
     (project_dir / "input").mkdir(parents=True, exist_ok=True)
     (project_dir / "aligned").mkdir(parents=True, exist_ok=True)
     (project_dir / "results").mkdir(parents=True, exist_ok=True)
-    (project_dir / "config").mkdir(parents=True, exist_ok=True)
+    (project_dir / "logs").mkdir(parents=True, exist_ok=True)
 
     return project_dir
 
@@ -183,7 +183,7 @@ def find_projects(base_dir: Path) -> list[dict]:
     Find all project directories in the base directory.
 
     A project directory is identified by having the expected subdirectory
-    structure (input/, aligned/, results/, config/).
+    structure (input/, aligned/, results/, logs/).
 
     Args:
         base_dir: Base working directory to scan
@@ -201,7 +201,7 @@ def find_projects(base_dir: Path) -> list[dict]:
             continue
 
         # Check if it looks like a project (has expected subdirs)
-        required_subdirs = ["input", "aligned", "results", "config"]
+        required_subdirs = ["input", "aligned", "results", "logs"]
         has_all = all((item / subdir).exists() for subdir in required_subdirs)
 
         if has_all:
