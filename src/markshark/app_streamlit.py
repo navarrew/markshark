@@ -36,19 +36,26 @@ try:
         sanitize_project_name,
         create_project_structure,
         create_run_directory,
+        create_scored_directory,
         find_projects,
         get_project_info,
         get_next_run_number,
+        find_scored_runs,
+        get_report_path,
     )
-    from markshark.preferences import (
+    from markshark.user_preferences import (
         get_preference,
         set_preference,
+        add_recent_project,
+        add_recent_template,
+        get_recent_projects,
+        get_recent_templates,
     )
 except Exception:  # pragma: no cover
     SCORING_DEFAULTS = FEAT_DEFAULTS = MATCH_DEFAULTS = EST_DEFAULTS = ALIGN_DEFAULTS = RENDER_DEFAULTS = TEMPLATE_DEFAULTS = None
     TemplateManager = BubbleSheetTemplate = None
-    sanitize_project_name = create_project_structure = create_run_directory = find_projects = get_project_info = get_next_run_number = None
-    get_preference = set_preference = None
+    sanitize_project_name = create_project_structure = create_run_directory = create_scored_directory = find_projects = get_project_info = get_next_run_number = find_scored_runs = get_report_path = None
+    get_preference = set_preference = add_recent_project = add_recent_template = get_recent_projects = get_recent_templates = None
 
 def _dflt(obj, attr: str, fallback):
     """Best-effort defaults helper when markshark.defaults is unavailable."""
@@ -172,9 +179,9 @@ def _init_workdir() -> Path:
 
         if project_input != st.session_state["project_name"]:
             st.session_state["project_name"] = project_input
-            # Save to preferences
-            if set_preference:
-                set_preference("last_project", project_input)
+            # Save to preferences and add to recent projects
+            if add_recent_project and project_input.strip():
+                add_recent_project(project_input)
 
         # Show project status
         if st.session_state["project_name"].strip():
@@ -235,8 +242,8 @@ def _init_workdir() -> Path:
                     proj_name = selected_project[-1] if isinstance(selected_project, list) else selected_project
                     if proj_name != st.session_state["project_name"]:
                         st.session_state["project_name"] = proj_name
-                        if set_preference:
-                            set_preference("last_project", proj_name)
+                        if add_recent_project:
+                            add_recent_project(proj_name)
 
     # ===================== WORKING DIRECTORY SECTION =====================
     st.sidebar.markdown("---")
@@ -558,7 +565,10 @@ def _zip_dir_to_bytes(dir_path: Path) -> bytes:
 
 def _template_selector_with_archive(key_prefix: str, label: str = "Select a pre-defined bubble sheet template"):
     """
-    Unified template selector that shows active templates and optionally archived ones.
+    Template selector that shows active templates.
+
+    Archived templates are only accessible via the Template Manager or by
+    manually moving files out of the archived folder.
 
     Args:
         key_prefix: Unique prefix for Streamlit widget keys
@@ -570,10 +580,7 @@ def _template_selector_with_archive(key_prefix: str, label: str = "Select a pre-
     if template_manager is None:
         return None
 
-    # Get active and archived templates
     active_templates = template_manager.scan_templates()
-    archived_templates = template_manager.scan_archived_templates()
-
     template_choice = None
 
     if active_templates:
@@ -600,25 +607,11 @@ def _template_selector_with_archive(key_prefix: str, label: str = "Select a pre-
                 st.success(f"Using template: **{template_choice.display_name}**")
                 if template_choice.num_questions:
                     st.caption(f"Questions: {template_choice.num_questions} | Choices: {template_choice.num_choices or 'N/A'}")
+                # Track as recent template
+                if add_recent_template:
+                    add_recent_template(template_choice.template_id)
     else:
-        st.info("No active templates found. Check archived templates below or upload custom files.")
-
-    # Show archived templates in an expander
-    if archived_templates:
-        with st.expander(f"📦 Archived Templates ({len(archived_templates)})", expanded=False):
-            st.caption("These templates have been archived. Select one to use it or unarchive from Template Manager.")
-            archived_names = ["(none selected)"] + [str(t) for t in archived_templates]
-            selected_archived = st.selectbox("Select archived template", archived_names, key=f"{key_prefix}_archived_select")
-
-            if selected_archived != "(none selected)":
-                # Find the selected archived template
-                for t in archived_templates:
-                    if str(t) == selected_archived:
-                        template_choice = t
-                        st.info(f"Using archived template: **{t.display_name}**")
-                        if t.num_questions:
-                            st.caption(f"Questions: {t.num_questions} | Choices: {t.num_choices or 'N/A'}")
-                        break
+        st.info("No active templates found. Use Template Manager to unarchive templates or upload custom files.")
 
     return template_choice
 
@@ -695,15 +688,10 @@ if page.startswith("0"):
                 st.caption("✓ Bubble grid alignment fallback enabled")
     
     with colB:
-        st.subheader("Output file options")
-        
-        # Output names
-        out_csv_name = st.text_input("Results CSV name", value="quick_grade_results.csv")
-        out_pdf_name = st.text_input("Annotated PDF name", value="quick_grade_annotated.pdf")
+        st.subheader("Processing options")
+
         dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1,
                               help="150 DPI is usually sufficient for bubble sheets. Higher values are slower.")
-        
-        st.markdown("---")
         
         # Scoring options
 
@@ -723,8 +711,8 @@ if page.startswith("0"):
             st.markdown("**Flagging & Review**")
             generate_review_pdf = st.checkbox("Generate review PDF (flagged pages only)", value=True,
                                               help="Creates a PDF containing only pages with blank or ambiguous answers for manual review")
-            generate_flagged_csv = st.checkbox("Generate flagged items CSV", value=True,
-                                               help="Creates a CSV listing all flagged items (blank/multi answers) with student info")
+            generate_flagged_xlsx = st.checkbox("Generate flagged items XLSX", value=True,
+                                               help="Creates an Excel file listing flagged items with a column for corrections")
             include_stats = st.checkbox("Include basic statistics in CSV", value=True,
                                         help="Appends exam stats (mean, std, KR-20) and item stats (% correct, point-biserial) to the CSV. Requires answer key.")
         
@@ -769,12 +757,12 @@ if page.startswith("0"):
                 project_dir = create_project_structure(base, sanitized_name)
                 work_dir, run_label = create_run_directory(project_dir)
 
-                # Save input files to project/input/ for reference
+                # Save input files to project/input/ for reference (overwrite previous)
                 input_dir = project_dir / "input"
                 if scans:
-                    (input_dir / f"scans_{run_label}.pdf").write_bytes(scans.read_bytes())
+                    (input_dir / "scans.pdf").write_bytes(scans.read_bytes())
                 if key_txt:
-                    (input_dir / f"answer_key_{run_label}.txt").write_bytes(key_txt.read_bytes())
+                    (input_dir / "answer_key.txt").write_bytes(key_txt.read_bytes())
                 if template_choice:
                     # Save template reference
                     (project_dir / "logs" / "template_used.txt").write_text(f"{template_choice.template_id}\n{template_choice.display_name}")
@@ -846,15 +834,15 @@ if page.startswith("0"):
 
                 # Step 2: Score
                 quick_status.info("Step 2/2: Scoring aligned sheets...")
-                out_csv = work_dir / out_csv_name
-                out_pdf = work_dir / out_pdf_name
-                
+                out_csv = work_dir / "results.csv"
+                out_pdf = work_dir / "scored.pdf"
+
                 score_args = [
                     "score",
                     str(aligned_pdf),
                     "--bublmap", str(bublmap),
                     "--out-csv", str(out_csv),
-                    "--out-pdf", out_pdf_name,
+                    "--out-pdf", "scored.pdf",
                     "--dpi", str(int(dpi)),
                 ]
                 
@@ -883,13 +871,13 @@ if page.startswith("0"):
                 
                 # Flagging/review options
                 review_pdf_path = None
-                flagged_csv_path = None
+                flagged_xlsx_path = None
                 if generate_review_pdf:
                     review_pdf_path = work_dir / "for_review.pdf"
                     score_args += ["--review-pdf", str(review_pdf_path)]
-                if generate_flagged_csv:
-                    flagged_csv_path = work_dir / "flagged.csv"
-                    score_args += ["--flagged-csv", str(flagged_csv_path)]
+                if generate_flagged_xlsx:
+                    flagged_xlsx_path = work_dir / "flagged.xlsx"
+                    score_args += ["--flagged-xlsx", str(flagged_xlsx_path)]
                 
                 with st.spinner("Scoring sheets..."):
                     score_out = _run_cli(score_args)
@@ -910,24 +898,24 @@ if page.startswith("0"):
 
                 # Display results
                 st.success("Processing complete!")
-                
+
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    _download_file_button("📄 Download Results CSV", out_csv)
+                    _download_file_button("📄 Download results.csv", out_csv)
                 with col2:
-                    _download_file_button("📑 Download Annotated PDF", out_pdf)
+                    _download_file_button("📑 Download scored.pdf", out_pdf)
                 with col3:
-                    _download_file_button("📋 Download Aligned Scans", aligned_pdf)
+                    _download_file_button("📋 Download aligned.pdf", aligned_pdf)
                 
                 # Flagging downloads (if generated)
-                if review_pdf_path or flagged_csv_path:
+                if review_pdf_path or flagged_xlsx_path:
                     flag_col1, flag_col2 = st.columns(2)
                     with flag_col1:
                         if review_pdf_path and review_pdf_path.exists():
                             _download_file_button("🔍 Download Review PDF (flagged pages)", review_pdf_path)
                     with flag_col2:
-                        if flagged_csv_path and flagged_csv_path.exists():
-                            _download_file_button("⚠️ Download Flagged Items CSV", flagged_csv_path)
+                        if flagged_xlsx_path and flagged_xlsx_path.exists():
+                            _download_file_button("⚠️ Download Flagged Items XLSX", flagged_xlsx_path)
                 
                 # Stats info
                 if include_stats and key_txt:
@@ -1184,8 +1172,8 @@ elif page.startswith("2"):
         st.markdown("**Flagging & Review**")
         generate_review_pdf = st.checkbox("Generate review PDF (flagged pages only)", value=True,
                                           help="Creates a separate PDF with only pages containing blank/multi answers for manual review")
-        generate_flagged_csv = st.checkbox("Generate flagged items CSV", value=True,
-                                           help="Creates a CSV listing all blank/multi answers with student ID and question number")
+        generate_flagged_xlsx = st.checkbox("Generate flagged items XLSX", value=True,
+                                           help="Creates an Excel file listing flagged items with a column for corrections")
         st.markdown("---")
         st.markdown("**Statistics**")
         include_stats = st.checkbox("Include basic statistics in CSV", value=True,
@@ -1258,13 +1246,13 @@ elif page.startswith("2"):
             
             # Review/flagging options
             review_pdf_path = None
-            flagged_csv_path = None
+            flagged_xlsx_path = None
             if generate_review_pdf:
                 review_pdf_path = out_dir / "for_review.pdf"
                 args += ["--review-pdf", str(review_pdf_path)]
-            if generate_flagged_csv:
-                flagged_csv_path = out_dir / "flagged.csv"
-                args += ["--flagged-csv", str(flagged_csv_path)]
+            if generate_flagged_xlsx:
+                flagged_xlsx_path = out_dir / "flagged.xlsx"
+                args += ["--flagged-xlsx", str(flagged_xlsx_path)]
 
             try:
                 with st.spinner("Scoring via CLI..."):
@@ -1287,10 +1275,10 @@ elif page.startswith("2"):
                 # If review PDF was created, offer download
                 if review_pdf_path and review_pdf_path.exists():
                     _download_file_button("📋 Download Review PDF (flagged pages)", review_pdf_path)
-                
-                # If flagged CSV was created, offer download
-                if flagged_csv_path and flagged_csv_path.exists():
-                    _download_file_button("⚠️ Download Flagged Items CSV", flagged_csv_path)
+
+                # If flagged XLSX was created, offer download
+                if flagged_xlsx_path and flagged_xlsx_path.exists():
+                    _download_file_button("⚠️ Download Flagged Items XLSX", flagged_xlsx_path)
                 
                 # If annotated dir was created, offer zip download
                 if out_ann_dir.strip():
@@ -1321,15 +1309,63 @@ elif page.startswith("3"):
 
     st.divider()
 
+    # Check if we're in project mode
+    base = WORKDIR or Path(os.getcwd())
+    project_name = st.session_state.get("project_name", "").strip()
+    use_project_mode = bool(project_name and sanitize_project_name and find_scored_runs and get_report_path)
+
     colA, colB = st.columns(2)
 
-    with colA:
-        st.subheader("Required Input")
-        results_csv = _tempfile_from_uploader("Results CSV (from score)", "report_csv", types=("csv",))
+    # Track selected scored run
+    selected_run = None
+    selected_csv_path = None
 
-        # NEW: Show hint about where report will be saved
-        if results_csv and st.session_state.get("project_name", "").strip():
-            st.caption("💡 Tip: Report will be saved to the most recent run folder in your project")
+    with colA:
+        st.subheader("Select Scored Results")
+
+        if use_project_mode:
+            sanitized_name = sanitize_project_name(project_name)
+            project_dir = base / sanitized_name
+
+            if project_dir.exists() and find_scored_runs:
+                scored_runs = find_scored_runs(project_dir)
+                runs_with_csv = [r for r in scored_runs if r["has_csv"]]
+
+                if runs_with_csv:
+                    # Build dropdown options (most recent first)
+                    run_options = []
+                    for run in runs_with_csv:
+                        ts = run["timestamp"]
+                        if ts:
+                            date_str = ts.strftime("%Y-%m-%d %H:%M")
+                        else:
+                            date_str = "Unknown date"
+                        run_options.append(f"{run['label']} ({date_str})")
+
+                    selected_idx = st.selectbox(
+                        "Choose a scoring run",
+                        range(len(run_options)),
+                        format_func=lambda i: run_options[i],
+                        key="report_run_select",
+                    )
+
+                    selected_run = runs_with_csv[selected_idx]
+                    selected_csv_path = selected_run.get("csv_path") or (selected_run["path"] / "results.csv")
+
+                    st.success(f"Using: `{selected_run['label']}`")
+                    st.caption(f"📁 {selected_csv_path}")
+                else:
+                    st.warning("No scored results found in this project. Run scoring first.")
+            else:
+                st.info("Project directory not found. Score some exams first, or upload a CSV below.")
+
+        # Always allow manual CSV upload as fallback
+        st.markdown("**Or upload a CSV manually:**")
+        uploaded_csv = _tempfile_from_uploader("Results CSV (from score)", "report_csv", types=("csv",))
+        if uploaded_csv:
+            selected_csv_path = uploaded_csv
+            selected_run = None  # Manual upload overrides project selection
+            st.info("Using uploaded CSV file")
 
     with colB:
         st.subheader("Optional Roster")
@@ -1341,6 +1377,17 @@ elif page.startswith("3"):
         )
         if roster_csv:
             st.info("✓ Roster uploaded - will check for absent students and ID mismatches")
+
+        st.markdown("---")
+        st.subheader("Optional Corrections")
+        st.caption("Upload a filled flagged.xlsx to apply corrections to the scored CSV before generating the report")
+        corrections_xlsx = _tempfile_from_uploader(
+            "Corrections XLSX (filled flagged.xlsx)",
+            "corrections_xlsx",
+            types=("xlsx",),
+        )
+        if corrections_xlsx:
+            st.info("✓ Corrections uploaded - will create a corrected CSV and generate report from it")
 
     st.divider()
 
@@ -1369,70 +1416,56 @@ elif page.startswith("3"):
         - ✓ Use fuzzy matching to suggest possible ID matches
         """)
 
-    out_filename = st.text_input("Output Excel filename", value="exam_report.xlsx")
+    # Show where report will be saved
+    if use_project_mode and get_report_path:
+        st.caption(f"💡 Report will be saved to: `{project_name}/reports/report_DATE.xlsx`")
 
     if run_report_clicked:
-        if not results_csv:
-            report_status.error("Please upload a results CSV.")
+        if not selected_csv_path:
+            report_status.error("Please select a scoring run or upload a results CSV.")
         else:
-            base = WORKDIR or Path(os.getcwd())
-
-            # Check if we're in project mode
-            project_name = st.session_state.get("project_name", "").strip()
-            use_project_mode = bool(project_name and sanitize_project_name and create_project_structure and create_run_directory)
-
-            # Try to find the run folder this CSV belongs to
-            csv_is_from_run_folder = False
-            run_label = None
-            csv_run_dir = None
-
-            if use_project_mode:
-                # Look for run folders in the current project
+            # Determine output path
+            if use_project_mode and get_report_path:
                 sanitized_name = sanitize_project_name(project_name)
-                project_dir = base / sanitized_name
-
-                if project_dir.exists():
-                    results_dir = project_dir / "results"
-                    if results_dir.exists():
-                        # Find the most recent run folder with a results.csv
-                        import re
-                        run_pattern = re.compile(r'^run_(\d+)_')
-
-                        run_folders_with_csv = []
-                        for run_dir in results_dir.iterdir():
-                            if run_dir.is_dir():
-                                match = run_pattern.match(run_dir.name)
-                                if match:
-                                    csv_in_run = run_dir / "results.csv"
-                                    if csv_in_run.exists():
-                                        run_num = int(match.group(1))
-                                        run_folders_with_csv.append((run_num, run_dir))
-
-                        # Get the most recent (highest number) run folder
-                        if run_folders_with_csv:
-                            run_folders_with_csv.sort(key=lambda x: x[0], reverse=True)
-                            csv_run_dir = run_folders_with_csv[0][1]
-                            run_label = csv_run_dir.name
-
-                if csv_run_dir:
-                    # Found a likely run folder - save report there
-                    csv_is_from_run_folder = True
-                    out_path = csv_run_dir / out_filename
-                    report_status.info(f"📁 Saving report to run folder: {run_label}")
-                else:
-                    # No run folder found - create new one
-                    project_dir = create_project_structure(base, sanitized_name)
-                    work_dir, run_label = create_run_directory(project_dir)
-                    out_path = work_dir / out_filename
+                project_dir = create_project_structure(base, sanitized_name)
+                out_path = get_report_path(project_dir)
+                out_filename = out_path.name
+                run_label = selected_run["label"] if selected_run else None
             else:
                 # Temporary mode
                 out_dir = Path(tempfile.mkdtemp(prefix="report_", dir=str(base)))
+                out_filename = "exam_report.xlsx"
                 out_path = out_dir / out_filename
                 run_label = None
 
+            report_status.info(f"📁 Saving report to: {out_path}")
+
+            # Apply corrections to CSV first (if provided)
+            csv_for_report = selected_csv_path
+            corrections_applied = 0
+            if corrections_xlsx:
+                try:
+                    from markshark.tools.report_tools import apply_corrections_to_csv
+                    # Write corrected CSV next to the original
+                    corrected_csv_path = Path(str(selected_csv_path).replace('.csv', '_corrected.csv'))
+                    with st.spinner("Applying corrections to scored CSV..."):
+                        corrections_applied = apply_corrections_to_csv(
+                            input_csv=str(selected_csv_path),
+                            corrections_xlsx=str(corrections_xlsx),
+                            output_csv=str(corrected_csv_path),
+                        )
+                    if corrections_applied > 0:
+                        st.success(f"Applied {corrections_applied} corrections to CSV")
+                        csv_for_report = corrected_csv_path
+                        _download_file_button("📄 Download corrected CSV", corrected_csv_path)
+                    else:
+                        st.warning("No corrections found in the uploaded XLSX")
+                except Exception as e:
+                    st.error(f"Error applying corrections: {e}")
+
             args = [
                 "report",
-                str(results_csv),
+                str(csv_for_report),
                 "--out-xlsx", str(out_path),
             ]
 
@@ -1629,7 +1662,17 @@ elif page.startswith("5"):
                                 st.error("Failed to archive template")
 
                     with action_col5:
-                        pass  # Reserved for future actions
+                        # Download PDF button
+                        if template.template_pdf_path.exists():
+                            with open(template.template_pdf_path, "rb") as pdf_file:
+                                st.download_button(
+                                    "📥 PDF",
+                                    data=pdf_file.read(),
+                                    file_name=f"{template.template_id}.pdf",
+                                    mime="application/pdf",
+                                    key=f"download_{template.template_id}",
+                                    use_container_width=True,
+                                )
 
                     # Show full paths
                     if st.checkbox("Show full paths", key=f"paths_{template.template_id}"):

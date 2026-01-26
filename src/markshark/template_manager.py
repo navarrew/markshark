@@ -73,7 +73,7 @@ class TemplateManager:
         self.templates_dir.mkdir(parents=True, exist_ok=True)
 
         # Archive directory and preferences file paths
-        self.archived_dir = self.templates_dir / ".archived"
+        self.archived_dir = self.templates_dir / "archived"
         self.preferences_file = self.templates_dir / ".preferences.json"
 
         logger.info(f"TemplateManager initialized with directory: {self.templates_dir}")
@@ -313,7 +313,7 @@ class TemplateManager:
             template_name_2/
                 master_template.pdf
                 bubblemap.yaml
-            .archived/
+            archived/
                 old_template/
                     master_template.pdf
                     bubblemap.yaml
@@ -344,7 +344,7 @@ class TemplateManager:
 
     def scan_archived_templates(self, force_refresh: bool = False) -> List[BubbleSheetTemplate]:
         """
-        Scan the .archived directory and return a list of archived templates.
+        Scan the archived directory and return a list of archived templates.
 
         Args:
             force_refresh: If True, ignore cache and rescan directory
@@ -550,7 +550,7 @@ class TemplateManager:
 
     def archive_template(self, template_id: str) -> bool:
         """
-        Archive a template by moving it to the .archived directory.
+        Archive a template by moving it to the archived directory.
 
         Args:
             template_id: The template identifier (directory name)
@@ -591,7 +591,7 @@ class TemplateManager:
 
     def unarchive_template(self, template_id: str) -> bool:
         """
-        Unarchive a template by moving it from .archived back to the main templates directory.
+        Unarchive a template by moving it from archived back to the main templates directory.
 
         Args:
             template_id: The template identifier (directory name)

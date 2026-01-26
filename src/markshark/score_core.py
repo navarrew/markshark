@@ -20,6 +20,9 @@ import csv
 import sys
 from typing import Optional, List, Tuple, Dict
 
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+
 import numpy as np
 import cv2
 from .defaults import (
@@ -695,7 +698,7 @@ def score_pdf(
     adaptive_min_above_floor: float = SCORING_DEFAULTS.adaptive_min_above_floor,
     # NEW: Review/flagging options
     review_pdf: Optional[str] = None,  # Output PDF containing only flagged pages
-    flagged_csv: Optional[str] = None,  # Output CSV listing flagged items
+    flagged_xlsx: Optional[str] = None,  # Output XLSX listing flagged items for review
     low_confidence_threshold: float = 0.15,  # Flag answers with separation below this
     # NEW: Inline stats option
     include_stats: bool = True,  # Append summary stats rows to CSV
@@ -725,7 +728,7 @@ def score_pdf(
     Flagging (NEW):
       - Tracks answers that are blank, multi, or low-confidence
       - If review_pdf is provided: generates a PDF with just the flagged pages
-      - If flagged_csv is provided: writes details about each flagged item
+      - If flagged_xlsx is provided: writes XLSX with flagged items + Corrected_Answer column
       - Flagged pages get special annotations highlighting problem areas
       
     Inline Stats (NEW):
@@ -749,20 +752,30 @@ def score_pdf(
             if single_key:
                 keys_dict = {"A": single_key}  # Default to version A
 
-    # Calculate total questions across all pages
-    total_q = sum(
-        sum(layout.numrows for layout in page.answer_layouts)
-        for page in bmap.pages
-    )
-    
+    # Calculate total questions across all pages, and per-page question counts
+    questions_per_page = []
+    for page in bmap.pages:
+        page_q = sum(layout.numrows for layout in page.answer_layouts)
+        questions_per_page.append(page_q)
+    total_q = sum(questions_per_page)
+
     if keys_dict:
         # Use length of first version key
         first_version = sorted(keys_dict.keys())[0]
         q_out = len(keys_dict[first_version])
     else:
         q_out = total_q
-    
+
     q_out = max(0, min(q_out, total_q))
+
+    # Calculate how many active questions are on each page (for calibration)
+    # e.g. 57 questions on a 2-page template with 32+32 rows -> page 1 uses 32, page 2 uses 25
+    active_rows_per_page = []
+    remaining = q_out
+    for page_q in questions_per_page:
+        active = min(remaining, page_q)
+        active_rows_per_page.append(active)
+        remaining -= active
 
     # Make the CSV header
     header = ["Version", "Page", "LastName", "FirstName", "StudentID"]
@@ -882,7 +895,7 @@ def score_pdf(
                 
                 for page_num, img_bgr in enumerate(student_pages, start=1):
                     page_layout = bmap.get_page(page_num)
-                    
+
                     # Per-page calibration
                     page_fixed_thresh = fixed_thresh
                     if fixed_thresh is None and auto_calibrate_thresh:
@@ -896,9 +909,12 @@ def score_pdf(
                                 'first_name_layout': calib_page.first_name_layout,
                                 'id_layout': calib_page.id_layout,
                             })()
+                            # Only calibrate on active rows (skip unused questions)
+                            calib_max_rows = active_rows_per_page[page_num - 1] if page_num <= len(active_rows_per_page) else None
                             page_fixed_thresh, _calib_stats = calibrate_fixed_thresh_for_page(
                                 img_bgr,
                                 temp_bmap,
+                                max_rows=calib_max_rows,
                                 verbose=verbose_calibration,
                             )
                     
@@ -1087,7 +1103,7 @@ def score_pdf(
                                 annotated_pages.append(vis)
                         
                         # Track flagged pages for review PDF (multi-page mode)
-                        if (review_pdf or flagged_csv) and _has_flags(all_answers):
+                        if (review_pdf or flagged_xlsx) and _has_flags(answers_out):
                             actual_page_num = start_page_idx + page_num
                             flagged_page_images.append((actual_page_num, vis.copy()))
         
@@ -1100,6 +1116,7 @@ def score_pdf(
                     page_fixed_thresh, _calib_stats = calibrate_fixed_thresh_for_page(
                         img_bgr,
                         bmap,
+                        max_rows=q_out if q_out < total_q else None,
                         verbose=verbose_calibration,
                     )
                 # Decode all fields using the shared axis-mode pipeline
@@ -1129,6 +1146,7 @@ def score_pdf(
                         background_percentile=background_percentile,
                         adaptive_min_above_floor=adaptive_min_above_floor,
                         adaptive_max_adjustment=adaptive_max_adjustment,
+                        max_questions=q_out if q_out < total_q else None,
                         verbose=verbose_calibration,
                     )
 
@@ -1240,7 +1258,7 @@ def score_pdf(
                             annotated_pages.append(vis)
                     
                     # Track flagged pages for review PDF (single-page mode)
-                    if (review_pdf or flagged_csv) and _has_flags(answers_out):
+                    if (review_pdf or flagged_xlsx) and _has_flags(answers_out):
                         flagged_page_images.append((page_idx, vis.copy()))
                         
     if out_pdf_path:
@@ -1375,22 +1393,70 @@ def score_pdf(
     # =================================================================
 
     # ==================== GENERATE REVIEW OUTPUTS ====================
-    # Write flagged CSV if requested
-    if flagged_csv and flagged_items:
-        _ensure_dir(os.path.dirname(flagged_csv) or ".")
-        with open(flagged_csv, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(["student_id", "student_name", "page", "question", "issue", "current_answer"])
-            for item in flagged_items:
-                writer.writerow([
-                    item["student_id"],
-                    item["student_name"],
-                    item["page"],
-                    item["question"],
-                    item["issue"],
-                    item["current_answer"],
-                ])
-        print(f"[info] Wrote {len(flagged_items)} flagged items to {flagged_csv}", file=__import__('sys').stderr)
+    # Write flagged XLSX if requested
+    if flagged_xlsx and flagged_items:
+        _ensure_dir(os.path.dirname(flagged_xlsx) or ".")
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Flagged Items"
+
+        # Header row
+        headers = ["Student ID", "Student Name", "Page", "Question", "Issue", "Current Answer", "Corrected Answer"]
+        ws.append(headers)
+
+        # Style header row
+        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        thin_border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+
+        for col_num, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_num)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = thin_border
+            cell.alignment = Alignment(horizontal='center')
+
+        # Data rows
+        for item in flagged_items:
+            ws.append([
+                item["student_id"],
+                item["student_name"],
+                item["page"],
+                item["question"],
+                item["issue"],
+                item["current_answer"],
+                "",  # Empty Corrected Answer column for teacher input
+            ])
+
+        # Style data rows and highlight Corrected Answer column
+        yellow_fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
+        for row_num in range(2, len(flagged_items) + 2):
+            for col_num in range(1, len(headers) + 1):
+                cell = ws.cell(row=row_num, column=col_num)
+                cell.border = thin_border
+                # Highlight the Corrected Answer column
+                if col_num == 7:  # Corrected Answer column
+                    cell.fill = yellow_fill
+
+        # Set column widths
+        ws.column_dimensions['A'].width = 12  # Student ID
+        ws.column_dimensions['B'].width = 20  # Student Name
+        ws.column_dimensions['C'].width = 8   # Page
+        ws.column_dimensions['D'].width = 10  # Question
+        ws.column_dimensions['E'].width = 10  # Issue
+        ws.column_dimensions['F'].width = 15  # Current Answer
+        ws.column_dimensions['G'].width = 18  # Corrected Answer
+
+        # Freeze header row
+        ws.freeze_panes = 'A2'
+
+        wb.save(flagged_xlsx)
+        print(f"[info] Wrote {len(flagged_items)} flagged items to {flagged_xlsx}", file=sys.stderr)
     
     # Generate review PDF with flagged pages
     if review_pdf and flagged_page_images:

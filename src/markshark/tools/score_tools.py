@@ -240,6 +240,7 @@ def calibrate_fixed_thresh_for_page(
     top2_ratio: float = 0.80,
     min_gap: float = 0.07,
     min_rows: int = 10,
+    max_rows: Optional[int] = None,
     verbose: bool = False,
 ) -> Tuple[int, Dict[str, float]]:
     """
@@ -257,6 +258,12 @@ def calibrate_fixed_thresh_for_page(
         and best-second >= min_gap).
       - Objective Q = P10(best_scores) - P90(nonwinner_scores).
       - Pick fixed_thresh with the largest Q.
+
+    Args:
+      max_rows: If provided, only use the first max_rows answer rows for
+        calibration. Use this when the answer key has fewer questions than
+        the template (e.g. 57 questions on a 64-row template) so that
+        unused blank rows don't affect threshold selection.
 
     Returns:
       (best_fixed_thresh, stats_dict)
@@ -311,6 +318,12 @@ def calibrate_fixed_thresh_for_page(
         # Row-major ordering: each row is a contiguous run of length layout.numcols
         for r in range(int(layout.numrows)):
             row_groups.append((base + r * int(layout.numcols), int(layout.numcols)))
+
+    # Limit to only the rows that correspond to actual questions (skip unused rows)
+    if max_rows is not None and max_rows > 0 and len(row_groups) > max_rows:
+        if verbose:
+            print(f"[CALIBRATE] limiting calibration to {max_rows}/{len(row_groups)} answer rows (key length)", file=sys.stderr)
+        row_groups = row_groups[:max_rows]
 
     stats_default: Dict[str, float] = {
         "q": float("nan"),
@@ -424,6 +437,7 @@ def adaptive_rescore_page(
     background_percentile: float,
     adaptive_min_above_floor: float,
     adaptive_max_adjustment: int = 30,
+    max_questions: Optional[int] = None,
     verbose: bool = False,
 ) -> Tuple[List[Optional[str]], int, bool]:
     """
@@ -435,13 +449,20 @@ def adaptive_rescore_page(
     - Pick the threshold that minimizes blanks without increasing multis
     - If no improvement or multis increase, return original results
 
+    Args:
+        max_questions: If provided, only consider the first max_questions answers
+            when counting blanks/multis. Unused template rows beyond the key
+            length are ignored so they don't trigger unnecessary rescoring.
+
     Returns:
         (best_answers, best_threshold, adapted)
         - best_answers: The best scoring results
         - best_threshold: The threshold that produced best results
         - adapted: True if we used an adapted threshold, False if original was best
     """
-    initial_blanks, initial_multis = count_blank_and_multi_answers(initial_answers)
+    # Only count blanks/multis in the active questions (not unused template rows)
+    active_answers = initial_answers[:max_questions] if max_questions else initial_answers
+    initial_blanks, initial_multis = count_blank_and_multi_answers(active_answers)
 
     # If no blanks, no need to adapt
     if initial_blanks == 0:
@@ -476,7 +497,8 @@ def adaptive_rescore_page(
             verbose_calibration=False,
         )
 
-        blanks, multis = count_blank_and_multi_answers(answers)
+        active = answers[:max_questions] if max_questions else answers
+        blanks, multis = count_blank_and_multi_answers(active)
 
         results.append({
             'threshold': new_threshold,

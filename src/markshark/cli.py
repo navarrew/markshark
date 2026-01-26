@@ -172,10 +172,10 @@ def score(
         "--review-pdf",
         help="Output PDF containing only pages with flagged answers (blank/multi). Use for manual review.",
     ),
-    flagged_csv: Optional[str] = typer.Option(
+    flagged_xlsx: Optional[str] = typer.Option(
         None,
-        "--flagged-csv",
-        help="Output CSV listing all flagged items (blank/multi answers) with student ID, question, and issue.",
+        "--flagged-xlsx",
+        help="Output XLSX listing flagged items (blank/multi) with Corrected Answer column for manual review.",
     ),
     annotate_all_cells: bool = typer.Option(False, "--annotate-all-cells", help="Draw every bubble in each row"),
     label_density: bool = typer.Option(False, "--label-density", help="Overlay % fill text at bubble centers"),
@@ -257,7 +257,7 @@ def score(
             annotate_all_cells=annotate_all_cells,
             label_density=label_density,
             review_pdf=review_pdf,
-            flagged_csv=flagged_csv,
+            flagged_xlsx=flagged_xlsx,
             include_stats=include_stats,
         )
     except Exception as e:
@@ -269,8 +269,8 @@ def score(
         rprint(f"[cyan]Stats included:[/cyan] See bottom of {out_csv} for exam & item statistics")
     if review_pdf:
         rprint(f"[yellow]Review PDF:[/yellow] {review_pdf}")
-    if flagged_csv:
-        rprint(f"[yellow]Flagged CSV:[/yellow] {flagged_csv}")
+    if flagged_xlsx:
+        rprint(f"[yellow]Flagged XLSX:[/yellow] {flagged_xlsx}")
 
 
 # ---------------------- REPORT ----------------------
