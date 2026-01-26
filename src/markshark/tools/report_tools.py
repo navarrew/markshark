@@ -49,6 +49,22 @@ from .stats_tools import (
 
 # ==================== CORRECTIONS HANDLING ====================
 
+def _normalize_id(val) -> str:
+    """Normalize a student ID for comparison: stringify, strip, remove .0 suffix."""
+    s = str(val).strip()
+    if s.endswith('.0'):
+        s = s[:-2]
+    return s
+
+
+def _find_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
+    """Find the first column name from candidates that exists in df."""
+    for col in candidates:
+        if col in df.columns:
+            return col
+    return None
+
+
 def load_corrections(corrections_xlsx: str) -> pd.DataFrame:
     """
     Load corrections from a filled-in flagged.xlsx file.
@@ -64,7 +80,11 @@ def load_corrections(corrections_xlsx: str) -> pd.DataFrame:
     """
     import sys
 
-    df = pd.read_excel(corrections_xlsx, sheet_name="Flagged Items")
+    # Try 'Flagged Items' sheet first, then fall back to first sheet
+    try:
+        df = pd.read_excel(corrections_xlsx, sheet_name="Flagged Items")
+    except ValueError:
+        df = pd.read_excel(corrections_xlsx, sheet_name=0)
     print(f"[corrections] Loaded XLSX with columns: {list(df.columns)}", file=sys.stderr)
 
     # Normalize column names to handle variations
@@ -75,7 +95,7 @@ def load_corrections(corrections_xlsx: str) -> pd.DataFrame:
             col_map[col] = 'student_id'
         elif col_lower == 'question':
             col_map[col] = 'question'
-        elif 'corrected' in col_lower:
+        elif 'corrected' in col_lower and 'answer' in col_lower:
             col_map[col] = 'corrected_answer'
 
     df = df.rename(columns=col_map)
@@ -86,8 +106,10 @@ def load_corrections(corrections_xlsx: str) -> pd.DataFrame:
         print("[corrections] Warning: No 'corrected_answer' column found!", file=sys.stderr)
         return pd.DataFrame(columns=['student_id', 'question', 'corrected_answer'])
 
+    # Convert to string, then filter out empties and NaN placeholders
     df['corrected_answer'] = df['corrected_answer'].astype(str).str.strip()
-    corrections = df[df['corrected_answer'].notna() & (df['corrected_answer'] != '') & (df['corrected_answer'] != 'nan')]
+    mask = (df['corrected_answer'] != '') & (df['corrected_answer'].str.lower() != 'nan') & (df['corrected_answer'].str.lower() != 'none')
+    corrections = df[mask]
 
     print(f"[corrections] Found {len(corrections)} rows with corrections", file=sys.stderr)
     if not corrections.empty:
@@ -97,6 +119,32 @@ def load_corrections(corrections_xlsx: str) -> pd.DataFrame:
         return pd.DataFrame(columns=['student_id', 'question', 'corrected_answer'])
 
     return corrections[['student_id', 'question', 'corrected_answer']].copy()
+
+
+def _question_to_col(question_val, item_cols: List[str]) -> Optional[str]:
+    """
+    Map a question identifier (from the flagged XLSX) to a CSV column name.
+
+    Handles: bare integer 22 -> 'Q22', string 'Q22' -> 'Q22', string '22' -> 'Q22'.
+    """
+    q_str = str(question_val).strip()
+
+    # Direct match (e.g., 'Q22' in item_cols)
+    if q_str in item_cols:
+        return q_str
+    if q_str.upper() in [c.upper() for c in item_cols]:
+        for c in item_cols:
+            if c.upper() == q_str.upper():
+                return c
+
+    # Bare number -> Q-prefixed (e.g., 22 -> 'Q22')
+    q_str_digits = q_str.lstrip('Qq')
+    if q_str_digits.isdigit():
+        candidate = f"Q{int(q_str_digits)}"
+        if candidate in item_cols:
+            return candidate
+
+    return None
 
 
 def merge_corrections(
@@ -120,6 +168,8 @@ def merge_corrections(
     Returns:
         Tuple of (modified DataFrame, number of corrections applied)
     """
+    import sys
+
     if corrections.empty:
         return df, 0
 
@@ -130,76 +180,43 @@ def merge_corrections(
     key_row = df.iloc[key_row_idx]
 
     # Find the student ID column
-    id_col = None
-    for col in ['StudentID', 'Student_ID', 'student_id', 'ID']:
-        if col in df.columns:
-            id_col = col
-            break
-
+    id_col = _find_col(df, ['studentid', 'StudentID', 'Student_ID', 'student_id', 'ID', 'id'])
     if id_col is None:
+        print(f"[corrections] Warning: No student ID column found in {list(df.columns)}", file=sys.stderr)
         return df, 0
 
+    # Pre-normalize all IDs in the DataFrame for matching
+    df_ids_normalized = df[id_col].apply(_normalize_id)
+
     for _, correction in corrections.iterrows():
-        student_id = str(correction['student_id']).strip()
-        question = correction['question']
-        new_answer = correction['corrected_answer'].upper().strip()
+        student_id_normalized = _normalize_id(correction['student_id'])
+        new_answer = str(correction['corrected_answer']).upper().strip()
 
-        # Find the question column
-        q_col = None
-        question_str = str(question).strip()
-
-        for col in item_cols:
-            # Direct match (e.g., "Q1" == "Q1")
-            if col == question_str or col.upper() == question_str.upper():
-                q_col = col
-                break
-            # Match numeric question to Q# column (e.g., 1 or "1" -> "Q1")
-            if col.startswith('Q'):
-                col_num = col[1:]  # Get the number part after 'Q'
-                if col_num.isdigit() and question_str.isdigit():
-                    if int(col_num) == int(question_str):
-                        q_col = col
-                        break
-                # Also try if question already has Q prefix
-                if question_str.upper() == col.upper():
-                    q_col = col
-                    break
-
+        # Map question to column name
+        q_col = _question_to_col(correction['question'], item_cols)
         if q_col is None:
-            print(f"[corrections] Warning: Could not find column for question '{question}' (available: {item_cols[:5]}...)", file=__import__('sys').stderr)
+            print(f"[corrections] Warning: Could not find column for question '{correction['question']}' "
+                  f"(available: {item_cols[:5]}...)", file=sys.stderr)
             continue
 
-        # Find the student row (skip KEY row)
-        # Handle numeric IDs - strip .0 suffix if present and compare as strings
-        def normalize_id(val):
-            s = str(val).strip()
-            # Remove .0 suffix from floats read from Excel/CSV
-            if s.endswith('.0'):
-                s = s[:-2]
-            return s
-
-        student_id_normalized = normalize_id(student_id)
-        df_ids_normalized = df[id_col].apply(normalize_id)
+        # Find matching student rows (excluding KEY row)
         student_mask = df_ids_normalized == student_id_normalized
-        student_indices = df[student_mask].index.tolist()
-
-        # Filter out KEY row index
-        student_indices = [i for i in student_indices if i != key_row_idx]
+        student_indices = [i for i in df[student_mask].index.tolist() if i != key_row_idx]
 
         if not student_indices:
-            # Debug: show what IDs we have
-            sample_ids = df_ids_normalized.head(5).tolist()
-            print(f"[corrections] Warning: Could not find student '{student_id_normalized}' in data (sample IDs: {sample_ids})", file=__import__('sys').stderr)
+            sample_ids = df_ids_normalized[df_ids_normalized != 'KEY'].head(5).tolist()
+            print(f"[corrections] Warning: Could not find student '{student_id_normalized}' "
+                  f"(sample IDs: {sample_ids})", file=sys.stderr)
             continue
 
-        # Apply correction to each matching student row
+        # Apply correction
         for idx in student_indices:
             old_answer = str(df.at[idx, q_col]).upper().strip()
             df.at[idx, q_col] = new_answer
             corrections_applied += 1
-            print(f"[corrections] Applied: Student {student_id}, {q_col}: '{old_answer}' -> '{new_answer}'", file=__import__('sys').stderr)
+            print(f"[corrections] Applied: Student {student_id_normalized}, "
+                  f"{q_col}: '{old_answer}' -> '{new_answer}'", file=sys.stderr)
 
-            # Recalculate scores for this student
             _recalculate_student_scores(df, idx, item_cols, key_row)
 
     return df, corrections_applied
@@ -223,9 +240,9 @@ def _recalculate_student_scores(
         answer = str(df.at[student_idx, col]).upper().strip()
         key_answer = str(key_row[col]).upper().strip()
 
-        if not answer or answer in ('', 'NAN', 'BLANK', '-'):
+        if not answer or answer in ('', 'NAN', 'NONE', 'BLANK', '-'):
             blank += 1
-        elif ',' in answer or '/' in answer or len(answer) > 1:
+        elif ',' in answer:
             multi += 1
         elif answer == key_answer:
             correct += 1
@@ -235,17 +252,12 @@ def _recalculate_student_scores(
     total = len(item_cols)
     percent = (correct / total * 100) if total > 0 else 0
 
-    # Update the score columns if they exist
-    if 'correct' in df.columns:
-        df.at[student_idx, 'correct'] = correct
-    if 'incorrect' in df.columns:
-        df.at[student_idx, 'incorrect'] = incorrect
-    if 'blank' in df.columns:
-        df.at[student_idx, 'blank'] = blank
-    if 'multi' in df.columns:
-        df.at[student_idx, 'multi'] = multi
-    if 'percent' in df.columns:
-        df.at[student_idx, 'percent'] = round(percent, 2)
+    # Update the score columns (handle all case variants from CSV normalization)
+    for name, value in [('correct', correct), ('incorrect', incorrect),
+                        ('blank', blank), ('multi', multi), ('percent', round(percent, 2))]:
+        col = _find_col(df, [name, name.capitalize(), name.upper()])
+        if col is not None:
+            df.at[student_idx, col] = value
 
 
 def apply_corrections_to_csv(
@@ -258,7 +270,6 @@ def apply_corrections_to_csv(
 
     Reads the scored CSV, loads corrections from the filled flagged.xlsx,
     updates the answer columns, recalculates scores, and writes a new CSV.
-    The Issue column (if present) is updated for corrected rows.
 
     Args:
         input_csv: Path to original scored CSV
@@ -274,7 +285,7 @@ def apply_corrections_to_csv(
     df = _load_score_csv_robust(input_csv)
 
     # Detect item columns and key row
-    item_cols = detect_item_columns(df)
+    item_cols = detect_item_columns(df, r"Q\d+")
     if not item_cols:
         raise ValueError(f"No item columns (Q1, Q2...) found in CSV. Columns: {list(df.columns)}")
 
@@ -694,7 +705,7 @@ def generate_report(
             f"Available columns: {list(df.columns)}"
         )
 
-    key_row_idx = detect_key_row_index(df, item_cols, key_label="KEY")
+    k = len(item_cols)
 
     # Load roster if provided
     roster_df = None
@@ -703,23 +714,14 @@ def generate_report(
 
     if roster_csv:
         roster_df = load_roster(roster_csv)
-        # Remove KEY row before matching
-        students_only = df.drop(index=df.index[key_row_idx]).reset_index(drop=True)
+        # Remove all KEY rows before matching (multi-version CSVs have one per version)
+        key_mask = df.apply(
+            lambda row: any(str(cell).strip().upper() == 'KEY' for cell in row), axis=1
+        )
+        students_only = df[~key_mask].reset_index(drop=True)
         students_only, orphan_scans, absent_students = match_students_to_roster(
             students_only, roster_df
         )
-
-    # Prepare correctness matrix and stats
-    items_num, total_scores, students_df, key_series = prepare_correctness_matrix(
-        df, item_cols, key_row_idx, answers_mode="auto"
-    )
-
-    # Compute overall stats
-    k = len(item_cols)
-    mean_total = float(total_scores.mean())
-    std_total = float(total_scores.std(ddof=1))
-    kr20_val = kr20(items_num, total_scores)
-    kr21_val = kr21(items_num, total_scores)
 
     # Group by version (handle both 'Version' and 'version' column names)
     version_col = None
@@ -737,9 +739,14 @@ def generate_report(
     else:
         versions = ['A']  # Default single version
 
-    # Compute per-version difficulty and point-biserial statistics
-    # This is critical for multi-version exams where each version has different answer keys
+    # Compute per-version statistics
+    # Each version has its own answer key, so correctness must be computed per-version.
+    # Pooled (amalgamated) stats are then derived by combining per-version results.
     version_stats = {}
+    all_items_num = []      # Collect correctness matrices for pooled stats
+    all_total_scores = []   # Collect total scores for pooled stats
+    total_n_students = 0
+
     for version in versions:
         # Filter to only students who took this version
         if version_col:
@@ -756,6 +763,9 @@ def generate_report(
             df_version, item_cols, key_row_idx_version, answers_mode="auto"
         )
 
+        n_students_v = len(students_df_v)
+        total_n_students += n_students_v
+
         # Compute difficulty (% correct) for this version
         difficulty_v = items_num_v.mean(axis=0)
 
@@ -766,12 +776,41 @@ def generate_report(
             total_minus = total_scores_v - item_series.fillna(0)
             pb_vals_v[col] = point_biserial(item_series, total_minus)
 
+        # Version-level exam stats
+        mean_v = float(total_scores_v.mean()) if n_students_v > 0 else 0.0
+        std_v = float(total_scores_v.std(ddof=1)) if n_students_v > 1 else 0.0
+        kr20_v = kr20(items_num_v, total_scores_v)
+        kr21_v = kr21(items_num_v, total_scores_v)
+
         # Store version-specific stats
         version_stats[version] = {
             'difficulty': difficulty_v,
             'pb_vals': pb_vals_v,
-            'key_series': key_series_v
+            'key_series': key_series_v,
+            'n_students': n_students_v,
+            'mean': mean_v,
+            'std': std_v,
+            'kr20': kr20_v,
+            'kr21': kr21_v,
         }
+
+        # Accumulate for pooled stats
+        all_items_num.append(items_num_v)
+        all_total_scores.append(total_scores_v)
+
+    # Compute pooled (amalgamated) stats from per-version correctness matrices.
+    # Each student was scored against their own version's key, so these are correct.
+    if all_items_num:
+        pooled_items = pd.concat(all_items_num, ignore_index=True)
+        pooled_totals = pd.concat(all_total_scores, ignore_index=True)
+    else:
+        pooled_items = pd.DataFrame(columns=item_cols)
+        pooled_totals = pd.Series(dtype=float)
+
+    mean_total = float(pooled_totals.mean()) if total_n_students > 0 else 0.0
+    std_total = float(pooled_totals.std(ddof=1)) if total_n_students > 1 else 0.0
+    kr20_val = kr20(pooled_items, pooled_totals)
+    kr21_val = kr21(pooled_items, pooled_totals)
 
     # Create Excel workbook
     wb = Workbook()
@@ -779,8 +818,9 @@ def generate_report(
 
     # ========== SUMMARY TAB ==========
     create_summary_tab(
-        wb, k, len(students_df), mean_total, std_total, kr20_val, kr21_val,
-        len(versions), orphan_scans, absent_students, project_name, run_label,
+        wb, k, total_n_students, mean_total, std_total, kr20_val, kr21_val,
+        versions, version_stats,
+        orphan_scans, absent_students, project_name, run_label,
         corrections_applied
     )
 
@@ -789,7 +829,7 @@ def generate_report(
         # Get version-specific stats
         vstats = version_stats[version]
         create_version_tab(
-            wb, df, students_df, version, item_cols, vstats['key_series'],
+            wb, df, None, version, item_cols, vstats['key_series'],
             vstats['difficulty'], vstats['pb_vals'], roster_df, orphan_scans if roster_csv else None
         )
 
@@ -803,13 +843,16 @@ def generate_report(
 
 def create_summary_tab(
     wb, k, n_students, mean_total, std_total, kr20_val, kr21_val,
-    n_versions, orphan_scans, absent_students, project_name=None, run_label=None,
+    versions, version_stats,
+    orphan_scans, absent_students, project_name=None, run_label=None,
     corrections_applied=0
 ):
-    """Create summary tab with overall exam statistics."""
+    """Create summary tab with per-version and amalgamated exam statistics."""
     from datetime import datetime
 
     ws = wb.create_sheet("Summary", 0)
+    n_versions = len(versions)
+    is_multi_version = n_versions > 1
 
     # Title
     ws['A1'] = "MarkShark Exam Report"
@@ -845,10 +888,50 @@ def create_summary_tab(
 
     row += 1  # Extra space before stats
 
-    # Overall stats
-    # row = 3
-    ws[f'A{row}'] = "Overall Exam Statistics"
-    ws[f'A{row}'].font = FONT_BOLD
+    # ---- Per-version stats (shown first so teachers can spot version-level issues) ----
+    if is_multi_version:
+        ws[f'A{row}'] = "Per-Version Statistics"
+        ws[f'A{row}'].font = Font(size=13, bold=True)
+        row += 1
+
+        # Table header
+        ver_headers = ["", "N Students", "Mean Score", "Mean %", "Std Dev",
+                        "KR-20", "KR-21"]
+        for col_idx, hdr in enumerate(ver_headers, start=1):
+            cell = ws.cell(row=row, column=col_idx, value=hdr)
+        format_header_row(ws, row)
+        row += 1
+
+        for ver in versions:
+            vs = version_stats[ver]
+            ver_mean = vs['mean']
+            ver_pct = (ver_mean / k * 100) if k > 0 else 0.0
+            ver_kr20 = vs['kr20']
+            ver_kr21 = vs['kr21']
+
+            ws.cell(row=row, column=1, value=f"Version {ver}")
+            ws.cell(row=row, column=1).font = FONT_BOLD
+            ws.cell(row=row, column=2, value=vs['n_students'])
+            ws.cell(row=row, column=3, value=f"{ver_mean:.2f}")
+            ws.cell(row=row, column=4, value=f"{ver_pct:.1f}%")
+            ws.cell(row=row, column=5, value=f"{vs['std']:.2f}")
+            ws.cell(row=row, column=6, value=f"{ver_kr20:.3f}" if not np.isnan(ver_kr20) else "N/A")
+            ws.cell(row=row, column=7, value=f"{ver_kr21:.3f}" if not np.isnan(ver_kr21) else "N/A")
+
+            # Apply border to data cells
+            for col_idx in range(1, len(ver_headers) + 1):
+                ws.cell(row=row, column=col_idx).border = BORDER_THIN
+
+            row += 1
+
+        row += 1  # Space before amalgamated stats
+
+    # ---- Amalgamated (overall) stats ----
+    if is_multi_version:
+        ws[f'A{row}'] = "Amalgamated Exam Statistics (All Versions)"
+    else:
+        ws[f'A{row}'] = "Overall Exam Statistics"
+    ws[f'A{row}'].font = Font(size=13, bold=True)
     row += 1
 
     stats = [
@@ -856,7 +939,7 @@ def create_summary_tab(
         ("Number of Questions", k),
         ("Number of Versions", n_versions),
         ("Mean Score", f"{mean_total:.2f}"),
-        ("Mean Percentage", f"{mean_total/k*100:.1f}%"),
+        ("Mean Percentage", f"{mean_total/k*100:.1f}%" if k > 0 else "N/A"),
         ("Standard Deviation", f"{std_total:.2f}"),
         ("KR-20 Reliability", f"{kr20_val:.3f}" if not np.isnan(kr20_val) else "N/A"),
         ("KR-21 Reliability", f"{kr21_val:.3f}" if not np.isnan(kr21_val) else "N/A"),
