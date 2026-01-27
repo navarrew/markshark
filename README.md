@@ -6,6 +6,7 @@
 MarkSharkOMR is a versatile and fast tool to **grade, and analyze your own bubble-sheet exams**.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![PyPI version](https://img.shields.io/pypi/v/markshark)](https://pypi.org/project/markshark/)
 
 ---
 
@@ -17,15 +18,25 @@ MarkSharkOMR is a versatile and fast tool to **grade, and analyze your own bubbl
 
 ## Installation
 
-Clone and install the package locally:
-
 ```bash
-git clone https://github.com/navarrew/markshark.git
-cd markshark
-pip install -e .
+pip install markshark
 ```
 
-Make sure you install required dependencies (**OpenCV**, **Typer**, **Streamlit**).
+## Dependencies (installs automatically with pip)
+- typer>=0.12
+- rich>=13.7
+- opencv-contrib-python>=4.9
+- numpy>=1.26,<2.0
+- pymupdf>=1.24
+- pdf2image>=1.17
+- pandas>=2.1,<2.3
+- matplotlib>=3.8
+- streamlit>=1.35
+- pyyaml
+- openpyxl>=3.0
+- rapidfuzz>=3.0
+- streamlit-antd-components>=0.3.2
+
 
 ---
 
