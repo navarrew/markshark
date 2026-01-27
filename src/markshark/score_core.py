@@ -862,7 +862,6 @@ def score_pdf(
     csv_header = header
             
     with open(out_csv, "w", newline="", encoding="utf-8") as f:
-        outputcsv = csv.writer(f)
         # We no longer write header/keys here - they'll be written grouped by version at the end
         # Just process all students and collect their data
 
@@ -891,7 +890,6 @@ def score_pdf(
                 all_answers = []
                 student_info = {}
                 page_thresholds = []
-                annotated_images = []
                 
                 for page_num, img_bgr in enumerate(student_pages, start=1):
                     page_layout = bmap.get_page(page_num)
@@ -985,10 +983,7 @@ def score_pdf(
                     row += [str(blanks)]
                 
                 row += answers_csv
-                
-                # Don't write here - we'll write grouped by version at the end
-                # outputcsv.writerow(row)
-                
+
                 # ==================== FLAGGING ====================
                 # Record flagged items for this student (multi-page)
                 if _has_flags(answers_out):
@@ -1198,10 +1193,7 @@ def score_pdf(
                     row += [str(blanks)]
 
                 row += answers_csv
-                
-                # Don't write here - we'll write grouped by version at the end
-                # outputcsv.writerow(row)
-                
+
                 # ==================== FLAGGING ====================
                 # Record flagged items for this student
                 if _has_flags(answers_out):

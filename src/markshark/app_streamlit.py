@@ -200,27 +200,7 @@ def _init_workdir() -> Path:
 
         # Show project status
         if st.session_state["project_name"].strip():
-            sanitized = sanitize_project_name(st.session_state["project_name"]) if sanitize_project_name else st.session_state["project_name"]
-            project_dir = WORKDIR / sanitized
-
-#             if project_dir.exists() and get_project_info:
-#                 info = get_project_info(project_dir)
-#                 run_text = f"{info['num_runs']} run{'s' if info['num_runs'] != 1 else ''}" if info['num_runs'] > 0 else "No runs yet"
-#                 sac.alert(
-#                     label=f'<span style="color:white">{sanitized}</span>',
-#                     description=f'<span style="color:white">{run_text}</span>',
-#                     icon="folder2",
-#                     color="info",
-#                     size="sm",
-#                 )
-#             else:
-#                 sac.alert(
-#                     label=sanitized,
-#                     description="New project",
-#                     icon="folder-plus",
-#                     color="warning",
-#                     size="sm",
-#                 )
+            pass
         else:
             st.caption("No project — using temp directories")
 

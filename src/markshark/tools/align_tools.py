@@ -313,7 +313,6 @@ def _get_bubble_centers_from_layout(
         y2 = layout.y_bottomright * img_height
         numrows = layout.numrows
         numcols = layout.numcols
-        radius_pct = getattr(layout, 'radius_pct', 0.008)
     else:
         # Dictionary
         x1 = layout['x_topleft'] * img_width
@@ -322,7 +321,6 @@ def _get_bubble_centers_from_layout(
         y2 = layout['y_bottomright'] * img_height
         numrows = layout['numrows']
         numcols = layout['numcols']
-        radius_pct = layout.get('radius_pct', 0.008)
     
     # Calculate spacing between bubble centers
     if numcols > 1:

@@ -20,7 +20,6 @@ import numpy as np
 try:
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.utils.dataframe import dataframe_to_rows
 except ImportError:
     raise ImportError(
         "openpyxl is required for Excel report generation. "
@@ -924,7 +923,7 @@ def create_summary_tab(
         ver_headers = ["", "N Students", "Mean Score", "Mean %", "Std Dev",
                         "KR-20", "KR-21"]
         for col_idx, hdr in enumerate(ver_headers, start=1):
-            cell = ws.cell(row=row, column=col_idx, value=hdr)
+            ws.cell(row=row, column=col_idx, value=hdr)
         format_header_row(ws, row)
         row += 1
 
@@ -1137,7 +1136,7 @@ def create_version_tab(
 
     # Write header
     for col_idx, col_name in enumerate(display_cols, start=1):
-        cell = ws.cell(row=1, column=col_idx, value=col_name)
+        ws.cell(row=1, column=col_idx, value=col_name)
     format_header_row(ws, 1)
 
     # Get KEY answers for this version
@@ -1227,7 +1226,7 @@ def create_version_tab(
                                 cell.fill = PatternFill(start_color="FFD7D7", end_color="FFD7D7", fill_type="solid")
                 else:
                     # Non-question columns - just write the value
-                    cell = ws.cell(row=row_num, column=col_idx, value=value)
+                    ws.cell(row=row_num, column=col_idx, value=value)
 
         row_num += 1
 

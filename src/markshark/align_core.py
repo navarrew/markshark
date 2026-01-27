@@ -336,16 +336,3 @@ def align_raw_bgr_scans_multipage(
 
 
     return aligned_pages, metrics_rows
-
-
-# Keep the original single-template function for backward compatibility
-def align_raw_bgr_scans(
-    raw_scans_bgr: List[Tuple[str, int, np.ndarray]],
-    template_bgr: np.ndarray,
-    args: SimpleNamespace,
-) -> Tuple[List[np.ndarray], List[dict]]:
-    """
-    Legacy function: align all scans to a single template page.
-    Now just wraps align_raw_bgr_scans_multipage with a 1-page template.
-    """
-    return align_raw_bgr_scans_multipage(raw_scans_bgr, [template_bgr], args)

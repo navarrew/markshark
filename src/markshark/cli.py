@@ -417,7 +417,7 @@ def quick_grade(
         rprint("[cyan]Step 1/2: Aligning scans...[/cyan]")
         aligned_pdf = out_dir_path / "aligned_scans.pdf"
         
-        align_out = align_pdf_scans(
+        align_pdf_scans(
             input_pdf=input_pdf,
             template=str(template.template_pdf_path),
             out_pdf=str(aligned_pdf),
