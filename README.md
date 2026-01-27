@@ -1,4 +1,4 @@
-# MarkSharkOMR - in development
+# MarkSharkOMR
 ## A fast, accurate, customizable, open-source test bubble sheet scanner
 
 MarkSharkOMR is a versatile and fast tool to **grade, and analyze your own bubble-sheet exams**.
@@ -6,10 +6,6 @@ MarkSharkOMR is a versatile and fast tool to **grade, and analyze your own bubbl
 ![MarkShark Logo](images/shark.png)
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-
----
-
-![OMR pipeline](images/processmap.png)
 
 ---
 
@@ -45,7 +41,7 @@ It accepts multiple versions of the same test (you provide a single key file tha
 
 It can flag issues like unfilled buubles, rows where more than one bubble was filled in.
 
-If you provide MarkShark with your class roster can merge the data effortlessly with your class roster and paste it back into your course management system (Blackboard, Canvas, etc).  It can tell you who was missing from the test (absent) and flag 'orphan' scans (where the student didn't fill in their information properly.
+If you provide MarkShark with your class roster it can tell you who was missing from the test (absent) and flag 'orphan' scans (where the student didn't fill in their information properly.  It provides student scores in a format that is easily pasted into spreadsheets and into LMSs like Blackboard and Canvas.
 
 For testing prior to use MarkShark can generate fake student data ncluding fake filled in bubblesheets that you can print out, rescan, and test for yourself before committing yourself to using MarkShark.
 
