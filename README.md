@@ -22,7 +22,21 @@ MarkSharkOMR is a versatile and fast tool to **grade, and analyze your own bubbl
 pip install markshark
 ```
 
-Make sure you install required dependencies (**OpenCV**, **Typer**, **Streamlit**).
+## Dependencies (installs automatically with pip)
+typer>=0.12
+rich>=13.7
+opencv-contrib-python>=4.9
+numpy>=1.26,<2.0
+pymupdf>=1.24
+pdf2image>=1.17
+pandas>=2.1,<2.3
+matplotlib>=3.8
+streamlit>=1.35
+pyyaml
+openpyxl>=3.0
+rapidfuzz>=3.0
+streamlit-antd-components>=0.3.2
+
 
 ---
 
