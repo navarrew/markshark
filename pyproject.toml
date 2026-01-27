@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "markshark"
-dynamic = ["version"]                       # <— remove the fixed version
+dynamic = ["version"]
 description = "MarkShark — the open-source bubble hunter (Optical Mark Recognition toolkit)"
 authors = [
   { name = "William Navarre", email = "william.navarre@utoronto.ca" }
@@ -15,6 +15,10 @@ requires-python = ">=3.9"
 classifiers = [
   "License :: OSI Approved :: GNU Affero General Public License v3",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
   "Intended Audience :: Education",
   "Topic :: Education",
   "Topic :: Scientific/Engineering :: Image Recognition",
@@ -35,6 +39,11 @@ dependencies = [
   "streamlit-antd-components>=0.3.2",
 ]
 
+[project.urls]
+Homepage = "https://github.com/navarrew/markshark"
+Repository = "https://github.com/navarrew/markshark"
+Issues = "https://github.com/navarrew/markshark/issues"
+
 [project.scripts]
 markshark     = "markshark.cli:app_main"
 markshark-gui = "markshark.gui_launcher:main"
@@ -42,10 +51,21 @@ markshark-gui = "markshark.gui_launcher:main"
 # Use VCS (git tags) as the version source
 [tool.hatch.version]
 source = "vcs"
+fallback-version = "0.1.0"
 
 # hatch-vcs MUST know where to write a version file during build
 [tool.hatch.build.hooks.vcs]
 version-file = "src/markshark/_version.py"
 
-# Optional fallback if no tags exist yet (local builds)
-fallback-version = "0.1.0"
+# Exclude non-package files from the source distribution
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "/.claude",
+  "/.github",
+  "/docs",
+  "/helpful scripts",
+  "/images",
+  "/template_vector_art",
+  "/MrkSrk_user_manual_beta.pdf",
+  "/test_template_manager.py",
+]
