@@ -675,15 +675,11 @@ if page.startswith("0"):
                 st.caption("✓ Bubble grid alignment fallback enabled")
     
     with colB:
-        st.subheader("Processing options")
-
-        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1,
-                              help="150 DPI is usually sufficient for bubble sheets. Higher values are slower.")
-        
-        # Scoring options
-
         st.subheader("Adjust parameters")
 
+        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1,
+                              help="150 DPI is usually sufficient for bubble sheets. Higher values are slower to align and produce much larger files.")
+        
         with st.expander("Scoring options", expanded=False):
             annotate_all = st.checkbox("Annotate all bubbles", value=True)
             label_density = st.checkbox("Show % fill labels", value=True)
