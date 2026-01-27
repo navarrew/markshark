@@ -20,6 +20,8 @@ import streamlit_antd_components as sac
 import yaml  # For template creation
 import platform
 
+ASSETS_DIR = Path(__file__).parent / "assets"
+
 # Optional, pull defaults from MarkShark so GUI matches CLI defaults.
 try:
     from markshark.defaults import (
@@ -603,8 +605,8 @@ def _template_selector_with_archive(key_prefix: str, label: str = "Select a pre-
 # --------------------- Sidebar ---------------------
 # image_url = "https://github.com/navarrew/markshark/blob/main/images/shark.png" 
 # st.sidebar.image(image_url, caption="MarkShark Logo", use_column_width=True)
-st.sidebar.title("MarkShark Beta")
-page = st.sidebar.radio("Select below", [
+st.sidebar.image(str(ASSETS_DIR / "banner.png"), use_column_width=True)
+page = st.sidebar.radio("Select an option below", [
     "0) Quick grade",
     "1) Align scans",
     "2) Score",
@@ -933,12 +935,18 @@ if page.startswith("0"):
 
 # ===================== 1) ALIGN SCANS =====================
 elif page.startswith("1"):
-    st.header("Align raw scans to your template bubblesheet")
+    st.header("Align scans to your template.")
+    st.markdown("""
+    Use this page to align your raw scans to your master bubblesheet.
+    1. Choose your template from the dropdown or upload a pdf of your template.
+    2. Select an alignment method (auto, fast, slow, aruco)
+    3. Click the "Run Alignment" button below.
+    """)
 
     # Top-of-page controls and status
     top_col1, top_col2 = st.columns([1, 3])
     with top_col1:
-        run_align_clicked = st.button("Run Alignment")
+        run_align_clicked = st.button("Run Alignment", type="primary")
     with top_col2:
         status = st.empty()  # all errors/updates will appear here
 
@@ -978,8 +986,7 @@ elif page.startswith("1"):
         dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1)
 
         st.markdown("---")
-        st.subheader("Alignment parameters")
-
+        st.subheader("Alignment method")
         method = st.selectbox(
             "Alignment method",
             ["auto", "fast", "slow", "aruco"],
@@ -990,6 +997,7 @@ elif page.startswith("1"):
                  "aruco: ArUco markers only."
         )
         st.markdown("---")
+        st.subheader("Alignment parameters")
         st.markdown("**ArUco mark alignment parameters**")
         min_markers = st.number_input("Min ArUco markers to accept", min_value=0, max_value=32, value=int(_dflt(ALIGN_DEFAULTS, "min_aruco", 0)), step=1)
         dict_name = st.text_input("ArUco dictionary (if aruco)", value=str(_dflt(ALIGN_DEFAULTS, "dict_name", "DICT_4X4_50")))
@@ -1027,10 +1035,6 @@ elif page.startswith("1"):
                 step=1e-6,
                 format="%.7f",
             )
-
-        st.markdown("---")
-        first_page = st.number_input("First page to align in your raw scans (0 = auto)", min_value=0, value=0, step=1)
-        last_page = st.number_input("Last page to align in your raw scans (0 = auto)", min_value=0, value=0, step=1)
 
     if run_align_clicked:
         # Determine template and bubblemap to use
@@ -1083,10 +1087,6 @@ elif page.startswith("1"):
             ]
             if dict_name.strip():
                 args += ["--dict-name", dict_name.strip()]
-            if first_page > 0:
-                args += ["--first-page", str(int(first_page))]
-            if last_page > 0:
-                args += ["--last-page", str(int(last_page))]
             
             # Pass bubblemap for fast alignment mode
             if actual_bublmap:
@@ -1124,10 +1124,16 @@ elif page.startswith("1"):
 # ===================== 2) SCORE =====================
 elif page.startswith("2"):
     st.header("Score aligned scans")
+    st.markdown("""
+    If you have already aligned your scans you can start at this step.
+    1. Choose your template from the dropdown or upload a bubblemap.yaml file.
+    2. Upload your aligned scans
+    3. Click the "Score" button below.
+    """)
     # Top-of-page controls and status
     top_col1, top_col2 = st.columns([1, 3])
     with top_col1:
-        run_score_clicked = st.button("Score")
+        run_score_clicked = st.button("Score", type="primary")
     with top_col2:
         score_status = st.empty()  # all errors/updates will appear here
 
@@ -1563,7 +1569,7 @@ elif page.startswith("4"):
 
     top_col1, top_col2 = st.columns([1, 3])
     with top_col1:
-        run_viz_clicked = st.button("Visualize")
+        run_viz_clicked = st.button("Visualize Bubblemap", type="primary")
     with top_col2:
         viz_status = st.empty()
 
@@ -1875,41 +1881,23 @@ answer_rows:
 
 # ===================== 6) HELP =====================
 elif page.startswith("6"):
-    st.header("Help and CLI reference")
+    st.header("Help")
     st.markdown("""
-**New Unified Workflow (Recommended)**
-- **Quick Grade**: Upload scanned answer sheets + answer key, select a template → get results instantly!
+    A manual can be downloaded from the MarkShark GitHub repository.
+    """.format(template_dir=template_manager.templates_dir if (template_manager and hasattr(template_manager, 'templates_dir')) else "templates/"))
 
-**Traditional Workflow (Advanced)**
-1. **Manage Templates**: Set up your bubble sheet templates (once per template type)
-2. **Align scans**: Align raw student scans to template PDF → create aligned PDF
-3. **Score**: Grade the aligned PDF with bubblemap YAML and answer key → get results.csv
-4. **Report**: Compute item analysis, KR-20, plots from results.csv
-5. **Visualize**: Verify bubblemap overlay on your template (for template creation)
-
-**About Templates**
-Templates combine the master bubble sheet PDF and its bubblemap YAML configuration.
-Store them in: `{template_dir}`
-Each template needs its own folder with:
-- `master_template.pdf` 
-- `bubblemap.yaml`
-
-**NEW: Bubble Grid Alignment Fallback**
-When a bubblemap is provided during alignment, MarkShark can use the known bubble positions
-to align scans even when ArUco markers are not present. This is especially useful for
-legacy bubble sheets or templates from other sources.
-
-If the GUI is missing something, the CLI is always the single source of truth.
-""".format(template_dir=template_manager.templates_dir if (template_manager and hasattr(template_manager, 'templates_dir')) else "templates/"))
-
-    st.subheader("Show CLI help")
-    topic = st.selectbox("Help topic", ["markshark", "align", "score", "report", "visualize"], index=0)
+    st.markdown("---")
+    st.subheader("Command Line Help")
+    topic = st.selectbox("Help topic", ["markshark", "quick-grade", "align", "score", "report", "templates", "visualize", "gui"], index=0)
     help_args = {
         "markshark": ["--help"],
         "align": ["align", "--help"],
         "score": ["score", "--help"],
         "report": ["report", "--help"],
         "visualize": ["visualize", "--help"],
+        "quick-grade": ["quick-grade", "--help"],
+        "templates": ["templates", "--help"],
+        "gui": ["gui", "--help"],
     }
 
     @st.cache_data(show_spinner=False)
