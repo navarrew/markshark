@@ -1002,7 +1002,7 @@ def align_coarse_to_fine(
     # ==========================================================================
     # Stage 2: Fine bubble grid alignment on coarse-aligned image
     # ==========================================================================
-    print(f"[info] Fine bubble grid alignment...", file=sys.stderr)
+    print("[info] Fine bubble grid alignment...", file=sys.stderr)
     
     try:
         # Now bubble grid should work well - we're already close to correct alignment
@@ -1022,30 +1022,30 @@ def align_coarse_to_fine(
             metrics["fine_matched_pairs"] = fine_metrics.get("matched_pairs", 0)
             metrics["fine_detected_circles"] = fine_metrics.get("detected_circles", 0)
             metrics["success"] = True
-            
+
             print(f"[info] Fine alignment: {fine_metrics['inliers']} inliers from {fine_metrics['matched_pairs']} matches", file=sys.stderr)
-            
+
             # The final result is the fine-aligned image
             # (H_fine was applied to the coarse-aligned image)
             return aligned_fine, metrics
         else:
-            # Bubble grid refinement failed - fall back to coarse alignment
-            print(f"[info] Fine alignment failed: {fine_metrics.get('error', 'unknown')}. Using coarse result.", file=sys.stderr)
+            # Bubble grid refinement failed - signal failure so guardrails
+            # falls through to full-resolution slow-mode ORB alignment
+            # (the 72 DPI coarse-only result is too imprecise for scoring)
+            print(f"[info] Fine alignment failed: {fine_metrics.get('error', 'unknown')}. Will try slow alignment.", file=sys.stderr)
             metrics["fine_error"] = fine_metrics.get("error", "unknown")
-            
-            # Return coarse-aligned result (still better than nothing)
-            metrics["success"] = True  # Coarse worked
+            metrics["success"] = False
             metrics["method"] = "coarse_only"
-            return scan_coarse_aligned, metrics
-            
+            return None, metrics
+
     except Exception as e:
-        print(f"[info] Fine alignment error: {e}. Using coarse result.", file=sys.stderr)
+        # Bubble grid threw an exception - signal failure so guardrails
+        # falls through to full-resolution slow-mode ORB alignment
+        print(f"[info] Fine alignment error: {e}. Will try slow alignment.", file=sys.stderr)
         metrics["fine_error"] = str(e)
-        
-        # Return coarse-aligned result
-        metrics["success"] = True
+        metrics["success"] = False
         metrics["method"] = "coarse_only"
-        return scan_coarse_aligned, metrics
+        return None, metrics
 
 
 # --------------------------- Guardrailed Alignment ---------------------------
@@ -1131,7 +1131,7 @@ def align_with_guardrails(template_bgr: np.ndarray,
     
     # Warn if fast mode requested but no bubblemap
     if effective_mode == "fast" and bubblemap is None:
-        print(f"[warning] Fast alignment requested but no bubblemap provided. Falling back to slow mode.", file=sys.stderr)
+        print("[warning] Fast alignment requested but no bubblemap provided. Falling back to slow mode.", file=sys.stderr)
         effective_mode = "slow"
     
     # ==========================================================================

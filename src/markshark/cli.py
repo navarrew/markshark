@@ -16,7 +16,7 @@ from rich import print as rprint
 
 # Config loader that supports a YAML (.yaml/.yml) formatted map of the bubble sheet
 from .tools.bubblemap_io import load_bublmap
-from .template_manager import TemplateManager, list_available_templates, get_template_by_name
+from .template_manager import TemplateManager, get_template_by_name
 
 from .defaults import (
     SCORING_DEFAULTS,
@@ -90,17 +90,17 @@ def align(
             bubblemap = load_bublmap(bubblemap_path)
             rprint(f"[cyan]Loaded bubblemap:[/cyan] {bubblemap_path}")
             if align_method == "auto":
-                rprint(f"[cyan]Alignment mode:[/cyan] fast (coarse-to-fine)")
+                rprint("[cyan]Alignment mode:[/cyan] fast (coarse-to-fine)")
             elif align_method == "fast":
-                rprint(f"[cyan]Alignment mode:[/cyan] fast (coarse-to-fine)")
+                rprint("[cyan]Alignment mode:[/cyan] fast (coarse-to-fine)")
         except Exception as e:
             rprint(f"[yellow]Warning: Could not load bubblemap {bubblemap_path}: {e}[/yellow]")
             rprint("[yellow]Falling back to slow alignment mode.[/yellow]")
     else:
         if align_method == "fast":
-            rprint(f"[yellow]Warning: 'fast' alignment requires --bubblemap. Using 'slow' mode.[/yellow]")
+            rprint("[yellow]Warning: 'fast' alignment requires --bubblemap. Using 'slow' mode.[/yellow]")
         elif align_method in ("auto", "slow"):
-            rprint(f"[cyan]Alignment mode:[/cyan] slow (full-res ORB)")
+            rprint("[cyan]Alignment mode:[/cyan] slow (full-res ORB)")
     
     out = align_pdf_scans(
         input_pdf=input_pdf,
@@ -281,6 +281,7 @@ def report(
     roster_csv: Optional[str] = typer.Option(None, "--roster", "-r", help="Optional class roster CSV (StudentID, LastName, FirstName)"),
     project_name: Optional[str] = typer.Option(None, "--project-name", help="Project name to include in report header"),
     run_label: Optional[str] = typer.Option(None, "--run-label", help="Run label (e.g., run_001_2025-01-21_1430) to include in report header"),
+    corrections_xlsx: Optional[str] = typer.Option(None, "--corrections-xlsx", help="Filled flagged.xlsx with corrections (lists details on Summary tab)"),
 ):
     """
     Generate an Excel report with per-version tabs, item analysis, and roster checking.
@@ -300,6 +301,7 @@ def report(
             roster_csv=roster_csv,
             project_name=project_name,
             run_label=run_label,
+            corrections_xlsx=corrections_xlsx,
         )
         rprint(f"[green]Report generated:[/green] {out_xlsx}")
     except Exception as e:
@@ -341,9 +343,9 @@ def templates(
             if validate:
                 is_valid, errors = manager.validate_template(template)
                 if is_valid:
-                    rprint(f"  [green]✓ Valid[/green]")
+                    rprint("  [green]✓ Valid[/green]")
                 else:
-                    rprint(f"  [red]✗ Invalid:[/red]")
+                    rprint("  [red]✗ Invalid:[/red]")
                     for error in errors:
                         rprint(f"    - {error}")
             rprint()
@@ -399,7 +401,7 @@ def quick_grade(
         bubblemap = None
         try:
             bubblemap = load_bublmap(str(template.bubblemap_yaml_path))
-            rprint(f"[cyan]Bubble grid alignment fallback:[/cyan] enabled")
+            rprint("[cyan]Bubble grid alignment fallback:[/cyan] enabled")
         except Exception as e:
             rprint(f"[yellow]Warning: Could not load bubblemap: {e}[/yellow]")
             rprint("[yellow]Bubble grid alignment fallback will not be available.[/yellow]")
@@ -456,7 +458,7 @@ def quick_grade(
             label_density=label_density,
         )
         
-        rprint(f"[green]✅ Quick grade complete![/green]")
+        rprint("[green]✅ Quick grade complete![/green]")
         rprint(f"[green]Results:[/green] {out_csv}")
         rprint(f"[green]Annotated PDF:[/green] {out_pdf}")
         rprint(f"[green]Aligned scans:[/green] {aligned_pdf}")

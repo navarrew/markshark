@@ -24,9 +24,7 @@ Optional: reportlab (only if you use --page-size/--margin)
 
 import argparse
 import fnmatch
-import os
 import re
-import sys
 from pathlib import Path
 
 from PIL import Image

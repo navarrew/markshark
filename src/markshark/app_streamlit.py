@@ -162,10 +162,25 @@ def _init_workdir() -> Path:
     WORKDIR = typed_path
     WORKDIR.mkdir(parents=True, exist_ok=True)
 
-    st.sidebar.markdown("---")
-
     # ===================== PROJECT SECTION (First!) =====================
-    st.sidebar.markdown("##### Project")
+    st.sidebar.markdown("# Current Working Directory")
+
+    with st.sidebar:
+        # Compact path display with edit capability
+        current_path = st.text_input(
+            "Path",
+            value=st.session_state["workdir"],
+            key="workdir_input",
+            label_visibility="collapsed",
+            placeholder="Enter or paste a path...",
+        )
+        if current_path != st.session_state["workdir"]:
+            st.session_state["workdir"] = current_path
+            # Update WORKDIR immediately
+            WORKDIR = Path(current_path).expanduser()
+            WORKDIR.mkdir(parents=True, exist_ok=True)
+
+    st.sidebar.markdown("# Current Project")
 
     with st.sidebar:
         # Project name input
@@ -188,24 +203,24 @@ def _init_workdir() -> Path:
             sanitized = sanitize_project_name(st.session_state["project_name"]) if sanitize_project_name else st.session_state["project_name"]
             project_dir = WORKDIR / sanitized
 
-            if project_dir.exists() and get_project_info:
-                info = get_project_info(project_dir)
-                run_text = f"{info['num_runs']} run{'s' if info['num_runs'] != 1 else ''}" if info['num_runs'] > 0 else "No runs yet"
-                sac.alert(
-                    label=sanitized,
-                    description=run_text,
-                    icon="folder2",
-                    color="info",
-                    size="sm",
-                )
-            else:
-                sac.alert(
-                    label=sanitized,
-                    description="New project",
-                    icon="folder-plus",
-                    color="warning",
-                    size="sm",
-                )
+#             if project_dir.exists() and get_project_info:
+#                 info = get_project_info(project_dir)
+#                 run_text = f"{info['num_runs']} run{'s' if info['num_runs'] != 1 else ''}" if info['num_runs'] > 0 else "No runs yet"
+#                 sac.alert(
+#                     label=f'<span style="color:white">{sanitized}</span>',
+#                     description=f'<span style="color:white">{run_text}</span>',
+#                     icon="folder2",
+#                     color="info",
+#                     size="sm",
+#                 )
+#             else:
+#                 sac.alert(
+#                     label=sanitized,
+#                     description="New project",
+#                     icon="folder-plus",
+#                     color="warning",
+#                     size="sm",
+#                 )
         else:
             st.caption("No project — using temp directories")
 
@@ -214,7 +229,7 @@ def _init_workdir() -> Path:
             projects = find_projects(WORKDIR)
 
             if projects:
-                st.caption("**Recent projects:**")
+                st.caption("**Projects in working directory:**")
 
                 # Build project items for tree display
                 project_items = []
@@ -246,8 +261,12 @@ def _init_workdir() -> Path:
                             add_recent_project(proj_name)
 
     # ===================== WORKING DIRECTORY SECTION =====================
+
     st.sidebar.markdown("---")
-    st.sidebar.markdown("##### Working Directory")
+
+
+    st.sidebar.markdown("### Change Working Directory")
+
 
     # Build quick locations (only show ones that exist)
     quick_locations = []
@@ -300,20 +319,6 @@ def _init_workdir() -> Path:
 
     # Show current selection and path input
     with st.sidebar:
-        # Compact path display with edit capability
-        current_path = st.text_input(
-            "Path",
-            value=st.session_state["workdir"],
-            key="workdir_input",
-            label_visibility="collapsed",
-            placeholder="Enter or paste a path...",
-        )
-        if current_path != st.session_state["workdir"]:
-            st.session_state["workdir"] = current_path
-            # Update WORKDIR immediately
-            WORKDIR = Path(current_path).expanduser()
-            WORKDIR.mkdir(parents=True, exist_ok=True)
-
         # Folder tree browser
         if tree_items:
             st.caption(f"Browse from: **{tree_base.name}/**")
@@ -365,7 +370,7 @@ def _init_workdir() -> Path:
                 WORKDIR = Path(st.session_state["tree_base"])
 
         with col2:
-            if st.button("💾 Set default", use_container_width=True, key="save_default"):
+            if st.button("💾 Set as default", use_container_width=True, key="save_default"):
                 if set_preference:
                     set_preference("default_workdir", st.session_state["workdir"])
                     st.toast("Default directory saved!", icon="✅")
@@ -778,7 +783,7 @@ if page.startswith("0"):
                 from datetime import datetime
                 log_file = project_dir / "logs" / f"log_{run_label}.txt"
                 log_entries = []
-                log_entries.append(f"MarkShark Quick Grade Log")
+                log_entries.append("MarkShark Quick Grade Log")
                 log_entries.append(f"{'=' * 50}")
                 log_entries.append(f"Project: {project_name}")
                 log_entries.append(f"Run: {run_label}")
@@ -816,7 +821,7 @@ if page.startswith("0"):
                 
                 try:
                     align_out = _run_cli_with_progress(align_args, align_progress, align_status)
-                except Exception as e:
+                except Exception:
                     # Fallback to regular CLI if progress version fails
                     align_out = _run_cli(align_args)
                 
@@ -826,10 +831,10 @@ if page.startswith("0"):
                 # Save alignment log
                 if log_file:
                     log_entries.append(f"\n{'='*50}")
-                    log_entries.append(f"STEP 1: ALIGNMENT")
+                    log_entries.append("STEP 1: ALIGNMENT")
                     log_entries.append(f"{'='*50}")
                     log_entries.append(f"Command: {' '.join(align_args)}")
-                    log_entries.append(f"\nOutput:")
+                    log_entries.append("\nOutput:")
                     log_entries.append(align_out or "(no output)")
 
                 # Step 2: Score
@@ -886,10 +891,10 @@ if page.startswith("0"):
                 # Save scoring log
                 if log_file:
                     log_entries.append(f"\n{'='*50}")
-                    log_entries.append(f"STEP 2: SCORING")
+                    log_entries.append("STEP 2: SCORING")
                     log_entries.append(f"{'='*50}")
                     log_entries.append(f"Command: {' '.join(score_args)}")
-                    log_entries.append(f"\nOutput:")
+                    log_entries.append("\nOutput:")
                     log_entries.append(score_out or "(no output)")
 
                     # Write complete log to file
@@ -899,38 +904,52 @@ if page.startswith("0"):
                 # Display results
                 st.success("Processing complete!")
 
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    _download_file_button("📄 Download results.csv", out_csv)
-                with col2:
-                    _download_file_button("📑 Download scored.pdf", out_pdf)
-                with col3:
-                    _download_file_button("📋 Download aligned.pdf", aligned_pdf)
-                
-                # Flagging downloads (if generated)
-                if review_pdf_path or flagged_xlsx_path:
-                    flag_col1, flag_col2 = st.columns(2)
-                    with flag_col1:
-                        if review_pdf_path and review_pdf_path.exists():
-                            _download_file_button("🔍 Download Review PDF (flagged pages)", review_pdf_path)
-                    with flag_col2:
-                        if flagged_xlsx_path and flagged_xlsx_path.exists():
-                            _download_file_button("⚠️ Download Flagged Items XLSX", flagged_xlsx_path)
-                
-                # Stats info
-                if include_stats and key_txt:
-                    st.info("📊 Basic statistics appended to CSV (scroll to bottom)")
-                
-                # Show output logs
-                with st.expander("View processing logs", expanded=False):
-                    st.text("Alignment output:")
-                    st.code(align_out or "Done.", language="bash")
-                    st.text("Scoring output:")
-                    st.code(score_out or "Done.", language="bash")
-                    
+                # Store results in session state for persistent download buttons
+                st.session_state["quick_grade_results"] = {
+                    "out_csv": str(out_csv),
+                    "out_pdf": str(out_pdf),
+                    "aligned_pdf": str(aligned_pdf),
+                    "review_pdf": str(review_pdf_path) if review_pdf_path else None,
+                    "flagged_xlsx": str(flagged_xlsx_path) if flagged_xlsx_path else None,
+                    "include_stats": include_stats,
+                    "has_key": bool(key_txt),
+                    "align_out": align_out or "Done.",
+                    "score_out": score_out or "Done.",
+                }
+
             except Exception as e:
                 quick_status.error(f"Error: {str(e)}")
                 st.exception(e)
+
+    # --- Persistent download buttons (survive reruns) ---
+    if "quick_grade_results" in st.session_state:
+        qr = st.session_state["quick_grade_results"]
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            _download_file_button("📄 Download results.csv", Path(qr["out_csv"]))
+        with col2:
+            _download_file_button("📑 Download scored.pdf", Path(qr["out_pdf"]))
+        with col3:
+            _download_file_button("📋 Download aligned.pdf", Path(qr["aligned_pdf"]))
+
+        if qr.get("review_pdf") or qr.get("flagged_xlsx"):
+            flag_col1, flag_col2 = st.columns(2)
+            with flag_col1:
+                if qr.get("review_pdf"):
+                    _download_file_button("🔍 Download Review PDF (flagged pages)", Path(qr["review_pdf"]))
+            with flag_col2:
+                if qr.get("flagged_xlsx"):
+                    _download_file_button("⚠️ Download Flagged Items XLSX", Path(qr["flagged_xlsx"]))
+
+        if qr.get("include_stats") and qr.get("has_key"):
+            st.info("📊 Basic statistics appended to CSV (scroll to bottom)")
+
+        with st.expander("View processing logs", expanded=False):
+            st.text("Alignment output:")
+            st.code(qr.get("align_out", "Done."), language="bash")
+            st.text("Scoring output:")
+            st.code(qr.get("score_out", "Done."), language="bash")
 
 # ===================== 1) ALIGN SCANS =====================
 elif page.startswith("1"):
@@ -1097,21 +1116,30 @@ elif page.startswith("1"):
                 # Show progress during alignment
                 align_progress = st.progress(0, text="Starting alignment...")
                 align_status_text = st.empty()
-                
+
                 try:
                     out = _run_cli_with_progress(args, align_progress, align_status_text)
                 except Exception:
                     # Fallback to regular CLI if progress version fails
                     out = _run_cli(args)
-                
+
                 align_progress.progress(1.0, text="✓ Alignment complete")
                 status.success("Alignment finished.")
-                st.code(out or "Done.", language="bash")
 
-                _download_file_button("Download aligned_scans.pdf", out_pdf)
+                # Store results in session state for persistent download buttons
+                st.session_state["align_results"] = {
+                    "out_pdf": str(out_pdf),
+                    "cli_output": out or "Done.",
+                }
 
             except Exception as e:
                 status.error(f"Error during alignment: {e}")
+
+    # --- Persistent download buttons (survive reruns) ---
+    if "align_results" in st.session_state:
+        ar = st.session_state["align_results"]
+        st.code(ar["cli_output"], language="bash")
+        _download_file_button("Download aligned_scans.pdf", Path(ar["out_pdf"]))
 
 # ===================== 2) SCORE =====================
 elif page.startswith("2"):
@@ -1127,7 +1155,7 @@ elif page.startswith("2"):
 
     colA, colB = st.columns(2)
     with colA:
-        st.subheader("Input Files")
+        st.subheader("Inputs")
 
         # Template/Bubblemap selection
         score_template_choice = _template_selector_with_archive("score", "Select template from dropdown menu")
@@ -1258,37 +1286,57 @@ elif page.startswith("2"):
                 with st.spinner("Scoring via CLI..."):
                     out = _run_cli(args)
                 score_status.success("Scoring finished.")
-                st.code(out or "Done.", language="bash")
 
-                _download_file_button("Download results.csv", out_csv)
-                
-                # Show stats note if included
-                if include_stats and key_txt:
-                    st.info("📊 Basic statistics appended to CSV (scroll to bottom)")
-                
-                # If scored PDF was created, offer download
+                # Build scored PDF path if applicable
+                scored_pdf_path_str = None
                 if scored_pdf_name.strip():
                     scored_pdf_path = out_dir / scored_pdf_name.strip()
                     if scored_pdf_path.exists():
-                        _download_file_button("Download scored PDF", scored_pdf_path)
-                
-                # If review PDF was created, offer download
-                if review_pdf_path and review_pdf_path.exists():
-                    _download_file_button("📋 Download Review PDF (flagged pages)", review_pdf_path)
+                        scored_pdf_path_str = str(scored_pdf_path)
 
-                # If flagged XLSX was created, offer download
-                if flagged_xlsx_path and flagged_xlsx_path.exists():
-                    _download_file_button("⚠️ Download Flagged Items XLSX", flagged_xlsx_path)
-                
-                # If annotated dir was created, offer zip download
+                # Build annotated zip bytes if applicable
+                ann_zip_bytes = None
                 if out_ann_dir.strip():
                     ann_path = out_dir / out_ann_dir.strip()
                     if ann_path.exists() and ann_path.is_dir():
-                        zip_bytes = _zip_dir_to_bytes(ann_path)
-                        st.download_button("Download annotated PNGs (zip)", data=zip_bytes, file_name="annotated.zip")
+                        ann_zip_bytes = _zip_dir_to_bytes(ann_path)
+
+                # Store results in session state for persistent download buttons
+                st.session_state["score_results"] = {
+                    "out_csv": str(out_csv),
+                    "scored_pdf": scored_pdf_path_str,
+                    "review_pdf": str(review_pdf_path) if review_pdf_path and review_pdf_path.exists() else None,
+                    "flagged_xlsx": str(flagged_xlsx_path) if flagged_xlsx_path and flagged_xlsx_path.exists() else None,
+                    "ann_zip_bytes": ann_zip_bytes,
+                    "include_stats": include_stats,
+                    "has_key": bool(key_txt),
+                    "cli_output": out or "Done.",
+                }
 
             except Exception as e:
                 score_status.error(f"Error during scoring: {e}")
+
+    # --- Persistent download buttons (survive reruns) ---
+    if "score_results" in st.session_state:
+        sr = st.session_state["score_results"]
+        st.code(sr["cli_output"], language="bash")
+
+        _download_file_button("Download results.csv", Path(sr["out_csv"]))
+
+        if sr.get("include_stats") and sr.get("has_key"):
+            st.info("📊 Basic statistics appended to CSV (scroll to bottom)")
+
+        if sr.get("scored_pdf"):
+            _download_file_button("Download scored PDF", Path(sr["scored_pdf"]))
+
+        if sr.get("review_pdf"):
+            _download_file_button("📋 Download Review PDF (flagged pages)", Path(sr["review_pdf"]))
+
+        if sr.get("flagged_xlsx"):
+            _download_file_button("⚠️ Download Flagged Items XLSX", Path(sr["flagged_xlsx"]))
+
+        if sr.get("ann_zip_bytes"):
+            st.download_button("Download annotated PNGs (zip)", data=sr["ann_zip_bytes"], file_name="annotated.zip")
 
 # ===================== 3) REPORT =====================
 elif page.startswith("3"):
@@ -1443,6 +1491,7 @@ elif page.startswith("3"):
             # Apply corrections to CSV first (if provided)
             csv_for_report = selected_csv_path
             corrections_applied = 0
+            corrected_csv_path = None
             if corrections_xlsx:
                 try:
                     from markshark.tools.report_tools import apply_corrections_to_csv
@@ -1457,11 +1506,12 @@ elif page.startswith("3"):
                     if corrections_applied > 0:
                         st.success(f"Applied {corrections_applied} corrections to CSV")
                         csv_for_report = corrected_csv_path
-                        _download_file_button("📄 Download corrected CSV", corrected_csv_path)
                     else:
                         st.warning("No corrections found in the uploaded XLSX")
+                        corrected_csv_path = None
                 except Exception as e:
                     st.error(f"Error applying corrections: {e}")
+                    corrected_csv_path = None
 
             args = [
                 "report",
@@ -1471,6 +1521,10 @@ elif page.startswith("3"):
 
             if roster_csv:
                 args.extend(["--roster", str(roster_csv)])
+
+            # Pass corrections XLSX so details appear on Summary tab
+            if corrections_xlsx and corrected_csv_path:
+                args.extend(["--corrections-xlsx", str(corrections_xlsx)])
 
             # Add project metadata if in project mode
             if use_project_mode:
@@ -1482,36 +1536,50 @@ elif page.startswith("3"):
                 with st.spinner("Generating Excel report..."):
                     out = _run_cli(args)
                 report_status.success("✅ Report generated!")
-                st.code(out or "Done.", language="bash")
 
-                if out_path.exists():
-                    _download_file_button(f"📥 Download {out_filename}", out_path)
-
-                    # Show preview of what's in the report
-                    with st.expander("📊 What's in the report?", expanded=True):
-                        st.markdown("""
-                        **Summary Tab:**
-                        - Overall exam statistics (N students, mean, std dev, KR-20)
-                        - Reliability interpretation with color coding
-                        - Roster issues (if roster provided)
-
-                        **Per-Version Tabs (Version A, Version B, etc.):**
-                        - Student results with columns: LastName, FirstName, StudentID, **Issue**, correct, incorrect, blank, multi, percent, Version, Q1, Q2...
-                        - **Issue column** flags: blank answers, multi-marked, ID mismatch, fuzzy match
-                        - **Incorrect answers highlighted in light red**
-                        - **KEY row** showing correct answers
-                        - **% Correct** - Item difficulty
-                        - **Point-Biserial** - Item discrimination (green ≥0.20, yellow 0.10-0.20, red <0.10)
-                        - **Item Quality** - Visual summary (✓ Good / ⚠ Review / ✗ Problem)
-                        """)
+                # Store results in session state for persistent download buttons
+                st.session_state["report_results"] = {
+                    "out_path": str(out_path) if out_path.exists() else None,
+                    "out_filename": out_filename,
+                    "corrected_csv": str(corrected_csv_path) if corrected_csv_path else None,
+                    "cli_output": out or "Done.",
+                }
 
             except Exception as e:
                 report_status.error(f"Error: {e}")
 
+    # --- Persistent download buttons (survive reruns) ---
+    if "report_results" in st.session_state:
+        rr = st.session_state["report_results"]
+        st.code(rr["cli_output"], language="bash")
+
+        if rr.get("corrected_csv"):
+            _download_file_button("📄 Download corrected CSV", Path(rr["corrected_csv"]))
+
+        if rr.get("out_path"):
+            _download_file_button(f"📥 Download {rr['out_filename']}", Path(rr["out_path"]))
+
+            with st.expander("📊 What's in the report?", expanded=True):
+                st.markdown("""
+                **Summary Tab:**
+                - Overall exam statistics (N students, mean, std dev, KR-20)
+                - Reliability interpretation with color coding
+                - Roster issues (if roster provided)
+
+                **Per-Version Tabs (Version A, Version B, etc.):**
+                - Student results with columns: LastName, FirstName, StudentID, **Issue**, correct, incorrect, blank, multi, percent, Version, Q1, Q2...
+                - **Issue column** flags: blank answers, multi-marked, ID mismatch, fuzzy match
+                - **Incorrect answers highlighted in light red**
+                - **KEY row** showing correct answers
+                - **% Correct** - Item difficulty
+                - **Point-Biserial** - Item discrimination (green ≥0.20, yellow 0.10-0.20, red <0.10)
+                - **Item Quality** - Visual summary (✓ Good / ⚠ Review / ✗ Problem)
+                """)
+
 # ===================== 4) VISUALIZE =====================
 elif page.startswith("4"):
     st.header("Bubblemap Visualizer")
-    st.markdown("Overlay bubble zones on a template or aligned PDF to verify placement.")
+    st.markdown("Overlay bubblemaps on a template or aligned PDF to verify placement.")
 
     top_col1, top_col2 = st.columns([1, 3])
     with top_col1:
@@ -1562,14 +1630,25 @@ elif page.startswith("4"):
                 with st.spinner("Generating overlay..."):
                     out = _run_cli(args)
                 viz_status.success("Visualization complete.")
-                st.code(out or "Done.", language="bash")
 
+                # Store results in session state for persistent download buttons
                 if out_path.exists():
-                    st.image(str(out_path), caption="Bubblemap Overlay")
-                    _download_file_button("Download overlay image", out_path)
+                    st.session_state["viz_results"] = {
+                        "out_path": str(out_path),
+                        "cli_output": out or "Done.",
+                    }
 
             except Exception as e:
                 viz_status.error(f"Error: {e}")
+
+    # --- Persistent download buttons (survive reruns) ---
+    if "viz_results" in st.session_state:
+        vr = st.session_state["viz_results"]
+        st.code(vr["cli_output"], language="bash")
+        out_path = Path(vr["out_path"])
+        if out_path.exists():
+            st.image(str(out_path), caption="Bubblemap Overlay")
+            _download_file_button("Download overlay image", out_path)
 
 # ===================== 5) TEMPLATE MANAGER =====================
 elif page.startswith("5"):
@@ -1708,7 +1787,7 @@ elif page.startswith("5"):
                             st.error("❌ Invalid")
 
                     # Unarchive button
-                    if st.button(f"↩️ Restore to Active", key=f"unarchive_{template.template_id}"):
+                    if st.button("↩️ Restore to Active", key=f"unarchive_{template.template_id}"):
                         if template_manager.unarchive_template(template.template_id):
                             st.success(f"Restored {template.display_name}")
                             st.rerun()
@@ -1825,7 +1904,7 @@ elif page.startswith("6"):
 1. **Manage Templates**: Set up your bubble sheet templates (once per template type)
 2. **Align scans**: Align raw student scans to template PDF → create aligned PDF
 3. **Score**: Grade the aligned PDF with bubblemap YAML and answer key → get results.csv
-4. **Stats**: Compute item analysis, KR-20, plots from results.csv
+4. **Report**: Compute item analysis, KR-20, plots from results.csv
 5. **Visualize**: Verify bubblemap overlay on your template (for template creation)
 
 **About Templates**
@@ -1844,12 +1923,12 @@ If the GUI is missing something, the CLI is always the single source of truth.
 """.format(template_dir=template_manager.templates_dir if (template_manager and hasattr(template_manager, 'templates_dir')) else "templates/"))
 
     st.subheader("Show CLI help")
-    topic = st.selectbox("Help topic", ["markshark", "align", "score", "stats", "visualize"], index=0)
+    topic = st.selectbox("Help topic", ["markshark", "align", "score", "report", "visualize"], index=0)
     help_args = {
         "markshark": ["--help"],
         "align": ["align", "--help"],
         "score": ["score", "--help"],
-        "stats": ["stats", "--help"],
+        "report": ["report", "--help"],
         "visualize": ["visualize", "--help"],
     }
 

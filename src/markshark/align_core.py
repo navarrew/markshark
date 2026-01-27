@@ -115,7 +115,7 @@ def align_pdf_scans(
     
     print(f"[info] Loaded template with {num_template_pages} page(s)", file=sys.stderr)
     if bubblemap is not None:
-        print(f"[info] Bubblemap provided - bubble grid alignment available as fallback", file=sys.stderr)
+        print("[info] Bubblemap provided - bubble grid alignment available as fallback", file=sys.stderr)
 
     # Convert raw scans to (src_path, page_idx, bgr)
     raw_scans_bgr = IO.convert_pdf_pages_to_bgr_tuples(input_pdf, dpi=dpi, renderer=renderer)

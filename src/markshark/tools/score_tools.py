@@ -19,8 +19,7 @@ Conventions:
 
 from __future__ import annotations
 
-from typing import Iterable, List, Optional, Tuple, Dict
-import re
+from typing import Iterable, List, NamedTuple, Optional, Tuple, Dict
 
 import cv2
 import numpy as np
@@ -783,9 +782,6 @@ def scores_to_labels_row(
 # ------------------------------------------------------------------------------
 # Detailed scoring with flagging info
 # ------------------------------------------------------------------------------
-
-from dataclasses import dataclass
-from typing import NamedTuple
 
 class AnswerDetail(NamedTuple):
     """Detailed info about a single answer for flagging purposes."""

@@ -181,14 +181,14 @@ def main():
     
     # Print summary
     print(f"\nGenerated {num_students} fake students")
-    print(f"Score distribution:")
+    print("Score distribution:")
     print(f"  Min: {actual_scores.min() * 100:.1f}%")
     print(f"  Max: {actual_scores.max() * 100:.1f}%")
     print(f"  Median: {np.median(actual_scores) * 100:.1f}%")
     print(f"  Mean: {actual_scores.mean() * 100:.1f}%")
     print(f"\nScores above 90%: {sum(actual_scores > 0.90)}")
     print(f"\nSaved to '{output_file}'")
-    print(f"\nFirst 5 rows:")
+    print("\nFirst 5 rows:")
     print(df.head())
 
 if __name__ == '__main__':

@@ -8,7 +8,7 @@ import csv
 import os
 import sys
 import random
-from typing import Dict, Any, List, Tuple, Iterable, Optional
+from typing import Dict, Any, List, Tuple, Optional
 
 import yaml
 from PIL import Image, ImageDraw

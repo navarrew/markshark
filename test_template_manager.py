@@ -57,7 +57,7 @@ def test_template_manager():
         print(f"   Template to test with: {test_template.display_name} ({test_template.template_id})")
 
         # Test favorite toggle
-        print(f"\n   5a. Testing favorite toggle...")
+        print("\n   5a. Testing favorite toggle...")
         was_fav = tm.is_favorite(test_template.template_id)
         print(f"       Before: Favorite = {was_fav}")
 
@@ -71,7 +71,7 @@ def test_template_manager():
 
         # Test ordering
         if len(templates) > 1:
-            print(f"\n   5b. Testing template ordering...")
+            print("\n   5b. Testing template ordering...")
             print(f"       Moving {test_template.template_id} down...")
             success = tm.move_template_down(test_template.template_id)
             print(f"       Success: {success}")
@@ -88,8 +88,8 @@ def test_template_manager():
 
         # Note: We're NOT actually testing archive/unarchive to avoid
         # modifying the user's template directory
-        print(f"\n   Note: Skipping actual archive/unarchive to preserve templates")
-        print(f"         Archive/unarchive can be tested via the GUI")
+        print("\n   Note: Skipping actual archive/unarchive to preserve templates")
+        print("         Archive/unarchive can be tested via the GUI")
 
     print("\n" + "=" * 60)
     print("✅ Template Manager Tests Complete!")

@@ -12,7 +12,7 @@ Features:
 """
 
 from __future__ import annotations
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict, Tuple, NamedTuple
 
 import pandas as pd
 import numpy as np
@@ -673,14 +673,6 @@ def _load_score_csv_robust(input_csv: str) -> pd.DataFrame:
 
     df = df.rename(columns=column_mapping)
 
-    # Convert score columns from strings to proper numeric types so Excel
-    # formats them as numbers instead of left-aligned text.
-    for col in ('correct', 'incorrect', 'blank', 'multi'):
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    if 'percent' in df.columns:
-        df['percent'] = pd.to_numeric(df['percent'], errors='coerce')
-
     return df
 
 
@@ -694,7 +686,6 @@ def generate_report(
     project_name: Optional[str] = None,
     run_label: Optional[str] = None,
     corrections_applied: int = 0,
-    corrections_xlsx: Optional[str] = None,
 ):
     r"""
     Generate comprehensive Excel report from scored CSV.
@@ -707,7 +698,6 @@ def generate_report(
         project_name: Optional project name for report header
         run_label: Optional run label (e.g., "run_001_2025-01-21_1430")
         corrections_applied: Number of corrections applied (for display on Summary tab)
-        corrections_xlsx: Optional path to the corrections XLSX (for listing details on Summary tab)
     """
     # Load scored results - handle messy CSV from score with include_stats
     df = _load_score_csv_robust(input_csv)
@@ -827,17 +817,6 @@ def generate_report(
     kr20_val = kr20(pooled_items, pooled_totals)
     kr21_val = kr21(pooled_items, pooled_totals)
 
-    # Load full flagged xlsx for display on summary tab (all rows, all columns)
-    corrections_detail = None
-    if corrections_xlsx:
-        try:
-            try:
-                corrections_detail = pd.read_excel(corrections_xlsx, sheet_name="Flagged Items")
-            except ValueError:
-                corrections_detail = pd.read_excel(corrections_xlsx, sheet_name=0)
-        except Exception:
-            corrections_detail = None
-
     # Create Excel workbook
     wb = Workbook()
     wb.remove(wb.active)  # Remove default sheet
@@ -847,7 +826,7 @@ def generate_report(
         wb, k, total_n_students, mean_total, std_total, kr20_val, kr21_val,
         versions, version_stats,
         orphan_scans, absent_students, project_name, run_label,
-        corrections_applied, corrections_detail
+        corrections_applied
     )
 
     # ========== PER-VERSION TABS ==========
@@ -871,7 +850,7 @@ def create_summary_tab(
     wb, k, n_students, mean_total, std_total, kr20_val, kr21_val,
     versions, version_stats,
     orphan_scans, absent_students, project_name=None, run_label=None,
-    corrections_applied=0, corrections_detail=None
+    corrections_applied=0
 ):
     """Create summary tab with per-version and amalgamated exam statistics."""
     from datetime import datetime
@@ -1050,29 +1029,6 @@ def create_summary_tab(
                 ws[f'C{row}'] = student['FirstName']
                 row += 1
 
-    # Corrections detail (copy of the flagged XLSX rows)
-    if corrections_detail is not None and not corrections_detail.empty:
-        row += 2
-        ws[f'A{row}'] = "Corrections Applied"
-        ws[f'A{row}'].font = Font(size=14, bold=True, color="FF0000")
-        row += 1
-
-        # Write all columns from the flagged xlsx as-is
-        flagged_cols = list(corrections_detail.columns)
-        for col_idx, col_name in enumerate(flagged_cols, start=1):
-            ws.cell(row=row, column=col_idx, value=str(col_name))
-        format_header_row(ws, row)
-        row += 1
-
-        for _, corr_row in corrections_detail.iterrows():
-            for col_idx, col_name in enumerate(flagged_cols, start=1):
-                val = corr_row.get(col_name, '')
-                # Clean up NaN display
-                if pd.isna(val):
-                    val = ''
-                ws.cell(row=row, column=col_idx, value=val)
-            row += 1
-
     auto_size_columns(ws)
 
 
@@ -1185,45 +1141,34 @@ def create_version_tab(
                     cell.fill = COLOR_WARNING
             else:
                 value = student_row.get(col_name, '')
-                # Handle NaN/None from pandas (blank CSV cells become NaN)
-                if pd.isna(value):
-                    student_answer = ''
-                else:
-                    student_answer = str(value).strip().upper()
+                student_answer = str(value).strip().upper()
 
                 # Check for blank or multi-answer cells in question columns
                 if col_name in item_cols:
-                    # Detect blank answers (empty, NaN, whitespace, or common blank indicators)
-                    is_blank = (
-                        not student_answer
-                        or student_answer in ('', 'NAN', 'BLANK', 'NONE', '?')
-                    )
+                    # Detect blank answers (empty, whitespace, or common blank indicators)
+                    is_blank = not student_answer or student_answer in ('', 'BLANK', 'NONE', '?')
 
                     # Detect multi-answer (contains comma, multiple letters, or "MULTI" indicator)
                     is_multi = (
-                        not is_blank and (
-                            ',' in student_answer or
-                            student_answer == 'MULTI' or
-                            (len(student_answer) > 1 and student_answer not in ('BLANK', 'NONE', 'MULTI', 'NAN'))
-                        )
+                        ',' in student_answer or
+                        (len(student_answer) > 1 and student_answer not in ('BLANK', 'NONE', 'MULTI')) or
+                        student_answer == 'MULTI'
                     )
 
                     # Apply formatting based on answer type
                     if is_blank:
                         cell = ws.cell(row=row_num, column=col_idx, value="BLANK")
                         cell.fill = COLOR_BLANK
-                        cell.alignment = Alignment(horizontal='center')
                     elif is_multi:
                         cell = ws.cell(row=row_num, column=col_idx, value=value)
                         cell.fill = COLOR_MULTI
-                        cell.alignment = Alignment(horizontal='center')
                     else:
                         cell = ws.cell(row=row_num, column=col_idx, value=value)
-                        cell.alignment = Alignment(horizontal='center')
                         # Highlight incorrect answers in light red (only if not blank/multi)
                         if key_answers.get(col_name):
                             correct_answer = key_answers[col_name]
                             if student_answer and student_answer != correct_answer:
+                                # Light red fill for incorrect answers
                                 cell.fill = PatternFill(start_color="FFD7D7", end_color="FFD7D7", fill_type="solid")
                 else:
                     # Non-question columns - just write the value

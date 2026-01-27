@@ -1474,7 +1474,7 @@ def score_pdf(
         
         print(f"[info] Wrote review PDF with {len(review_pages)} flagged pages to {review_pdf}", file=__import__('sys').stderr)
     elif review_pdf and not flagged_page_images:
-        print(f"[info] No flagged pages - review PDF not created", file=__import__('sys').stderr)
+        print("[info] No flagged pages - review PDF not created", file=__import__('sys').stderr)
     
     # Print summary
     if flagged_items:
