@@ -1,4 +1,4 @@
-# MarkSharkOMR
+# MarkShark
 ## A fast, accurate, customizable, open-source test bubble sheet scanner
 
 ![MarkShark Logo](images/shark.png)
