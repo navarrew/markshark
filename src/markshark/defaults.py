@@ -203,22 +203,22 @@ class AnnotationDefaults:
     
     # Answer bubble percent filled annotations    
     pct_fill_font_color: Tuple[int, int, int] = (255, 0, 0)  # blue for %fill labels
-    pct_fill_font_scale: float = 0.5
+    pct_fill_font_scale: float = 0.4
     pct_fill_font_thickness: int = 1
     
     #this will set the position of the %filled value on the annotated
     #pdf files.  0 puts the text directly on top of the bubble.  10 would
     #be 10 pixels above the bubble.  -20 would put the text within the bubble.
-    pct_fill_font_position: int = 6
+    pct_fill_font_position: int = 3
 
     # Answer row boxes and required-blank highlighting
     box_multi: bool = True
     box_blank_answer_row: bool = True
     box_color_multi: Tuple[int, int, int] = (0, 140, 255)        # orange
     box_color_blank_answer_row: Tuple[int, int, int] = (255, 0, 255)  # purple
-    box_thickness: int = 4
-    box_pad: int = 6
-    box_top_extra: int = 12  # raise the top edge to avoid overwriting % labels
+    box_thickness: int = 2
+    box_pad: int = 4
+    box_top_extra: int = 7  # raise the top edge to avoid overwriting % labels
 
 ANNOTATION_DEFAULTS = AnnotationDefaults()
 
