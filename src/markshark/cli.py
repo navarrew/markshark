@@ -551,10 +551,24 @@ def mock_dataset(
 
 
 # ------------------------------- GUI ---------------------------------
+def _find_available_port(start_port: int = 8501, max_attempts: int = 10) -> int:
+    """Find an available port starting from start_port."""
+    import socket
+    for offset in range(max_attempts):
+        port = start_port + offset
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("localhost", port))
+                return port
+            except OSError:
+                continue
+    return start_port  # fallback to original if all attempts fail
+
+
 @app.command()
 def gui(
-    port: int = typer.Option(8501, "--port", help="Port to serve Streamlit GUI"),
-    browser: bool = typer.Option(True, "--open-browser/--no-open-browser", help="Open browser automatically"),
+    port: int = typer.Option(None, "--port", help="Port to serve Streamlit GUI (auto-finds available port if not specified)"),
+    headless: bool = typer.Option(False, "--headless", help="Run without opening a browser (for remote servers)"),
 ):
     """
     Launch the Streamlit GUI.
@@ -565,8 +579,13 @@ def gui(
         rprint(f"[red]Cannot locate app_streamlit.py at {app_py}[/red]")
         raise typer.Exit(code=2)
 
+    # Auto-find available port if not specified
+    if port is None:
+        port = _find_available_port()
+        rprint(f"[dim]Using port {port}[/dim]")
+
     cmd = ["streamlit", "run", str(app_py), "--server.port", str(port)]
-    if not browser:
+    if headless:
         cmd.extend(["--server.headless", "true"])
 
     rprint(f"[cyan]Launching:[/cyan] {' '.join(cmd)}")
