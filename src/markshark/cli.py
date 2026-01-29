@@ -477,7 +477,7 @@ def mock_dataset(
     out_dir: str = typer.Option(..., "--out-dir", "-o", help="Output directory for generated files"),
     num_students: int = typer.Option(100, "--num-students", "-n", help="Number of fake students to generate"),
     seed: int = typer.Option(42, "--seed", help="Random seed for reproducibility"),
-    dpi: int = typer.Option(300, "--dpi", help="DPI for rendered images"),
+    dpi: int = typer.Option(150, "--dpi", help="DPI for rendered images"),
     templates_dir: Optional[str] = typer.Option(None, "--templates-dir", help="Custom templates directory"),
     darkness_min: float = typer.Option(0.4, "--darkness-min", help="Minimum bubble darkness (0-1)"),
     darkness_max: float = typer.Option(1.0, "--darkness-max", help="Maximum bubble darkness (0-1)"),

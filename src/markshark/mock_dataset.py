@@ -656,7 +656,7 @@ def render_student_sheets(
 # PDF I/O
 # =============================================================================
 
-def load_template_pages(pdf_path: str, dpi: int = 300) -> List[Image.Image]:
+def load_template_pages(pdf_path: str, dpi: int = 150) -> List[Image.Image]:
     """Load all pages of PDF as PIL Images."""
     doc = fitz.open(pdf_path)
     images = []
@@ -734,12 +734,12 @@ def generate_mock_dataset(
     out_dir: str,
     num_students: int = 100,
     seed: int = 42,
-    dpi: int = 300,
+    dpi: int = 150,
     darkness_min: float = 0.4,
     darkness_max: float = 1.0,
     apply_transform: bool = False,
-    blank_rate: float = 0.02,
-    multi_rate: float = 0.02,
+    blank_rate: float = 0.01,
+    multi_rate: float = 0.01,
     verbose: bool = True,
 ) -> Dict[str, Path]:
     """
@@ -751,12 +751,12 @@ def generate_mock_dataset(
         out_dir: Output directory for generated files
         num_students: Number of fake students to generate (default: 100)
         seed: Random seed for reproducibility (default: 42)
-        dpi: DPI for rendered images (default: 300)
+        dpi: DPI for rendered images (default: 150)
         darkness_min: Minimum bubble darkness 0-1 (default: 0.4)
         darkness_max: Maximum bubble darkness 0-1 (default: 1.0)
         apply_transform: Apply slight random rotation/translation (default: False)
-        blank_rate: Rate of blank answers among wrong answers (default: 0.02)
-        multi_rate: Rate of multi-fill answers among wrong answers (default: 0.02)
+        blank_rate: Rate of blank answers among wrong answers (default: 0.01)
+        multi_rate: Rate of multi-fill answers among wrong answers (default: 0.01)
         verbose: Print progress messages (default: True)
 
     Returns:
@@ -950,8 +950,8 @@ def main():
         help="Random seed for reproducibility (default: 42)"
     )
     parser.add_argument(
-        "--dpi", type=int, default=300,
-        help="DPI for rendered images (default: 300)"
+        "--dpi", type=int, default=150,
+        help="DPI for rendered images (default: 150)"
     )
     parser.add_argument(
         "--darkness-min", type=float, default=0.4,
@@ -966,12 +966,12 @@ def main():
         help="Apply slight random rotation/translation to challenge alignment"
     )
     parser.add_argument(
-        "--blank-rate", type=float, default=0.02,
-        help="Rate of blank answers among wrong answers (default: 0.02)"
+        "--blank-rate", type=float, default=0.01,
+        help="Rate of blank answers among wrong answers (default: 0.01)"
     )
     parser.add_argument(
-        "--multi-rate", type=float, default=0.02,
-        help="Rate of multi-fill answers among wrong answers (default: 0.02)"
+        "--multi-rate", type=float, default=0.01,
+        help="Rate of multi-fill answers among wrong answers (default: 0.01)"
     )
 
     args = parser.parse_args()
