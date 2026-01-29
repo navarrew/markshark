@@ -53,13 +53,15 @@ ALIGNMENT METHODS:
 - `--last-page` sets `last_page` (Optional[int]). Default: None. Last page index (inclusive, 1-based)
 - `--bubblemap`, `-m` sets `bubblemap_path` (Optional[str]). Default: None. Bubblemap YAML file. Enables 'fast' alignment mode (coarse-to-fine with bubble grid).
 
-## `visualize`
+## `mapviewer`
 
 Overlay the bublmap bubble zones on top of a PDF page to verify placement.
 
+Use this to visualize where MarkShark expects to find bubbles on your template.
+
 **Usage**
 
-`markshark visualize <input_pdf> [OPTIONS]`
+`markshark mapviewer <input_pdf> [OPTIONS]`
 
 **Arguments**
 - `input_pdf` (str, required). An aligned page PDF or template PDF
@@ -69,6 +71,30 @@ Overlay the bublmap bubble zones on top of a PDF page to verify placement.
 - `--out-image`, `-o` sets `out_image` (str). Default: 'bubblemap_overlay.png'. Output overlay image (png/jpg/pdf)
 - `--pdf-renderer` sets `pdf_renderer` (str). Default: 'auto'. PDF renderer: auto|fitz|pdf2image
 - `--dpi` sets `dpi` (int). Default: 150. Render DPI
+
+## `mock-dataset`
+
+Generate a mock dataset from a template for testing.
+
+Creates synthetic student scans with filled bubbles, an answer key,
+and a CSV with expected student responses.
+
+**Usage**
+
+`markshark mock-dataset [OPTIONS]`
+
+**Options**
+- `--template`, `-t` sets `template_id` (str). Default: required. Template ID or display name
+- `--out-dir`, `-o` sets `out_dir` (str). Default: required. Output directory for generated files
+- `--num-students`, `-n` sets `num_students` (int). Default: 100. Number of fake students to generate
+- `--seed` sets `seed` (int). Default: 42. Random seed for reproducibility
+- `--dpi` sets `dpi` (int). Default: 300. DPI for rendered images
+- `--templates-dir` sets `templates_dir` (Optional[str]). Default: None. Custom templates directory
+- `--darkness-min` sets `darkness_min` (float). Default: 0.4. Minimum bubble darkness (0-1)
+- `--darkness-max` sets `darkness_max` (float). Default: 1.0. Maximum bubble darkness (0-1)
+- `--apply-transform` sets `apply_transform` (bool). Default: False. Apply random rotation/translation
+- `--blank-rate` sets `blank_rate` (float). Default: 0.02. Rate of blank answers
+- `--multi-rate` sets `multi_rate` (float). Default: 0.02. Rate of multi-fill answers
 
 ## `score`
 

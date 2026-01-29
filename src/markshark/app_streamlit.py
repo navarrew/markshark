@@ -611,7 +611,7 @@ page = st.sidebar.radio("Select an option below", [
     "1) Align scans",
     "2) Score",
     "3) Report",
-    "4) Map visualizer",
+    "4) Map viewer",
     "5) Template manager",
     "6) Help"
 ])
@@ -743,7 +743,7 @@ if page.startswith("0"):
                 # Save input files to project/input/ for reference (overwrite previous)
                 input_dir = project_dir / "input"
                 if scans:
-                    (input_dir / "scans.pdf").write_bytes(scans.read_bytes())
+                    (input_dir / "raw_scans.pdf").write_bytes(scans.read_bytes())
                 if key_txt:
                     (input_dir / "answer_key.txt").write_bytes(key_txt.read_bytes())
                 if template_choice:
@@ -772,10 +772,10 @@ if page.startswith("0"):
                 # Step 1: Align (with bubblemap for bubble grid fallback)
                 quick_status.info("Step 1/2: Aligning scans to template...")
 
-                # In project mode, save aligned PDF to project/aligned/ directory
+                # In project mode, save aligned PDF to project/input/ directory with timestamp
                 if use_project_mode:
-                    aligned_dir = project_dir / "aligned"
-                    aligned_pdf = aligned_dir / f"aligned_scans_{run_label}.pdf"
+                    input_dir = project_dir / "input"
+                    aligned_pdf = input_dir / f"aligned_scan_{run_label}.pdf"
                 else:
                     aligned_pdf = work_dir / "aligned_scans.pdf"
                 
@@ -1053,17 +1053,18 @@ elif page.startswith("1"):
             use_project_mode = bool(project_name and sanitize_project_name and create_project_structure and create_run_directory)
 
             if use_project_mode:
-                # Project mode: save to project/aligned/
+                # Project mode: save aligned to project/input/ with timestamp
+                from datetime import datetime
                 sanitized_name = sanitize_project_name(project_name)
                 project_dir = create_project_structure(base, sanitized_name)
-                run_num = get_next_run_number(project_dir) if get_next_run_number else 1
-                aligned_dir = project_dir / "aligned"
-                out_pdf = aligned_dir / f"aligned_scans_{run_num:03d}.pdf"
-
-                # Save input scans for reference
+                timestamp = datetime.now()
+                date_str = timestamp.strftime("%Y-%m-%d_%H%M")
                 input_dir = project_dir / "input"
+                out_pdf = input_dir / f"aligned_scan_{date_str}.pdf"
+
+                # Save raw input scans for reference
                 if scans:
-                    (input_dir / f"scans_{run_num:03d}.pdf").write_bytes(scans.read_bytes())
+                    (input_dir / "raw_scans.pdf").write_bytes(scans.read_bytes())
             else:
                 # Temporary mode
                 out_dir = Path(tempfile.mkdtemp(prefix="align_", dir=str(base)))
@@ -1558,9 +1559,9 @@ elif page.startswith("3"):
                 - **Item Quality** - Visual summary (✓ Good / ⚠ Review / ✗ Problem)
                 """)
 
-# ===================== 4) VISUALIZE =====================
+# ===================== 4) MAP VIEWER =====================
 elif page.startswith("4"):
-    st.header("Bubblemap Visualizer")
+    st.header("Map Viewer")
     st.markdown("Overlay bubblemaps on a template or aligned PDF to verify placement.")
 
     top_col1, top_col2 = st.columns([1, 3])
@@ -1601,7 +1602,7 @@ elif page.startswith("4"):
                 out_path = out_dir / out_image
 
             args = [
-                "visualize",
+                "mapviewer",
                 str(viz_pdf),
                 "--bublmap", str(viz_bublmap),
                 "--out-image", str(out_path),
@@ -1861,7 +1862,7 @@ templates/
 │   └── bubblemap.yaml
 └── ...
             """, language="text")
-            
+
             st.markdown("**bubblemap.yaml** can optionally include metadata:")
             st.code("""
 metadata:
@@ -1874,6 +1875,144 @@ answer_rows:
   # ... your bubble coordinates ...
             """, language="yaml")
 
+        # ===================== MOCK DATASET GENERATOR =====================
+        st.divider()
+        st.subheader("🧪 Generate Mock Dataset")
+        st.markdown("""
+        Generate synthetic student scans for testing your templates. This creates:
+        - **mock_scans.pdf** - PDF with filled bubble sheets
+        - **mock_answer_key.txt** - Answer key file
+        - **mock_student_responses.csv** - CSV with expected student answers
+        """)
+
+        with st.expander("Generate mock dataset from a template", expanded=False):
+            # Template selection for mock data
+            if templates:
+                mock_template_options = ["(select a template)"] + [f"{t.display_name}" for t in templates]
+                mock_template_idx = st.selectbox(
+                    "Select template",
+                    range(len(mock_template_options)),
+                    format_func=lambda i: mock_template_options[i],
+                    key="mock_template_select"
+                )
+
+                if mock_template_idx > 0:
+                    selected_template = templates[mock_template_idx - 1]
+                    st.success(f"Using: **{selected_template.display_name}**")
+                    if selected_template.num_questions:
+                        st.caption(f"Questions: {selected_template.num_questions} | Choices: {selected_template.num_choices or 'N/A'}")
+
+                    # Mock dataset options
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        mock_num_students = st.number_input(
+                            "Number of students",
+                            min_value=1, max_value=500, value=25,
+                            help="How many fake student sheets to generate"
+                        )
+                        mock_seed = st.number_input(
+                            "Random seed",
+                            min_value=0, max_value=99999, value=42,
+                            help="Use same seed to reproduce identical results"
+                        )
+                    with col2:
+                        mock_dpi = st.number_input(
+                            "DPI",
+                            min_value=150, max_value=600, value=300,
+                            help="Image resolution (300 recommended)"
+                        )
+                        mock_darkness_min = st.slider(
+                            "Min bubble darkness",
+                            min_value=0.2, max_value=1.0, value=0.5,
+                            help="Simulate light pencil marks (lower = lighter)"
+                        )
+
+                    st.markdown("**Advanced options:**")
+                    adv_col1, adv_col2 = st.columns(2)
+                    with adv_col1:
+                        mock_blank_rate = st.slider(
+                            "Blank answer rate",
+                            min_value=0.0, max_value=0.10, value=0.02,
+                            help="Fraction of wrong answers left blank"
+                        )
+                        mock_multi_rate = st.slider(
+                            "Multi-fill rate",
+                            min_value=0.0, max_value=0.10, value=0.02,
+                            help="Fraction of wrong answers with multiple marks"
+                        )
+                    with adv_col2:
+                        mock_apply_transform = st.checkbox(
+                            "Apply random rotation/translation",
+                            value=False,
+                            help="Simulate slightly misaligned scans"
+                        )
+
+                    # Output location
+                    base = WORKDIR or Path(os.getcwd())
+                    project_name = st.session_state.get("project_name", "").strip()
+
+                    if project_name and sanitize_project_name:
+                        default_out_dir = base / sanitize_project_name(project_name) / "mock_data"
+                    else:
+                        default_out_dir = base / f"mock_{selected_template.template_id}"
+
+                    mock_out_dir = st.text_input(
+                        "Output directory",
+                        value=str(default_out_dir),
+                        help="Where to save the generated files"
+                    )
+
+                    # Generate button
+                    if st.button("🎲 Generate Mock Dataset", type="primary"):
+                        try:
+                            from markshark.mock_dataset import generate_mock_dataset
+
+                            with st.spinner(f"Generating {mock_num_students} mock students..."):
+                                results = generate_mock_dataset(
+                                    template_path=str(selected_template.template_pdf_path),
+                                    bubblemap_path=str(selected_template.bubblemap_yaml_path),
+                                    out_dir=mock_out_dir,
+                                    num_students=mock_num_students,
+                                    seed=mock_seed,
+                                    dpi=mock_dpi,
+                                    darkness_min=mock_darkness_min,
+                                    darkness_max=1.0,
+                                    apply_transform=mock_apply_transform,
+                                    blank_rate=mock_blank_rate,
+                                    multi_rate=mock_multi_rate,
+                                    verbose=False,
+                                )
+
+                            st.success("✅ Mock dataset generated!")
+
+                            # Store results for download
+                            st.session_state["mock_results"] = {
+                                "answer_key": str(results['answer_key']),
+                                "scans": str(results['scans']),
+                                "responses": str(results['responses']),
+                            }
+
+                        except Exception as e:
+                            st.error(f"Error generating mock dataset: {e}")
+                            import traceback
+                            st.code(traceback.format_exc())
+
+                    # Download buttons (persistent)
+                    if "mock_results" in st.session_state:
+                        mr = st.session_state["mock_results"]
+                        st.markdown("**Download generated files:**")
+                        dl_col1, dl_col2, dl_col3 = st.columns(3)
+                        with dl_col1:
+                            _download_file_button("📄 Answer Key", Path(mr["answer_key"]))
+                        with dl_col2:
+                            _download_file_button("📑 Mock Scans PDF", Path(mr["scans"]))
+                        with dl_col3:
+                            _download_file_button("📊 Responses CSV", Path(mr["responses"]))
+
+                        st.info(f"Files saved to: `{Path(mr['scans']).parent}`")
+            else:
+                st.warning("No templates available. Add a template first to generate mock data.")
+
 
 # ===================== 6) HELP =====================
 elif page.startswith("6"):
@@ -1884,15 +2023,16 @@ elif page.startswith("6"):
 
     st.markdown("---")
     st.subheader("Command Line Help")
-    topic = st.selectbox("Help topic", ["markshark", "quick-grade", "align", "score", "report", "templates", "visualize", "gui"], index=0)
+    topic = st.selectbox("Help topic", ["markshark", "quick-grade", "align", "score", "report", "templates", "mapviewer", "mock-dataset", "gui"], index=0)
     help_args = {
         "markshark": ["--help"],
+        "quick-grade": ["quick-grade", "--help"],
         "align": ["align", "--help"],
         "score": ["score", "--help"],
         "report": ["report", "--help"],
-        "visualize": ["visualize", "--help"],
-        "quick-grade": ["quick-grade", "--help"],
+        "mapviewer": ["mapviewer", "--help"],
         "templates": ["templates", "--help"],
+        "mock-dataset": ["mock-dataset", "--help"],
         "gui": ["gui", "--help"],
     }
 

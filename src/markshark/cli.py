@@ -29,15 +29,129 @@ from .defaults import (
 )
 # Core modules
 from .align_core import align_pdf_scans
-from .visualize_core import overlay_bublmap
+from .mapviewer_core import overlay_bublmap
 from .score_core import score_pdf
 # stats_tools imported by report command when needed
 
 app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
-    help="MarkShark: align, visualize, score, and analyze bubble-sheet exams.",
+    help="MarkShark: align, mapviewer, score, and analyze bubble-sheet exams.",
 )
+
+# ------------------------------- QUICK-GRADE -------------------------------
+@app.command()
+def quick_grade(
+    input_pdf: str = typer.Argument(..., help="Raw student scans PDF"),
+    template_id: str = typer.Option(..., "--template", "-t", help="Template ID or display name (use 'markshark templates' to list)"),
+    key_txt: Optional[str] = typer.Option(None, "--key-txt", "-k", help="Answer key file (optional)"),
+    out_csv: str = typer.Option("quick_grade_results.csv", "--out-csv", "-o", help="Output CSV of results"),
+    out_pdf: str = typer.Option("quick_grade_annotated.pdf", "--out-pdf", help="Output annotated PDF"),
+    out_dir: Optional[str] = typer.Option(None, "--out-dir", help="Output directory (default: same as out_csv)"),
+    dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Render DPI"),
+    templates_dir: Optional[str] = typer.Option(None, "--templates-dir", help="Custom templates directory"),
+    # Alignment options
+    align_method: str = typer.Option("auto", "--align-method", help="Alignment method: auto|aruco|feature"),
+    min_markers: int = typer.Option(ALIGN_DEFAULTS.min_aruco, "--min-markers", help="Min ArUco markers to accept"),
+    # Scoring options
+    min_fill: Optional[float] = typer.Option(None, "--min-fill", help=f"Min fill threshold (default: {SCORING_DEFAULTS.min_fill})"),
+    top2_ratio: Optional[float] = typer.Option(None, "--top2-ratio", help=f"Top2 ratio (default: {SCORING_DEFAULTS.top2_ratio})"),
+    min_top2_diff: Optional[float] = typer.Option(None, "--min-top2-diff", help=f"Min difference between top 2 bubbles (default: {SCORING_DEFAULTS.min_top2_diff})"),
+    annotate_all_cells: bool = typer.Option(False, "--annotate-all-cells", help="Draw every bubble in each row"),
+    label_density: bool = typer.Option(False, "--label-density", help="Overlay % fill text"),
+    auto_thresh: bool = typer.Option(SCORING_DEFAULTS.auto_calibrate_thresh, "--auto-thresh/--no-auto-thresh", help="Auto-calibrate threshold"),
+):
+    """
+    Quick grade: align + score in one command using a template.
+    
+    This command automatically uses bubble grid alignment as a fallback when
+    ArUco markers are not detected, using the bubble positions from the template's
+    bubblemap YAML.
+    """
+    try:
+        # Get template
+        template = get_template_by_name(template_id, templates_dir)
+        if not template:
+            rprint(f"[red]Template not found:[/red] {template_id}")
+            rprint("[yellow]Available templates:[/yellow]")
+            manager = TemplateManager(templates_dir)
+            for t in manager.scan_templates():
+                rprint(f"  - {t.display_name} (ID: {t.template_id})")
+            raise typer.Exit(code=2)
+        
+        rprint(f"[cyan]Using template:[/cyan] {template.display_name}")
+        
+        # Load bubblemap for bubble grid alignment fallback
+        bubblemap = None
+        try:
+            bubblemap = load_bublmap(str(template.bubblemap_yaml_path))
+            rprint("[cyan]Bubble grid alignment fallback:[/cyan] enabled")
+        except Exception as e:
+            rprint(f"[yellow]Warning: Could not load bubblemap: {e}[/yellow]")
+            rprint("[yellow]Bubble grid alignment fallback will not be available.[/yellow]")
+        
+        # Determine output directory
+        if out_dir is None:
+            out_dir = str(Path(out_csv).parent) if Path(out_csv).parent != Path('.') else "."
+        
+        out_dir_path = Path(out_dir)
+        out_dir_path.mkdir(parents=True, exist_ok=True)
+        
+        # Step 1: Align (with bubblemap for bubble grid fallback)
+        rprint("[cyan]Step 1/2: Aligning scans...[/cyan]")
+        aligned_pdf = out_dir_path / "aligned_scans.pdf"
+        
+        align_pdf_scans(
+            input_pdf=input_pdf,
+            template=str(template.template_pdf_path),
+            out_pdf=str(aligned_pdf),
+            dpi=dpi,
+            align_method=align_method,
+            min_markers=min_markers,
+            bubblemap=bubblemap,  # NEW: Pass bubblemap for bubble grid fallback
+        )
+        rprint(f"[green]✓ Alignment complete:[/green] {aligned_pdf}")
+        
+        # Step 2: Score
+        rprint("[cyan]Step 2/2: Scoring sheets...[/cyan]")
+        
+        scoring = apply_scoring_overrides(
+            min_fill=min_fill if min_fill is not None else SCORING_DEFAULTS.min_fill,
+            top2_ratio=top2_ratio if top2_ratio is not None else SCORING_DEFAULTS.top2_ratio,
+            min_top2_diff=min_top2_diff if min_top2_diff is not None else SCORING_DEFAULTS.min_top2_diff,
+            auto_calibrate_thresh=auto_thresh,
+        )
+
+        score_pdf(
+            input_path=str(aligned_pdf),
+            bublmap_path=str(template.bubblemap_yaml_path),
+            out_csv=out_csv,
+            key_txt=key_txt,
+            out_pdf=out_pdf,
+            dpi=dpi,
+            min_fill=scoring.min_fill,
+            top2_ratio=scoring.top2_ratio,
+            min_top2_diff=scoring.min_top2_diff,
+            auto_calibrate_thresh=scoring.auto_calibrate_thresh,
+            calibrate_background=scoring.calibrate_background,
+            background_percentile=scoring.background_percentile,
+            adaptive_rescoring=scoring.adaptive_rescoring,
+            adaptive_max_adjustment=scoring.adaptive_max_adjustment,
+            adaptive_min_above_floor=scoring.adaptive_min_above_floor,
+            annotate_all_cells=annotate_all_cells,
+            label_density=label_density,
+        )
+        
+        rprint("[green]✅ Quick grade complete![/green]")
+        rprint(f"[green]Results:[/green] {out_csv}")
+        rprint(f"[green]Annotated PDF:[/green] {out_pdf}")
+        rprint(f"[green]Aligned scans:[/green] {aligned_pdf}")
+        
+    except Exception as e:
+        rprint(f"[red]Quick grade failed:[/red] {e}")
+        raise typer.Exit(code=2)
+
+
 
 # ---------------------- ALIGN ----------------------
 @app.command()
@@ -125,33 +239,6 @@ def align(
     rprint(f"[green]Wrote:[/green] {out}")
 
 
-# --------------------------- VISUALIZE --------------------------
-@app.command()
-def visualize(
-    input_pdf: str = typer.Argument(..., help="An aligned page PDF or template PDF"),
-    bublmap: str = typer.Option(..., "--bublmap", "-m", help="Bubblemap file (.yaml/.yml)"),
-    out_image: str = typer.Option("bubblemap_overlay.png", "--out-image", "-o", help="Output overlay image (png/jpg/pdf)"),
-    pdf_renderer: str = typer.Option("auto", "--pdf-renderer", help="PDF renderer: auto|fitz|pdf2image"),
-    dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Render DPI"),
-):
-    """
-    Overlay the bublmap bubble zones on top of a PDF page to verify placement.
-    """
-    try:
-        overlay_bublmap(
-            bublmap_path=bublmap,
-            input_path=input_pdf,
-            out_image=out_image,
-            dpi=dpi,
-            pdf_renderer=pdf_renderer,
-        )
-    except Exception as e:
-        rprint(f"[red]Visualization failed for {bublmap}:[/red] {e}")
-        raise typer.Exit(code=2)
-
-    rprint(f"[green]Wrote:[/green] {out_image}")
-    
-    
 # ---------------------- SCORE ----------------------
 @app.command()
 def score(
@@ -308,7 +395,35 @@ def report(
         rprint(f"[red]Report generation failed:[/red] {e}")
         raise typer.Exit(code=2)
 
+# --------------------------- MAPVIEWER --------------------------
+@app.command()
+def mapviewer(
+    input_pdf: str = typer.Argument(..., help="An aligned page PDF or template PDF"),
+    bublmap: str = typer.Option(..., "--bublmap", "-m", help="Bubblemap file (.yaml/.yml)"),
+    out_image: str = typer.Option("bubblemap_overlay.png", "--out-image", "-o", help="Output overlay image (png/jpg/pdf)"),
+    pdf_renderer: str = typer.Option("auto", "--pdf-renderer", help="PDF renderer: auto|fitz|pdf2image"),
+    dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Render DPI"),
+):
+    """
+    Overlay the bublmap bubble zones on top of a PDF page to verify placement.
 
+    Use this to visualize where MarkShark expects to find bubbles on your template.
+    """
+    try:
+        overlay_bublmap(
+            bublmap_path=bublmap,
+            input_path=input_pdf,
+            out_image=out_image,
+            dpi=dpi,
+            pdf_renderer=pdf_renderer,
+        )
+    except Exception as e:
+        rprint(f"[red]Map viewer failed for {bublmap}:[/red] {e}")
+        raise typer.Exit(code=2)
+
+    rprint(f"[green]Wrote:[/green] {out_image}")
+    
+    
 # ---------------------- TEMPLATES ----------------------
 @app.command()
 def templates(
@@ -355,34 +470,26 @@ def templates(
         raise typer.Exit(code=2)
 
 
-# ------------------------------- QUICK-GRADE -------------------------------
+# ------------------------------- MOCK-DATASET ---------------------------------
 @app.command()
-def quick_grade(
-    input_pdf: str = typer.Argument(..., help="Raw student scans PDF"),
+def mock_dataset(
     template_id: str = typer.Option(..., "--template", "-t", help="Template ID or display name (use 'markshark templates' to list)"),
-    key_txt: Optional[str] = typer.Option(None, "--key-txt", "-k", help="Answer key file (optional)"),
-    out_csv: str = typer.Option("quick_grade_results.csv", "--out-csv", "-o", help="Output CSV of results"),
-    out_pdf: str = typer.Option("quick_grade_annotated.pdf", "--out-pdf", help="Output annotated PDF"),
-    out_dir: Optional[str] = typer.Option(None, "--out-dir", help="Output directory (default: same as out_csv)"),
-    dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Render DPI"),
+    out_dir: str = typer.Option(..., "--out-dir", "-o", help="Output directory for generated files"),
+    num_students: int = typer.Option(100, "--num-students", "-n", help="Number of fake students to generate"),
+    seed: int = typer.Option(42, "--seed", help="Random seed for reproducibility"),
+    dpi: int = typer.Option(300, "--dpi", help="DPI for rendered images"),
     templates_dir: Optional[str] = typer.Option(None, "--templates-dir", help="Custom templates directory"),
-    # Alignment options
-    align_method: str = typer.Option("auto", "--align-method", help="Alignment method: auto|aruco|feature"),
-    min_markers: int = typer.Option(ALIGN_DEFAULTS.min_aruco, "--min-markers", help="Min ArUco markers to accept"),
-    # Scoring options
-    min_fill: Optional[float] = typer.Option(None, "--min-fill", help=f"Min fill threshold (default: {SCORING_DEFAULTS.min_fill})"),
-    top2_ratio: Optional[float] = typer.Option(None, "--top2-ratio", help=f"Top2 ratio (default: {SCORING_DEFAULTS.top2_ratio})"),
-    min_top2_diff: Optional[float] = typer.Option(None, "--min-top2-diff", help=f"Min difference between top 2 bubbles (default: {SCORING_DEFAULTS.min_top2_diff})"),
-    annotate_all_cells: bool = typer.Option(False, "--annotate-all-cells", help="Draw every bubble in each row"),
-    label_density: bool = typer.Option(False, "--label-density", help="Overlay % fill text"),
-    auto_thresh: bool = typer.Option(SCORING_DEFAULTS.auto_calibrate_thresh, "--auto-thresh/--no-auto-thresh", help="Auto-calibrate threshold"),
+    darkness_min: float = typer.Option(0.4, "--darkness-min", help="Minimum bubble darkness (0-1)"),
+    darkness_max: float = typer.Option(1.0, "--darkness-max", help="Maximum bubble darkness (0-1)"),
+    apply_transform: bool = typer.Option(False, "--apply-transform", help="Apply random rotation/translation"),
+    blank_rate: float = typer.Option(0.02, "--blank-rate", help="Rate of blank answers"),
+    multi_rate: float = typer.Option(0.02, "--multi-rate", help="Rate of multi-fill answers"),
 ):
     """
-    Quick grade: align + score in one command using a template.
-    
-    This command automatically uses bubble grid alignment as a fallback when
-    ArUco markers are not detected, using the bubble positions from the template's
-    bubblemap YAML.
+    Generate a mock dataset from a template for testing.
+
+    Creates synthetic student scans with filled bubbles, an answer key,
+    and a CSV with expected student responses.
     """
     try:
         # Get template
@@ -394,77 +501,33 @@ def quick_grade(
             for t in manager.scan_templates():
                 rprint(f"  - {t.display_name} (ID: {t.template_id})")
             raise typer.Exit(code=2)
-        
+
         rprint(f"[cyan]Using template:[/cyan] {template.display_name}")
-        
-        # Load bubblemap for bubble grid alignment fallback
-        bubblemap = None
-        try:
-            bubblemap = load_bublmap(str(template.bubblemap_yaml_path))
-            rprint("[cyan]Bubble grid alignment fallback:[/cyan] enabled")
-        except Exception as e:
-            rprint(f"[yellow]Warning: Could not load bubblemap: {e}[/yellow]")
-            rprint("[yellow]Bubble grid alignment fallback will not be available.[/yellow]")
-        
-        # Determine output directory
-        if out_dir is None:
-            out_dir = str(Path(out_csv).parent) if Path(out_csv).parent != Path('.') else "."
-        
-        out_dir_path = Path(out_dir)
-        out_dir_path.mkdir(parents=True, exist_ok=True)
-        
-        # Step 1: Align (with bubblemap for bubble grid fallback)
-        rprint("[cyan]Step 1/2: Aligning scans...[/cyan]")
-        aligned_pdf = out_dir_path / "aligned_scans.pdf"
-        
-        align_pdf_scans(
-            input_pdf=input_pdf,
-            template=str(template.template_pdf_path),
-            out_pdf=str(aligned_pdf),
+
+        from .mock_dataset import generate_mock_dataset
+
+        results = generate_mock_dataset(
+            template_path=str(template.template_pdf_path),
+            bubblemap_path=str(template.bubblemap_yaml_path),
+            out_dir=out_dir,
+            num_students=num_students,
+            seed=seed,
             dpi=dpi,
-            align_method=align_method,
-            min_markers=min_markers,
-            bubblemap=bubblemap,  # NEW: Pass bubblemap for bubble grid fallback
-        )
-        rprint(f"[green]✓ Alignment complete:[/green] {aligned_pdf}")
-        
-        # Step 2: Score
-        rprint("[cyan]Step 2/2: Scoring sheets...[/cyan]")
-        
-        scoring = apply_scoring_overrides(
-            min_fill=min_fill if min_fill is not None else SCORING_DEFAULTS.min_fill,
-            top2_ratio=top2_ratio if top2_ratio is not None else SCORING_DEFAULTS.top2_ratio,
-            min_top2_diff=min_top2_diff if min_top2_diff is not None else SCORING_DEFAULTS.min_top2_diff,
-            auto_calibrate_thresh=auto_thresh,
+            darkness_min=darkness_min,
+            darkness_max=darkness_max,
+            apply_transform=apply_transform,
+            blank_rate=blank_rate,
+            multi_rate=multi_rate,
+            verbose=True,
         )
 
-        score_pdf(
-            input_path=str(aligned_pdf),
-            bublmap_path=str(template.bubblemap_yaml_path),
-            out_csv=out_csv,
-            key_txt=key_txt,
-            out_pdf=out_pdf,
-            dpi=dpi,
-            min_fill=scoring.min_fill,
-            top2_ratio=scoring.top2_ratio,
-            min_top2_diff=scoring.min_top2_diff,
-            auto_calibrate_thresh=scoring.auto_calibrate_thresh,
-            calibrate_background=scoring.calibrate_background,
-            background_percentile=scoring.background_percentile,
-            adaptive_rescoring=scoring.adaptive_rescoring,
-            adaptive_max_adjustment=scoring.adaptive_max_adjustment,
-            adaptive_min_above_floor=scoring.adaptive_min_above_floor,
-            annotate_all_cells=annotate_all_cells,
-            label_density=label_density,
-        )
-        
-        rprint("[green]✅ Quick grade complete![/green]")
-        rprint(f"[green]Results:[/green] {out_csv}")
-        rprint(f"[green]Annotated PDF:[/green] {out_pdf}")
-        rprint(f"[green]Aligned scans:[/green] {aligned_pdf}")
-        
+        rprint(f"\n[green]Mock dataset generated![/green]")
+        rprint(f"  Answer key: {results['answer_key']}")
+        rprint(f"  Scans PDF: {results['scans']}")
+        rprint(f"  Student responses CSV: {results['responses']}")
+
     except Exception as e:
-        rprint(f"[red]Quick grade failed:[/red] {e}")
+        rprint(f"[red]Mock dataset generation failed:[/red] {e}")
         raise typer.Exit(code=2)
 
 

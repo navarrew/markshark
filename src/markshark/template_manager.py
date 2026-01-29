@@ -803,9 +803,48 @@ def get_template_by_name(template_name: str, templates_dir: Optional[str] = None
     return manager.get_template(template_name)
 
 
+def generate_mock_dataset_for_template(
+    template: BubbleSheetTemplate,
+    out_dir: str,
+    num_students: int = 100,
+    seed: int = 42,
+    dpi: int = 300,
+    verbose: bool = True,
+) -> Dict:
+    """
+    Generate a mock dataset for a specific template.
+
+    This is a convenience function that wraps the mock_dataset module
+    and works with BubbleSheetTemplate objects.
+
+    Args:
+        template: BubbleSheetTemplate to generate data for
+        out_dir: Output directory for generated files
+        num_students: Number of fake students to generate
+        seed: Random seed for reproducibility
+        dpi: DPI for rendered images
+        verbose: Print progress messages
+
+    Returns:
+        Dictionary with paths to generated files
+    """
+    from .mock_dataset import generate_mock_dataset
+
+    return generate_mock_dataset(
+        template_path=str(template.template_pdf_path),
+        bubblemap_path=str(template.bubblemap_yaml_path),
+        out_dir=out_dir,
+        num_students=num_students,
+        seed=seed,
+        dpi=dpi,
+        verbose=verbose,
+    )
+
+
 __all__ = [
     'BubbleSheetTemplate',
     'TemplateManager',
     'list_available_templates',
     'get_template_by_name',
+    'generate_mock_dataset_for_template',
 ]

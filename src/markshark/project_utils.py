@@ -127,11 +127,14 @@ def create_project_structure(base_dir: Path, project_name: str) -> Path:
 
     Creates:
         {base_dir}/{project_name}/
-        ├── input/
-        ├── aligned/
+        ├── input/       (raw scans and aligned scans)
         ├── scored/
         ├── reports/
         └── logs/
+
+    The input directory contains:
+        - raw_scans.pdf: Original uploaded scans
+        - aligned_scan_YYYY-MM-DD_HHMM.pdf: Aligned scans (one per alignment run)
 
     Args:
         base_dir: Base working directory
@@ -144,7 +147,6 @@ def create_project_structure(base_dir: Path, project_name: str) -> Path:
 
     # Create subdirectories
     (project_dir / "input").mkdir(parents=True, exist_ok=True)
-    (project_dir / "aligned").mkdir(parents=True, exist_ok=True)
     (project_dir / "scored").mkdir(parents=True, exist_ok=True)
     (project_dir / "reports").mkdir(parents=True, exist_ok=True)
     (project_dir / "logs").mkdir(parents=True, exist_ok=True)
@@ -205,7 +207,7 @@ def find_projects(base_dir: Path) -> list[dict]:
     Find all project directories in the base directory.
 
     A project directory is identified by having the expected subdirectory
-    structure (input/, aligned/, scored/ or results/, logs/).
+    structure (input/, scored/ or results/, logs/).
 
     Args:
         base_dir: Base working directory to scan
@@ -223,13 +225,18 @@ def find_projects(base_dir: Path) -> list[dict]:
             continue
 
         # Check if it looks like a project (has expected subdirs)
-        # Support both new (scored) and legacy (results) structures
+        # Support both new (scored) and legacy (results/aligned) structures
         has_input = (item / "input").exists()
-        has_aligned = (item / "aligned").exists()
         has_scored = (item / "scored").exists() or (item / "results").exists()
         has_logs = (item / "logs").exists()
+        # Legacy support: check for aligned/ but don't require it
+        has_aligned_legacy = (item / "aligned").exists()
 
-        if has_input and has_aligned and has_scored and has_logs:
+        # Accept projects with either the new structure (input + scored + logs)
+        # or legacy structure that also had aligned/
+        if has_input and has_scored and has_logs:
+            projects.append(get_project_info(item))
+        elif has_input and has_aligned_legacy and has_scored and has_logs:
             projects.append(get_project_info(item))
 
     return sorted(projects, key=lambda x: x.get("created") or datetime.min, reverse=True)

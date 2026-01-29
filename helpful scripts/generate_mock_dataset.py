@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-generate_mock_exam.py
+generate_mock_dataset.py
 
 Generate synthetic exam data for testing MarkShark pipelines.
 
@@ -21,15 +21,12 @@ Usage:
         --template path/to/master_template.pdf \\
         --bubblemap path/to/bubblemap.yaml \\
         --out-dir output_folder \\
-        --num-students 100 \\
-        --darkness-min 0.4 \\
-        --darkness-max 1.0 \\
         --num-students 100
 
 Output:
     - mock_answer_key.txt: Key file in MarkShark format (#A\\nA,B,C,...\\n#B\\n...)
-    - mock_scans.pdf: PDF of all synthesized student sheets
-    - mock_student_answers.csv: CSV with student info and expected answers
+    - mock_student_scans.pdf: PDF of all synthesized student sheets
+    - mock_student_data.pdf: CSV with student info and expected answers
 """
 
 import argparse
@@ -67,7 +64,7 @@ def load_bubblemap(path: str) -> Dict[str, Any]:
 
 def detect_format(bubblemap: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Auto-detect format from bubblemap.
+    Auto-detect format from bubblemap, supporting multi-page templates.
 
     Returns dict with:
         - total_questions: int
@@ -77,8 +74,8 @@ def detect_format(bubblemap: Dict[str, Any]) -> Dict[str, Any]:
         - id_digits: int
         - has_first_name: bool
         - has_last_name: bool
-        - answer_layouts: list of layout dicts
-        - page_key: str (e.g., "page_1")
+        - num_pages: int
+        - pages: list of page data dicts (one per page)
     """
     result = {
         "total_questions": 0,
@@ -88,65 +85,74 @@ def detect_format(bubblemap: Dict[str, Any]) -> Dict[str, Any]:
         "id_digits": 10,
         "has_first_name": False,
         "has_last_name": False,
-        "answer_layouts": [],
-        "page_key": "page_1",
+        "num_pages": 1,
+        "pages": [],
     }
 
-    # Find the page key (page_1, page_2, etc.)
-    page_key = None
-    for key in bubblemap:
-        if key.startswith("page_"):
-            page_key = key
-            break
+    # Find all page keys (page_1, page_2, etc.)
+    page_keys = sorted([k for k in bubblemap if k.startswith("page_")])
 
-    if not page_key:
+    if not page_keys:
         print("Warning: No page_N key found in bubblemap, assuming flat structure")
-        page_data = bubblemap
+        page_keys = ["_flat"]
+        pages_data = [bubblemap]
     else:
-        result["page_key"] = page_key
-        page_data = bubblemap[page_key]
+        pages_data = [bubblemap[k] for k in page_keys]
+
+    result["num_pages"] = len(page_keys)
 
     # Check metadata for total_questions
     metadata = bubblemap.get("metadata", {})
     if metadata.get("total_questions"):
         result["total_questions"] = int(metadata["total_questions"])
+    if metadata.get("pages"):
+        result["num_pages"] = int(metadata["pages"])
 
-    # Parse answer layouts
-    answer_layouts = page_data.get("answer_layouts", [])
-    if answer_layouts:
-        result["answer_layouts"] = answer_layouts
-        # Get labels from first layout
-        first_layout = answer_layouts[0]
-        result["answer_labels"] = str(first_layout.get("labels", "ABCDE"))
+    # Process each page
+    all_answer_layouts = []
+    for page_idx, page_data in enumerate(pages_data):
+        page_info = {
+            "page_num": page_idx + 1,
+            "answer_layouts": page_data.get("answer_layouts", []),
+        }
 
-        # Sum up total questions if not in metadata
-        if result["total_questions"] == 0:
-            result["total_questions"] = sum(
-                int(lay.get("numrows", lay.get("questions", 0)))
-                for lay in answer_layouts
-            )
+        # Collect answer layouts
+        all_answer_layouts.extend(page_info["answer_layouts"])
 
-    # Check for version layout
-    version_layout = page_data.get("version_layout")
-    if version_layout:
-        result["has_version"] = True
-        result["version_labels"] = str(version_layout.get("labels", "ABCD"))
-        result["version_layout"] = version_layout
+        # Get labels from first layout found
+        if page_info["answer_layouts"] and result["answer_labels"] == "ABCDE":
+            first_layout = page_info["answer_layouts"][0]
+            result["answer_labels"] = str(first_layout.get("labels", "ABCDE"))
 
-    # Check for ID layout
-    id_layout = page_data.get("id_layout")
-    if id_layout:
-        result["id_digits"] = int(id_layout.get("numcols", id_layout.get("choices", 10)))
-        result["id_layout"] = id_layout
+        # Check for version layout (typically on page 1)
+        version_layout = page_data.get("version_layout")
+        if version_layout:
+            result["has_version"] = True
+            result["version_labels"] = str(version_layout.get("labels", "ABCD"))
+            page_info["version_layout"] = version_layout
 
-    # Check for name layouts
-    result["has_first_name"] = "first_name_layout" in page_data
-    result["has_last_name"] = "last_name_layout" in page_data
+        # Check for ID layout (typically on page 1)
+        id_layout = page_data.get("id_layout")
+        if id_layout:
+            result["id_digits"] = int(id_layout.get("numcols", id_layout.get("choices", 10)))
+            page_info["id_layout"] = id_layout
 
-    if result["has_first_name"]:
-        result["first_name_layout"] = page_data["first_name_layout"]
-    if result["has_last_name"]:
-        result["last_name_layout"] = page_data["last_name_layout"]
+        # Check for name layouts (typically on page 1)
+        if "first_name_layout" in page_data:
+            result["has_first_name"] = True
+            page_info["first_name_layout"] = page_data["first_name_layout"]
+        if "last_name_layout" in page_data:
+            result["has_last_name"] = True
+            page_info["last_name_layout"] = page_data["last_name_layout"]
+
+        result["pages"].append(page_info)
+
+    # Sum up total questions if not in metadata
+    if result["total_questions"] == 0:
+        result["total_questions"] = sum(
+            int(lay.get("numrows", lay.get("questions", 0)))
+            for lay in all_answer_layouts
+        )
 
     return result
 
@@ -534,23 +540,17 @@ def apply_random_transform(
     return result
 
 
-def render_student_sheet(
-    template_image: Image.Image,
+def render_student_sheets(
+    template_images: List[Image.Image],
     student: Dict[str, Any],
     format_info: Dict[str, Any],
     version: str,
     darkness_range: Tuple[float, float] = (0.5, 1.0),
     apply_transform: bool = False,
-) -> Image.Image:
+) -> List[Image.Image]:
     """
-    Render a filled bubble sheet for one student.
+    Render filled bubble sheets for one student (one image per template page).
     """
-    img_w, img_h = template_image.size
-
-    # Create overlay
-    overlay = Image.new("RGBA", (img_w, img_h), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay, "RGBA")
-
     # Random darkness for this student's marks (consistent within student)
     base_darkness = random.uniform(*darkness_range)
     darkness_var = 0.15  # Variation within a single sheet
@@ -558,105 +558,120 @@ def render_student_sheet(
     def get_darkness():
         return max(0.3, min(1.0, base_darkness + random.uniform(-darkness_var, darkness_var)))
 
-    # Fill student ID
-    if "id_layout" in format_info:
-        fill_layout_by_columns(
-            draw, format_info["id_layout"],
-            student["student_id"],
-            img_w, img_h,
-            get_darkness()
-        )
+    result_images = []
+    answer_idx = 0  # Track position across all pages
 
-    # Fill names
-    if "first_name_layout" in format_info:
-        fill_layout_by_columns(
-            draw, format_info["first_name_layout"],
-            student["first_name"],
-            img_w, img_h,
-            get_darkness()
-        )
+    for page_idx, template_image in enumerate(template_images):
+        img_w, img_h = template_image.size
 
-    if "last_name_layout" in format_info:
-        fill_layout_by_columns(
-            draw, format_info["last_name_layout"],
-            student["last_name"],
-            img_w, img_h,
-            get_darkness()
-        )
+        # Create overlay for this page
+        overlay = Image.new("RGBA", (img_w, img_h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay, "RGBA")
 
-    # Fill version
-    if "version_layout" in format_info:
-        layout = format_info["version_layout"]
-        # Version is typically a single character in a row layout
-        labels = str(layout.get("labels", "ABCD"))
-        numrows = int(layout.get("numrows", 1))
-        numcols = int(layout.get("numcols", len(labels)))
-        radius_pct = float(layout.get("radius_pct", 0.008))
+        # Get page-specific info
+        if page_idx < len(format_info.get("pages", [])):
+            page_info = format_info["pages"][page_idx]
+        else:
+            page_info = {}
 
-        x_tl = float(layout.get("x_topleft", 0))
-        y_tl = float(layout.get("y_topleft", 0))
-        x_br = float(layout.get("x_bottomright", 0))
-        y_br = float(layout.get("y_bottomright", 0))
+        # Fill student ID (typically page 1 only)
+        if "id_layout" in page_info:
+            fill_layout_by_columns(
+                draw, page_info["id_layout"],
+                student["student_id"],
+                img_w, img_h,
+                get_darkness()
+            )
 
-        centers = grid_centers(x_tl, y_tl, x_br, y_br, numrows, numcols)
-        radius_px = max(1, int(radius_pct * img_w))
+        # Fill names (typically page 1 only)
+        if "first_name_layout" in page_info:
+            fill_layout_by_columns(
+                draw, page_info["first_name_layout"],
+                student["first_name"],
+                img_w, img_h,
+                get_darkness()
+            )
 
-        try:
-            col_idx = labels.upper().index(version.upper())
-            if col_idx < len(centers):
-                cx_pct, cy_pct = centers[col_idx]
-                cx = int(cx_pct * img_w)
-                cy = int(cy_pct * img_h)
-                draw_filled_bubble(draw, cx, cy, radius_px, get_darkness())
-        except ValueError:
-            pass
+        if "last_name_layout" in page_info:
+            fill_layout_by_columns(
+                draw, page_info["last_name_layout"],
+                student["last_name"],
+                img_w, img_h,
+                get_darkness()
+            )
 
-    # Fill answers
-    answer_idx = 0
-    for layout in format_info.get("answer_layouts", []):
-        numrows = int(layout.get("numrows", layout.get("questions", 0)))
-        layout_answers = student["answers"][answer_idx:answer_idx + numrows]
+        # Fill version (typically page 1 only)
+        if "version_layout" in page_info:
+            layout = page_info["version_layout"]
+            labels = str(layout.get("labels", "ABCD"))
+            numrows = int(layout.get("numrows", 1))
+            numcols = int(layout.get("numcols", len(labels)))
+            radius_pct = float(layout.get("radius_pct", 0.008))
 
-        # Per-bubble darkness variation
-        darkness_per_row = [(get_darkness(), get_darkness()) for _ in range(numrows)]
-        fill_layout_by_rows(
-            draw, layout, layout_answers,
-            img_w, img_h,
-            darkness_range=(base_darkness - darkness_var, base_darkness + darkness_var)
-        )
-        answer_idx += numrows
+            x_tl = float(layout.get("x_topleft", 0))
+            y_tl = float(layout.get("y_topleft", 0))
+            x_br = float(layout.get("x_bottomright", 0))
+            y_br = float(layout.get("y_bottomright", 0))
 
-    # Composite overlay onto template
-    base = template_image.convert("RGBA")
-    result = Image.alpha_composite(base, overlay)
-    result = result.convert("RGB")
+            centers = grid_centers(x_tl, y_tl, x_br, y_br, numrows, numcols)
+            radius_px = max(1, int(radius_pct * img_w))
 
-    # Apply random transform if requested
-    if apply_transform:
-        result = apply_random_transform(result)
+            try:
+                col_idx = labels.upper().index(version.upper())
+                if col_idx < len(centers):
+                    cx_pct, cy_pct = centers[col_idx]
+                    cx = int(cx_pct * img_w)
+                    cy = int(cy_pct * img_h)
+                    draw_filled_bubble(draw, cx, cy, radius_px, get_darkness())
+            except ValueError:
+                pass
 
-    return result
+        # Fill answers for this page
+        for layout in page_info.get("answer_layouts", []):
+            numrows = int(layout.get("numrows", layout.get("questions", 0)))
+            layout_answers = student["answers"][answer_idx:answer_idx + numrows]
+
+            fill_layout_by_rows(
+                draw, layout, layout_answers,
+                img_w, img_h,
+                darkness_range=(base_darkness - darkness_var, base_darkness + darkness_var)
+            )
+            answer_idx += numrows
+
+        # Composite overlay onto template
+        base = template_image.convert("RGBA")
+        result = Image.alpha_composite(base, overlay)
+        result = result.convert("RGB")
+
+        # Apply random transform if requested
+        if apply_transform:
+            result = apply_random_transform(result)
+
+        result_images.append(result)
+
+    return result_images
 
 
 # =============================================================================
 # PDF I/O
 # =============================================================================
 
-def load_template_as_image(pdf_path: str, dpi: int = 300) -> Image.Image:
-    """Load first page of PDF as PIL Image."""
+def load_template_pages(pdf_path: str, dpi: int = 300) -> List[Image.Image]:
+    """Load all pages of PDF as PIL Images."""
     doc = fitz.open(pdf_path)
-    page = doc[0]
+    images = []
 
-    # Render at specified DPI
     zoom = dpi / 72.0
     mat = fitz.Matrix(zoom, zoom)
-    pix = page.get_pixmap(matrix=mat)
 
-    # Convert to PIL Image
-    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    for page_num in range(len(doc)):
+        page = doc[page_num]
+        pix = page.get_pixmap(matrix=mat)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        images.append(img)
+
     doc.close()
-
-    return img
+    return images
 
 
 def save_images_as_pdf(images: List[Image.Image], output_path: str, dpi: int = 300):
@@ -786,11 +801,13 @@ def main():
     print(f"  Student ID digits: {format_info['id_digits']}")
     print(f"  Has first name: {format_info['has_first_name']}")
     print(f"  Has last name: {format_info['has_last_name']}")
+    print(f"  Number of pages: {format_info['num_pages']}")
 
     # Load template
     print(f"\nLoading template: {args.template}")
-    template_image = load_template_as_image(args.template, args.dpi)
-    print(f"  Template size: {template_image.size[0]}x{template_image.size[1]} pixels")
+    template_images = load_template_pages(args.template, args.dpi)
+    print(f"  Template pages: {len(template_images)}")
+    print(f"  Page size: {template_images[0].size[0]}x{template_images[0].size[1]} pixels")
 
     # Generate answer keys
     print("\nGenerating answer key(s)...")
@@ -849,27 +866,27 @@ def main():
         student["version"] = version
         all_students.append(student)
 
-        # Render sheet
-        sheet_image = render_student_sheet(
-            template_image=template_image,
+        # Render sheet(s) - one per template page
+        sheet_images = render_student_sheets(
+            template_images=template_images,
             student=student,
             format_info=format_info,
             version=version,
             darkness_range=(args.darkness_min, args.darkness_max),
             apply_transform=args.apply_transform,
         )
-        all_images.append(sheet_image)
+        all_images.extend(sheet_images)
 
         if (i + 1) % 20 == 0:
             print(f"  Generated {i + 1}/{args.num_students} students...")
 
     # Save PDF
-    pdf_path = out_dir / "mock_scans.pdf"
+    pdf_path = out_dir / "mock_student_scans.pdf"
     print(f"\nSaving PDF: {pdf_path}")
     save_images_as_pdf(all_images, str(pdf_path), args.dpi)
 
     # Save CSV
-    csv_path = out_dir / "mock_student_answers.csv"
+    csv_path = out_dir / "mock_student_data.pdf"
     print(f"Saving CSV: {csv_path}")
     # Use first version's key for CSV (or the only key)
     first_key = keys[versions_to_use[0]]

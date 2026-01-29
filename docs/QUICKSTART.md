@@ -70,7 +70,7 @@ markshark quick_grade scans.pdf --template TEMPLATE_ID --key-txt key.txt --out-c
 Visualize your bubblemap overlay (sanity check zones and numbering):
 
 ```bash
-markshark visualize template.pdf --bublmap bubblemap.yaml --page 1 --out-image bubblemap_overlay.png
+markshark mapviewer template.pdf --bublmap bubblemap.yaml --out-image bubblemap_overlay.png
 ```
 
 If you are tuning scoring thresholds, the most relevant flags are:

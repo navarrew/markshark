@@ -1,9 +1,9 @@
-# src/markshark/visualize_core.py
+# src/markshark/mapviewer_core.py
 #!/usr/bin/env python3
 """
 MarkShark
-visualize_core.py
-Visualize OMR bubble positions from an axis-based bubblemap.
+mapviewer_core.py
+Visualize OMR bubble positions from an axis-based bubblemap (Map Viewer).
 NOW WITH MULTI-PAGE SUPPORT!
 
 Exports:
