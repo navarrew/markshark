@@ -1578,7 +1578,7 @@ elif page.startswith("4"):
         viz_bublmap = _tempfile_from_uploader("Bubblemap YAML", "viz_yaml", types=("yaml", "yml"))
     with colB:
         out_image = st.text_input("Output image name", value="bubblemap_overlay.png")
-        viz_dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=300, step=1, key="viz_dpi")
+        viz_dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=150, step=1, key="viz_dpi")
 
     if run_viz_clicked:
         if not viz_pdf or not viz_bublmap:
@@ -1877,7 +1877,7 @@ answer_rows:
 
         # ===================== MOCK DATASET GENERATOR =====================
         st.divider()
-        st.subheader("🧪 Generate Mock Dataset")
+        st.subheader("Generate Mock Dataset for a Template")
         st.markdown("""
         Generate synthetic student scans for testing your templates. This creates:
         - **mock_scans.pdf** - PDF with filled bubble sheets
@@ -1907,7 +1907,7 @@ answer_rows:
                     with col1:
                         mock_num_students = st.number_input(
                             "Number of students",
-                            min_value=1, max_value=500, value=25,
+                            min_value=1, max_value=500, value=40,
                             help="How many fake student sheets to generate"
                         )
                         mock_seed = st.number_input(
@@ -1918,11 +1918,11 @@ answer_rows:
                     with col2:
                         mock_dpi = st.number_input(
                             "DPI",
-                            min_value=150, max_value=600, value=300,
-                            help="Image resolution (300 recommended)"
+                            min_value=100, max_value=600, value=150,
+                            help="Image resolution (150 recommended to start)"
                         )
                         mock_darkness_min = st.slider(
-                            "Min bubble darkness",
+                            "Minimum bubble darkness",
                             min_value=0.2, max_value=1.0, value=0.5,
                             help="Simulate light pencil marks (lower = lighter)"
                         )
@@ -1932,20 +1932,21 @@ answer_rows:
                     with adv_col1:
                         mock_blank_rate = st.slider(
                             "Blank answer rate",
-                            min_value=0.0, max_value=0.10, value=0.02,
+                            min_value=0.0, max_value=0.10, value=0.01,
                             help="Fraction of wrong answers left blank"
                         )
                         mock_multi_rate = st.slider(
                             "Multi-fill rate",
-                            min_value=0.0, max_value=0.10, value=0.02,
+                            min_value=0.0, max_value=0.10, value=0.01,
                             help="Fraction of wrong answers with multiple marks"
                         )
                     with adv_col2:
                         mock_apply_transform = st.checkbox(
                             "Apply random rotation/translation",
-                            value=False,
+                            value=True,
                             help="Simulate slightly misaligned scans"
                         )
+                        st.caption("*Check the box above to have the output scans misaligned so you can test both the alignment and scoring systems.*")
 
                     # Output location
                     base = WORKDIR or Path(os.getcwd())
