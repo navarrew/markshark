@@ -363,35 +363,18 @@ def _init_workdir() -> Path:
     WORKDIR.mkdir(parents=True, exist_ok=True)
 
     with st.sidebar:
-        if not typed_path.exists():
-            sac.alert(
-                label="Folder will be created",
-                description=typed_path.name,
-                icon="folder-plus",
-                color="warning",
-                size="sm",
-            )
-        elif not typed_path.is_dir():
-            sac.alert(
-                label="Not a folder",
-                description="Please select a directory",
-                icon="exclamation-triangle",
-                color="error",
-                size="sm",
-            )
+        # Show current default and reset button
+        if saved_workdir:
+            is_at_default = str(typed_path) == saved_workdir
+            st.caption(f"**Current default:** `{Path(saved_workdir).name}`")
+
+            # Always show reset button (disabled if already at default)
+            if st.button("↩️ Reset to default", use_container_width=True, key="reset_to_default", disabled=is_at_default):
+                st.session_state["workdir"] = saved_workdir
+                st.session_state["tree_base"] = saved_workdir
+                st.rerun()
         else:
-            # Show if this is the saved default
-            is_default = saved_workdir and str(typed_path) == saved_workdir
-            desc = str(typed_path.parent)
-            if is_default:
-                desc += " ⭐"
-            sac.alert(
-                label=typed_path.name,
-                description=desc,
-                icon="folder-check",
-                color="success",
-                size="sm",
-            )
+            st.caption("*No default set. Use '💾 Set as default' above to save your preferred directory.*")
 
     return WORKDIR
     
@@ -603,9 +586,8 @@ def _template_selector_with_archive(key_prefix: str, label: str = "Select a pre-
     return template_choice
 
 # --------------------- Sidebar ---------------------
-# image_url = "https://github.com/navarrew/markshark/blob/main/images/shark.png" 
-# st.sidebar.image(image_url, caption="MarkShark Logo", use_column_width=True)
 st.sidebar.image(str(ASSETS_DIR / "banner.png"), use_column_width=True)
+
 page = st.sidebar.radio("Select an option below", [
     "0) Quick grade",
     "1) Align scans",
@@ -686,9 +668,10 @@ if page.startswith("0"):
             auto_thresh = st.checkbox("Auto-calibrate threshold", value=_dflt(SCORING_DEFAULTS, "auto_calibrate_thresh", True))
             verbose_thresh = st.checkbox("Verbose threshold calibration", value=True)
             
-            min_fill = st.text_input("Min fill", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", "")))
+            min_fill = st.text_input("Min fill score (0-100)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", 45)))
+            st.caption("*Matches the scores shown on annotated PDFs (e.g., 45 means 45% filled)*")
             min_top2_diff = st.text_input("Min top2 difference", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_top2_diff", "")))
-            top2_ratio = st.text_input("Top2 ratio", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", "")))
+            top2_ratio = st.text_input("Top2 ratio (0-100)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", 80)))
             
             st.markdown("---")
             st.markdown("**Flagging & Review**")
@@ -1159,14 +1142,14 @@ elif page.startswith("2"):
         auto_thresh = st.checkbox("Auto-calibrate threshold", value=_dflt(SCORING_DEFAULTS, "auto_calibrate_thresh", True), key="score_auto_thresh")
         verbose_thresh = st.checkbox("Verbose threshold calibration", value=True, key="score_verbose")
 
-        min_fill = st.text_input("Minimum bubble fill (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", "")))
-        st.caption("*The fraction of the bubble that must be filled to be considered filled.*")
+        min_fill = st.text_input("Minimum fill score (0-100)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", 45)))
+        st.caption("*Matches the scores shown on annotated PDFs (e.g., 45 means 45% filled)*")
 
-        min_top2_diff = st.text_input("Minimum top2 difference (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_top2_diff", "")))
+        min_top2_diff = st.text_input("Minimum top2 difference", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_top2_diff", "")))
         st.caption("*The minimum fill difference (in percentage points) between 1st and 2nd-most filled bubbles to not score as multi.*")
 
-        top2_ratio = st.text_input("Top2 ratio (leave blank for default)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", "")))
-        st.caption("*The minimum fill ratio between 1st and 2nd-most filled bubbles for 'multiple' fills.*")
+        top2_ratio = st.text_input("Top2 ratio (0-100)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", 80)))
+        st.caption("*Second-best bubble must be <= this percentage of best to count as single answer.*")
         st.markdown("---")
         
         

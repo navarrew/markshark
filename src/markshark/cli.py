@@ -53,10 +53,10 @@ def quick_grade(
     # Alignment options
     align_method: str = typer.Option("auto", "--align-method", help="Alignment method: auto|aruco|feature"),
     min_markers: int = typer.Option(ALIGN_DEFAULTS.min_aruco, "--min-markers", help="Min ArUco markers to accept"),
-    # Scoring options
-    min_fill: Optional[float] = typer.Option(None, "--min-fill", help=f"Min fill threshold (default: {SCORING_DEFAULTS.min_fill})"),
-    top2_ratio: Optional[float] = typer.Option(None, "--top2-ratio", help=f"Top2 ratio (default: {SCORING_DEFAULTS.top2_ratio})"),
-    min_top2_diff: Optional[float] = typer.Option(None, "--min-top2-diff", help=f"Min difference between top 2 bubbles (default: {SCORING_DEFAULTS.min_top2_diff})"),
+    # Scoring options (user provides integers 0-100, we convert to fractions internally)
+    min_fill: Optional[int] = typer.Option(None, "--min-fill", help=f"Min fill score (0-100) to accept as filled (default: {SCORING_DEFAULTS.min_fill}). Matches the scores shown on annotated PDFs."),
+    top2_ratio: Optional[int] = typer.Option(None, "--top2-ratio", help=f"Top2 ratio as percentage (default: {SCORING_DEFAULTS.top2_ratio}). Second-best must be <= this % of best."),
+    min_top2_diff: Optional[float] = typer.Option(None, "--min-top2-diff", help=f"Min difference between top 2 bubbles (default: {SCORING_DEFAULTS.min_top2_diff}). Already in percentage points."),
     annotate_all_cells: bool = typer.Option(False, "--annotate-all-cells", help="Draw every bubble in each row"),
     label_density: bool = typer.Option(False, "--label-density", help="Overlay % fill text"),
     auto_thresh: bool = typer.Option(SCORING_DEFAULTS.auto_calibrate_thresh, "--auto-thresh/--no-auto-thresh", help="Auto-calibrate threshold"),
@@ -115,9 +115,16 @@ def quick_grade(
         # Step 2: Score
         rprint("[cyan]Step 2/2: Scoring sheets...[/cyan]")
         
+        # Convert user-facing integers (0-100) to internal fractions (0-1)
+        # Defaults are now also integers, so always convert
+        min_fill_int = min_fill if min_fill is not None else SCORING_DEFAULTS.min_fill
+        top2_ratio_int = top2_ratio if top2_ratio is not None else SCORING_DEFAULTS.top2_ratio
+        min_fill_frac = min_fill_int / 100.0
+        top2_ratio_frac = top2_ratio_int / 100.0
+
         scoring = apply_scoring_overrides(
-            min_fill=min_fill if min_fill is not None else SCORING_DEFAULTS.min_fill,
-            top2_ratio=top2_ratio if top2_ratio is not None else SCORING_DEFAULTS.top2_ratio,
+            min_fill=min_fill_frac,
+            top2_ratio=top2_ratio_frac,
             min_top2_diff=min_top2_diff if min_top2_diff is not None else SCORING_DEFAULTS.min_top2_diff,
             auto_calibrate_thresh=auto_thresh,
         )
@@ -267,18 +274,23 @@ def score(
     annotate_all_cells: bool = typer.Option(False, "--annotate-all-cells", help="Draw every bubble in each row"),
     label_density: bool = typer.Option(False, "--label-density", help="Overlay % fill text at bubble centers"),
     dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Scan/PDF render DPI"),
-    min_fill: Optional[float] = typer.Option(
+    min_fill: Optional[int] = typer.Option(
         None,
         "--min-fill",
-        help=f"""Minimum fraction of the darkest bubble required to consider a mark filled (default: {SCORING_DEFAULTS.min_fill}).
-        Increase to require more completely filled bubbles; decrease to accept lighter or partially filled marks."""
+        help=f"""Minimum fill score (0-100) to consider a bubble filled (default: {SCORING_DEFAULTS.min_fill}).
+        This matches the scores shown on annotated PDFs. Increase to require darker marks; decrease to accept lighter marks."""
     ),
-    top2_ratio: Optional[float] = typer.Option(None, "--top2-ratio", help=f"default {SCORING_DEFAULTS.top2_ratio}"),
+    top2_ratio: Optional[int] = typer.Option(
+        None,
+        "--top2-ratio",
+        help=f"""Top2 ratio as percentage (default: {SCORING_DEFAULTS.top2_ratio}).
+        Second-best bubble must be <= this percentage of best to count as single answer."""
+    ),
     min_top2_diff: Optional[float] = typer.Option(
         None,
         "--min-top2-diff",
-        help=f"""Minimum difference (in percentage points) between top 2 bubbles to not score as multi (default: {SCORING_DEFAULTS.min_top2_diff}).
-        Increase to require larger separation; decrease to accept closer scores."""
+        help=f"""Minimum difference between top 2 bubbles to not score as multi (default: {SCORING_DEFAULTS.min_top2_diff}).
+        Already in percentage points. Increase to require larger separation; decrease to accept closer scores."""
     ),
     fixed_thresh: Optional[int] = typer.Option(None, "--fixed-thresh", help=f"default {SCORING_DEFAULTS.fixed_thresh}"),
     auto_thresh: bool = typer.Option(
@@ -313,9 +325,16 @@ def score(
         raise typer.Exit(code=2)
 
     try:
+        # Convert user-facing integers (0-100) to internal fractions (0-1)
+        # Defaults are now also integers, so always convert
+        min_fill_int = min_fill if min_fill is not None else SCORING_DEFAULTS.min_fill
+        top2_ratio_int = top2_ratio if top2_ratio is not None else SCORING_DEFAULTS.top2_ratio
+        min_fill_frac = min_fill_int / 100.0
+        top2_ratio_frac = top2_ratio_int / 100.0
+
         scoring = apply_scoring_overrides(
-            min_fill=min_fill if min_fill is not None else SCORING_DEFAULTS.min_fill,
-            top2_ratio=top2_ratio if top2_ratio is not None else SCORING_DEFAULTS.top2_ratio,
+            min_fill=min_fill_frac,
+            top2_ratio=top2_ratio_frac,
             min_top2_diff=min_top2_diff if min_top2_diff is not None else SCORING_DEFAULTS.min_top2_diff,
             fixed_thresh=SCORING_DEFAULTS.fixed_thresh,
             auto_calibrate_thresh=auto_thresh,

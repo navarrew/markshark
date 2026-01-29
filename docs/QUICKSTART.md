@@ -75,9 +75,9 @@ markshark mapviewer template.pdf --bublmap bubblemap.yaml --out-image bubblemap_
 
 If you are tuning scoring thresholds, the most relevant flags are:
 
-- `--min-fill`
-- `--top2-ratio`
-- `--min-top2-diff`
+- `--min-fill` (0-100) - Minimum fill score to accept as filled. Matches the scores shown on annotated PDFs (e.g., 45 means 45% filled)
+- `--top2-ratio` (0-100) - Second-best bubble must be <= this percentage of best
+- `--min-top2-diff` - Minimum difference (already in percentage points) between top 2 bubbles
 - `--fixed-thresh` and `--auto-thresh/--no-auto-thresh`
 
 You can also generate focused review artifacts:
