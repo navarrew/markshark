@@ -260,7 +260,6 @@ def score(
         "--out-pdf",
         help=f"Annotated PDF output filename. Default: {SCORING_DEFAULTS.out_pdf}. Use \"\"\" to disable.",
     ),
-    # NEW: Review/flagging options
     review_pdf: Optional[str] = typer.Option(
         None,
         "--review-pdf",
@@ -303,7 +302,6 @@ def score(
         "--verbose-thresh",
         help="Print per-page threshold calibration diagnostics",
     ),
-    # NEW: Inline stats option
     include_stats: bool = typer.Option(
         True,
         "--include-stats/--no-include-stats",
