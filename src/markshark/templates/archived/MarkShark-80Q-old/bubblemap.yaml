@@ -1,0 +1,99 @@
+metadata:
+  display_name: MarkShark 80 Question Template
+  description: 80 questions, 5 choices (A-E)
+  pages: 1
+  total_questions: 64
+  alignment:
+    aruco:
+      enabled: true
+      dictionary: DICT_4X4_50
+  schema_version: 3
+  page_size:
+    width_mm: 215.9
+    height_mm: 279.4
+page_1:
+  last_name_layout:
+    numrows: 27
+    numcols: 14
+    bubble_shape: circle
+    selection_axis: col
+    labels: ' ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    x_mm: 84.72
+    y_mm: 29.36
+    width_mm: 77.79
+    height_mm: 117.29
+    bubble_diameter_mm: 3.45
+  first_name_layout:
+    numrows: 27
+    numcols: 5
+    bubble_shape: circle
+    selection_axis: col
+    labels: ' ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    x_mm: 173.35
+    y_mm: 29.36
+    width_mm: 23.94
+    height_mm: 117.29
+    bubble_diameter_mm: 3.45
+  id_layout:
+    numrows: 10
+    numcols: 10
+    bubble_shape: circle
+    selection_axis: col
+    labels: 0123456789
+    x_mm: 20.29
+    y_mm: 29.34
+    width_mm: 53.87
+    height_mm: 40.65
+    bubble_diameter_mm: 3.45
+  version_layout:
+    numrows: 1
+    numcols: 4
+    bubble_shape: circle
+    selection_axis: row
+    labels: ABCD
+    x_mm: 52.96
+    y_mm: 116.73
+    width_mm: 16.26
+    height_mm: 0.0
+    bubble_diameter_mm: 3.45
+  answer_layouts:
+  - numrows: 20
+    numcols: 5
+    bubble_shape: circle
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 28.3
+    y_mm: 156.24
+    width_mm: 27.98
+    height_mm: 103.63
+    bubble_diameter_mm: 3.45
+  - numrows: 20
+    numcols: 5
+    bubble_shape: circle
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 73.95
+    y_mm: 156.24
+    width_mm: 27.96
+    height_mm: 103.63
+    bubble_diameter_mm: 3.45
+  - numrows: 20
+    numcols: 5
+    bubble_shape: circle
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 119.57
+    y_mm: 156.24
+    width_mm: 27.98
+    height_mm: 103.63
+    bubble_diameter_mm: 3.45
+  - numrows: 20
+    numcols: 5
+    bubble_shape: circle
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 165.19
+    y_mm: 156.24
+    width_mm: 27.98
+    height_mm: 103.63
+    bubble_diameter_mm: 3.45

@@ -1,8 +1,8 @@
 metadata:
-  display_name: UofToronto Faculty of Med - 2 page
-  description: 220 questions, 5 choices (A-E)
-  pages: 2
-  total_questions: 220
+  display_name: UofToronto Faculty of Med - 1 page
+  description: 48 questions, 5 choices (A-E)
+  pages: 1
+  total_questions: 1
   alignment:
     aruco:
       enabled: false
@@ -66,46 +66,4 @@ page_1:
     y_mm: 24.0
     width_mm: 30.46
     height_mm: 240.51
-    bubble_diameter_mm: 3.45
-page_2:
-  answer_layouts:
-  - numrows: 43
-    numcols: 5
-    bubble_shape: circle
-    selection_axis: row
-    labels: ABCDE
-    x_mm: 22.65
-    y_mm: 15.73
-    width_mm: 30.44
-    height_mm: 244.56
-    bubble_diameter_mm: 3.45
-  - numrows: 43
-    numcols: 5
-    bubble_shape: circle
-    selection_axis: row
-    labels: ABCDE
-    x_mm: 72.26
-    y_mm: 15.73
-    width_mm: 30.42
-    height_mm: 244.56
-    bubble_diameter_mm: 3.45
-  - numrows: 43
-    numcols: 5
-    bubble_shape: circle
-    selection_axis: row
-    labels: ABCDE
-    x_mm: 122.44
-    y_mm: 15.73
-    width_mm: 30.46
-    height_mm: 244.56
-    bubble_diameter_mm: 3.45
-  - numrows: 43
-    numcols: 5
-    bubble_shape: circle
-    selection_axis: row
-    labels: ABCDE
-    x_mm: 172.59
-    y_mm: 15.73
-    width_mm: 30.46
-    height_mm: 244.56
     bubble_diameter_mm: 3.45

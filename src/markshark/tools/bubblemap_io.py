@@ -232,15 +232,61 @@ class Bubblemap:
 
 # ---------------------------------------------------------------------------
 
-def _parse_layout(name: str, section: Dict[str, Any]) -> GridLayout:
-    required = [
-        "x_topleft", "y_topleft",
-        "x_bottomright", "y_bottomright",
-        "radius_pct", "numrows", "numcols",
-    ]
-    missing = [k for k in required if k not in section]
-    if missing:
-        raise ValueError(f"Layout '{name}' missing required fields: {missing}")
+def _parse_layout(name: str, section: Dict[str, Any], page_size_mm: tuple = (215.9, 279.4)) -> GridLayout:
+    """
+    Parse a layout section, supporting both v1 (percentage) and v3 (mm) coordinate formats.
+
+    v1 format: x_topleft, y_topleft, x_bottomright, y_bottomright, radius_pct (0.0-1.0)
+    v3 format: x_mm, y_mm, width_mm, height_mm, bubble_diameter_mm (millimeters)
+
+    Internally converts v3 to v1 percentages for consistent processing.
+    """
+    # Check which format we have
+    has_v1 = "x_topleft" in section
+    has_v3 = "x_mm" in section
+
+    if has_v3:
+        # Convert v3 mm coordinates to v1 percentages
+        page_width_mm, page_height_mm = page_size_mm
+
+        x_mm = float(section["x_mm"])
+        y_mm = float(section["y_mm"])
+        width_mm = float(section.get("width_mm", 0))
+        height_mm = float(section.get("height_mm", 0))
+        diameter_mm = float(section.get("bubble_diameter_mm", 4.0))
+
+        # Convert to percentages (0.0-1.0)
+        x_topleft = x_mm / page_width_mm
+        y_topleft = y_mm / page_height_mm
+        x_bottomright = (x_mm + width_mm) / page_width_mm
+        y_bottomright = (y_mm + height_mm) / page_height_mm
+        radius_pct = (diameter_mm / 2) / page_width_mm
+
+    elif has_v1:
+        # Use v1 format directly
+        required = [
+            "x_topleft", "y_topleft",
+            "x_bottomright", "y_bottomright",
+            "radius_pct", "numrows", "numcols",
+        ]
+        missing = [k for k in required if k not in section]
+        if missing:
+            raise ValueError(f"Layout '{name}' missing required fields: {missing}")
+
+        x_topleft = float(section["x_topleft"])
+        y_topleft = float(section["y_topleft"])
+        x_bottomright = float(section["x_bottomright"])
+        y_bottomright = float(section["y_bottomright"])
+        radius_pct = float(section["radius_pct"])
+    else:
+        raise ValueError(
+            f"Layout '{name}' must have either v1 fields (x_topleft, y_topleft, etc.) "
+            f"or v3 fields (x_mm, y_mm, width_mm, height_mm)"
+        )
+
+    # Common validation
+    if "numrows" not in section or "numcols" not in section:
+        raise ValueError(f"Layout '{name}' missing required fields: numrows, numcols")
 
     selection_axis = section.get("selection_axis", "row").lower()
     if selection_axis not in ("row", "col"):
@@ -260,11 +306,11 @@ def _parse_layout(name: str, section: Dict[str, Any]) -> GridLayout:
 
     return GridLayout(
         name=name,
-        x_topleft=float(section["x_topleft"]),
-        y_topleft=float(section["y_topleft"]),
-        x_bottomright=float(section["x_bottomright"]),
-        y_bottomright=float(section["y_bottomright"]),
-        radius_pct=float(section["radius_pct"]),
+        x_topleft=x_topleft,
+        y_topleft=y_topleft,
+        x_bottomright=x_bottomright,
+        y_bottomright=y_bottomright,
+        radius_pct=radius_pct,
         numrows=int(section["numrows"]),
         numcols=int(section["numcols"]),
         bubble_shape=section.get("bubble_shape", "circle"),
@@ -273,7 +319,8 @@ def _parse_layout(name: str, section: Dict[str, Any]) -> GridLayout:
     )
 
 
-def _parse_page_layouts(page_num: int, page_data: Dict[str, Any]) -> PageLayout:
+def _parse_page_layouts(page_num: int, page_data: Dict[str, Any],
+                        page_size_mm: tuple = (215.9, 279.4)) -> PageLayout:
     """Parse layouts for a single page."""
     # Parse answer layouts
     answer_layouts_data = page_data.get("answer_layouts", [])
@@ -285,7 +332,7 @@ def _parse_page_layouts(page_num: int, page_data: Dict[str, Any]) -> PageLayout:
             block["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
         if "selection_axis" not in block:
             block["selection_axis"] = "row"
-        answer_layouts.append(_parse_layout(f"page{page_num}_answers_{i+1}", block))
+        answer_layouts.append(_parse_layout(f"page{page_num}_answers_{i+1}", block, page_size_mm))
 
     page_layout = PageLayout(
         page_number=page_num,
@@ -309,7 +356,7 @@ def _parse_page_layouts(page_num: int, page_data: Dict[str, Any]) -> PageLayout:
                 if "labels" not in layout_dict and "numcols" in layout_dict:
                     ch = int(layout_dict["numcols"])
                     layout_dict["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
-            setattr(page_layout, opt_name, _parse_layout(f"page{page_num}_{opt_name}", layout_dict))
+            setattr(page_layout, opt_name, _parse_layout(f"page{page_num}_{opt_name}", layout_dict, page_size_mm))
 
     return page_layout
 
@@ -378,38 +425,65 @@ def _parse_registration_config(data: Dict[str, Any]) -> Optional[RegistrationCon
     )
 
 
+def _get_page_size_mm(metadata: Dict[str, Any]) -> tuple:
+    """Extract page size in mm from metadata, with defaults."""
+    # Standard page sizes in mm
+    PAGE_SIZES_MM = {
+        "letter": (215.9, 279.4),
+        "a4": (210.0, 297.0),
+        "legal": (215.9, 355.6),
+        "a3": (297.0, 420.0),
+    }
+
+    page_size = metadata.get("page_size", "letter")
+
+    if isinstance(page_size, dict):
+        # Custom size specified as dict
+        return (
+            page_size.get("width_mm", 215.9),
+            page_size.get("height_mm", 279.4)
+        )
+    elif isinstance(page_size, str):
+        return PAGE_SIZES_MM.get(page_size.lower(), PAGE_SIZES_MM["letter"])
+    else:
+        return PAGE_SIZES_MM["letter"]
+
+
 def load_bublmap(path: str) -> Bubblemap:
     """Load and validate a Bubblemap YAML file with multi-page support."""
     import io
     with io.open(path, "r", encoding="utf-8", errors="replace") as f:
         data = yaml.safe_load(f)
-    
+
     # Extract metadata
     metadata = data.get("metadata", {})
     num_pages = metadata.get("pages", 1)
     total_questions = metadata.get("total_questions")
-    
+
+    # Get page size for v3 coordinate conversion
+    page_size_mm = _get_page_size_mm(metadata)
+
     # Parse registration config (NEW)
     registration = _parse_registration_config(data)
-    
+
     # Parse pages
     pages: List[PageLayout] = []
-    
+
     for page_num in range(1, num_pages + 1):
         page_key = f"page_{page_num}"
-        
+
         if page_key not in data:
             raise ValueError(f"Missing '{page_key}' section in YAML (metadata says {num_pages} pages)")
-        
+
         page_data = data[page_key]
-        page_layout = _parse_page_layouts(page_num, page_data)
+        page_layout = _parse_page_layouts(page_num, page_data, page_size_mm)
         pages.append(page_layout)
-    
+
     bmap = Bubblemap(
         pages=pages,
         metadata=metadata,
         total_questions=total_questions,
         registration=registration,
     )
-    
+
     return bmap

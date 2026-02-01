@@ -1,170 +1,274 @@
-# bubblemap.yaml
-# point coordinates are given as percentages in from left (x) and top (y) edges of page.
-# zones are defined as rectangles bounded by their top-left & bottom-right corners
-# x_topleft: 0.2 -> means the point is 20% of the way in from the left edge of the page
-# y_topleft: 0.35 -> means the point is 35% of the way down from the top of the page
-# so the top-left corner of the zone is defined at coordinate (0.2,0.35)
-
-
 metadata:
-  display_name: "MarkShark 232 Question Template"
-  description: "232 questions, 5 choices (A-E)"
+  display_name: MarkShark-232Q
+  description: new 232Q
   pages: 2
   total_questions: 232
   alignment:
     aruco:
       enabled: true
-      dictionary: "DICT_4X4_50"
-  schema_version: 1
+      dictionary: DICT_4X4_50
+      marker_ids:
+      - 0
+      - 1
+      - 2
+      - 3
+      size_mm: 6
+      margin_mm: 6
+  schema_version: 3
+  page_size: letter
+
+
+fonts:
+  Lexend:
+    source: google
+    variants:
+    - regular
+    - bold
+  Archivo Black:
+    source: google
+    variants:
+    - regular
+
+
+styles:
+  header_text:
+    font_family: Archivo Black
+    font_size: 24
+    text_color: '#333333'
+
+  section_label:
+    font_family: Lexend
+    font_size: 12
+    text_color: gray
+
+  subsection_label:
+    extends: section_label
+    font_size: 8
+    font_weight: bold
+
+  standard_bubbles:
+    bubble_shape: circle
+    bubble_diameter_mm: 3.8
+    bubble_stroke_width_mm: 0.25
+    bubble_stroke_color: dark_gray
+    bubble_text_color: gray
+    bubble_fill_color: white
+    bubble_text_font_family: Lexend
+    label_offset_mm: 8
+    show_header_boxes: true
+    header_box_height_mm: 5
+    header_box_gap_mm: 1.5
+    alternating_row_shade: true
+    alternating_shade_color: '#E8E8E8'
+    alternating_shade_axis: col
+    alternating_shade_start: 1
+
+  answer_bubbles:
+    extends: standard_bubbles
+    number_font_weight: bold
+    number_font_size: 10
+    number_color: black
+    number_format: '{n}.'
+    number_align: right
+    show_header_boxes: false
+    alternating_shade_axis: row
+
 
 page_1:
-# -----------------------------
-# Name blocks (select one row per column)
-# -----------------------------
   last_name_layout:
-    x_topleft: 0.3837
-    y_topleft: 0.1167
-    x_bottomright: 0.7641
-    y_bottomright: 0.5601
-    radius_pct: 0.008
+    style: standard_bubbles
     numrows: 27
     numcols: 14
-    bubble_shape: circle
     selection_axis: col
-    labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    labels: ' ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    x_mm: 82.84
+    y_mm: 30
+    width_mm: 82.13
+    height_mm: 123.89
 
   first_name_layout:
-    x_topleft: 0.8205
-    y_topleft: 0.1167
-    x_bottomright: 0.9375
-    y_bottomright: 0.5601
-    radius_pct: 0.008
+    style: standard_bubbles
     numrows: 27
     numcols: 5
-    bubble_shape: circle
     selection_axis: col
-    labels: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    labels: ' ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    x_mm: 177.15
+    y_mm: 30
+    width_mm: 25.26
+    height_mm: 123.89
 
-# -----------------------------
-# Student ID (select one row per column)
-# -----------------------------
   id_layout:
-    x_topleft: 0.0608
-    y_topleft: 0.4061
-    x_bottomright: 0.3208
-    y_bottomright: 0.5601
-    radius_pct: 0.008
-    numrows: 10           # rows 10
-    numcols: 10             # 10 digit positions
-    bubble_shape: circle
+    style: standard_bubbles
+    numrows: 10
+    numcols: 10
     selection_axis: col
-    labels: "0123456789"
+    labels: 0123456789
+    x_mm: 15
+    y_mm: 111
+    width_mm: 56
+    height_mm: 43
 
-# -----------------------------
-# Test version (select one column in a single row)
-# -----------------------------
   version_layout:
-    x_topleft: 0.2271
-    y_topleft: 0.3182
-    x_bottomright: 0.3063
-    y_bottomright: 0.3185
-    radius_pct: 0.008
+    style: standard_bubbles
+    display_label: TEST VERSION
     numrows: 1
-    numcols: 4
-    bubble_shape: circle
+    numcols: 10
     selection_axis: row
-    labels: "ABCD"
+    labels: ABCDEFGHIJ
+    x_mm: 15
+    y_mm: 93
+    width_mm: 56
+    show_header_boxes: false
+    label_offset_mm: 1.5
+    alternating_row_shade: false
 
-# -----------------------------
-# Answer blocks (select one column per row)
-# -----------------------------
   answer_layouts:
-    - x_topleft: 0.0906
-      y_topleft: 0.6030
-      x_bottomright: 0.2373
-      y_bottomright: 0.9127
-      radius_pct: 0.008
-      numrows: 16
-      numcols: 5
-      bubble_shape: circle
-      selection_axis: row
-      labels: "ABCDE"
-      
-    - x_topleft: 0.3262
-      y_topleft: 0.6030
-      x_bottomright: 0.4728
-      y_bottomright: 0.9127
-      radius_pct: 0.008
-      numrows: 16
-      numcols: 5
-      bubble_shape: circle
-      selection_axis: row
-      labels: "ABCDE"
-  
-    - x_topleft: 0.5612
-      y_topleft: 0.6030
-      x_bottomright: 0.7084
-      y_bottomright: 0.9127
-      radius_pct: 0.008
-      numrows: 16
-      numcols: 5
-      bubble_shape: circle
-      selection_axis: row
-      labels: "ABCDE"
-  
-    - x_topleft: 0.7973
-      y_topleft: 0.6030
-      x_bottomright: 0.9439
-      y_bottomright: 0.9127
-      radius_pct: 0.008
-      numrows: 16
-      numcols: 5
-      bubble_shape: circle
-      selection_axis: row
-      labels: "ABCDE"
-      
+  - style: answer_bubbles
+    numrows: 16
+    numcols: 5
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 20
+    y_mm: 170
+    width_mm: 30
+    height_mm: 90
+  - style: answer_bubbles
+    numrows: 16
+    numcols: 5
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 71
+    y_mm: 170
+    width_mm: 30
+    height_mm: 90
+  - style: answer_bubbles
+    numrows: 16
+    numcols: 5
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 122
+    y_mm: 170
+    width_mm: 30
+    height_mm: 90
+  - style: answer_bubbles
+    numrows: 16
+    numcols: 5
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 173
+    y_mm: 170
+    width_mm: 30
+    height_mm: 90
+       
+  line_zones:
+  - name: divider1
+    x1_mm: 12
+    y1_mm: 162
+    x2_mm: 206
+    y2_mm: 162
+    stroke_color: black
+    stroke_width_mm: 0.5
+  - name: divider2
+    x1_mm: 58
+    y1_mm: 166
+    x2_mm: 58
+    y2_mm: 263
+    stroke_color: black
+    stroke_width_mm: 0.2
+  - name: divider3
+    x1_mm: 109
+    y1_mm: 166
+    x2_mm: 109
+    y2_mm: 263
+    stroke_color: black
+    stroke_width_mm: 0.2
+  - name: divider4
+    x1_mm: 160
+    y1_mm: 166
+    x2_mm: 160
+    y2_mm: 263
+    stroke_color: black
+    stroke_width_mm: 0.2
+       
+  empty_zones:
+  - name: signature_box
+    x_mm: 12
+    y_mm: 70
+    width_mm: 61
+    height_mm: 14
+    style: thick_border
+    display_label: 'Signature:'
+    label_inside: top_left
+    label_padding_mm: 1
+
+  text_zones:
+  - content: Please fill bubbles completely.
+    font_family: Helvetica
+    font_size_pt: 7
+    font_weight: bold
+    text_align: center
+    x_mm: 108.0
+    y_mm: 272.0
+
+
 page_2:
   answer_layouts:
-    - x_topleft: 0.0906
-      y_topleft: 0.0773
-      x_bottomright: 0.2373
-      y_bottomright: 0.9239
-      radius_pct: 0.008
-      numrows: 42
-      numcols: 5
-      bubble_shape: circle
-      selection_axis: row
-      labels: "ABCDE"
-      
-    - x_topleft: 0.3262
-      y_topleft: 0.0773
-      x_bottomright: 0.4728
-      y_bottomright: 0.9239
-      radius_pct: 0.008
-      numrows: 42
-      numcols: 5
-      bubble_shape: circle
-      selection_axis: row
-      labels: "ABCDE"
-  
-    - x_topleft: 0.5612
-      y_topleft: 0.0773
-      x_bottomright: 0.7084
-      y_bottomright: 0.9239
-      radius_pct: 0.008
-      numrows: 42
-      numcols: 5
-      bubble_shape: circle
-      selection_axis: row
-      labels: "ABCDE"
-  
-    - x_topleft: 0.7973
-      y_topleft: 0.0773
-      x_bottomright: 0.9439
-      y_bottomright: 0.9239
-      radius_pct: 0.008
-      numrows: 42
-      numcols: 5
-      bubble_shape: circle
-      selection_axis: row
-      labels: "ABCDE"
+  - style: answer_bubbles
+    numrows: 42
+    numcols: 5
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 20
+    y_mm: 15
+    width_mm: 30
+    height_mm: 446.25
+  - style: answer_bubbles
+    numrows: 42
+    numcols: 5
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 71
+    y_mm: 15
+    width_mm: 30
+    height_mm: 446.25
+  - style: answer_bubbles
+    numrows: 42
+    numcols: 5
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 122
+    y_mm: 15
+    width_mm: 30
+    height_mm: 446.25
+  - style: answer_bubbles
+    numrows: 42
+    numcols: 5
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 173
+    y_mm: 15
+    width_mm: 30
+    height_mm: 446.25
+
+  line_zones:
+  - name: divider5
+    x1_mm: 58
+    y1_mm: 15
+    x2_mm: 58
+    y2_mm: 263
+    stroke_color: black
+    stroke_width_mm: 0.2
+  - name: divider6
+    x1_mm: 109
+    y1_mm: 15
+    x2_mm: 109
+    y2_mm: 263
+    stroke_color: black
+    stroke_width_mm: 0.2
+  - name: divider7
+    x1_mm: 160
+    y1_mm: 15
+    x2_mm: 160
+    y2_mm: 263
+    stroke_color: black
+    stroke_width_mm: 0.2

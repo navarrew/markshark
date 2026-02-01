@@ -62,6 +62,28 @@ def load_bubblemap(path: str) -> Dict[str, Any]:
         return yaml.safe_load(f)
 
 
+def _get_page_size_mm(metadata: Dict[str, Any]) -> Tuple[float, float]:
+    """Extract page size in mm from metadata."""
+    PAGE_SIZES_MM = {
+        "letter": (215.9, 279.4),
+        "a4": (210.0, 297.0),
+        "legal": (215.9, 355.6),
+        "a3": (297.0, 420.0),
+    }
+
+    page_size = metadata.get("page_size", "letter")
+
+    if isinstance(page_size, dict):
+        return (
+            page_size.get("width_mm", 215.9),
+            page_size.get("height_mm", 279.4)
+        )
+    elif isinstance(page_size, str):
+        return PAGE_SIZES_MM.get(page_size.lower(), PAGE_SIZES_MM["letter"])
+    else:
+        return PAGE_SIZES_MM["letter"]
+
+
 def detect_format(bubblemap: Dict[str, Any]) -> Dict[str, Any]:
     """
     Auto-detect format from bubblemap, supporting multi-page templates.
@@ -76,6 +98,7 @@ def detect_format(bubblemap: Dict[str, Any]) -> Dict[str, Any]:
         - has_last_name: bool
         - num_pages: int
         - pages: list of page data dicts (one per page)
+        - page_size_mm: tuple (width, height) in mm
     """
     result = {
         "total_questions": 0,
@@ -87,6 +110,7 @@ def detect_format(bubblemap: Dict[str, Any]) -> Dict[str, Any]:
         "has_last_name": False,
         "num_pages": 1,
         "pages": [],
+        "page_size_mm": (215.9, 279.4),
     }
 
     # Find all page keys (page_1, page_2, etc.)
@@ -101,12 +125,15 @@ def detect_format(bubblemap: Dict[str, Any]) -> Dict[str, Any]:
 
     result["num_pages"] = len(page_keys)
 
-    # Check metadata for total_questions
+    # Check metadata for total_questions and page size
     metadata = bubblemap.get("metadata", {})
     if metadata.get("total_questions"):
         result["total_questions"] = int(metadata["total_questions"])
     if metadata.get("pages"):
         result["num_pages"] = int(metadata["pages"])
+
+    # Get page size for v3 coordinate conversion
+    result["page_size_mm"] = _get_page_size_mm(metadata)
 
     # Process each page
     all_answer_layouts = []
@@ -401,12 +428,48 @@ def draw_filled_bubble(
     draw.ellipse([cx - radius, cy - radius, cx + radius, cy + radius], fill=rgba)
 
 
+def _get_layout_coords(layout: Dict[str, Any], page_size_mm: Tuple[float, float] = (215.9, 279.4)) -> Tuple[float, float, float, float, float]:
+    """
+    Extract normalized coordinates from a layout, supporting both v1 and v3 formats.
+
+    v1: x_topleft, y_topleft, x_bottomright, y_bottomright, radius_pct (0.0-1.0)
+    v3: x_mm, y_mm, width_mm, height_mm, bubble_diameter_mm (millimeters)
+
+    Returns: (x_tl, y_tl, x_br, y_br, radius_pct) all as normalized 0.0-1.0 values
+    """
+    # Check which format
+    has_v3 = "x_mm" in layout
+
+    if has_v3:
+        page_w, page_h = page_size_mm
+        x_mm = float(layout.get("x_mm", 0))
+        y_mm = float(layout.get("y_mm", 0))
+        width_mm = float(layout.get("width_mm", 0))
+        height_mm = float(layout.get("height_mm", 0))
+        diameter_mm = float(layout.get("bubble_diameter_mm", 4.0))
+
+        x_tl = x_mm / page_w
+        y_tl = y_mm / page_h
+        x_br = (x_mm + width_mm) / page_w
+        y_br = (y_mm + height_mm) / page_h
+        radius_pct = (diameter_mm / 2) / page_w
+    else:
+        x_tl = float(layout.get("x_topleft", 0))
+        y_tl = float(layout.get("y_topleft", 0))
+        x_br = float(layout.get("x_bottomright", 0))
+        y_br = float(layout.get("y_bottomright", 0))
+        radius_pct = float(layout.get("radius_pct", 0.008))
+
+    return x_tl, y_tl, x_br, y_br, radius_pct
+
+
 def fill_layout_by_columns(
     draw: ImageDraw.ImageDraw,
     layout: Dict[str, Any],
     text: str,
     img_w: int, img_h: int,
-    darkness: float = 1.0
+    darkness: float = 1.0,
+    page_size_mm: Tuple[float, float] = (215.9, 279.4)
 ) -> int:
     """
     Fill bubbles column-by-column (for ID, name fields).
@@ -418,12 +481,8 @@ def fill_layout_by_columns(
     labels = str(layout.get("labels", ""))
     numrows = int(layout.get("numrows", layout.get("questions", 0)))
     numcols = int(layout.get("numcols", layout.get("choices", 0)))
-    radius_pct = float(layout.get("radius_pct", 0.008))
 
-    x_tl = float(layout.get("x_topleft", 0))
-    y_tl = float(layout.get("y_topleft", 0))
-    x_br = float(layout.get("x_bottomright", 0))
-    y_br = float(layout.get("y_bottomright", 0))
+    x_tl, y_tl, x_br, y_br, radius_pct = _get_layout_coords(layout, page_size_mm)
 
     centers = grid_centers(x_tl, y_tl, x_br, y_br, numrows, numcols)
     radius_px = max(1, int(radius_pct * img_w))
@@ -459,7 +518,8 @@ def fill_layout_by_rows(
     layout: Dict[str, Any],
     answers: List[str],
     img_w: int, img_h: int,
-    darkness_range: Tuple[float, float] = (0.7, 1.0)
+    darkness_range: Tuple[float, float] = (0.7, 1.0),
+    page_size_mm: Tuple[float, float] = (215.9, 279.4)
 ) -> int:
     """
     Fill bubbles row-by-row (for answer layouts).
@@ -472,12 +532,8 @@ def fill_layout_by_rows(
     labels = str(layout.get("labels", "ABCDE"))
     numrows = int(layout.get("numrows", layout.get("questions", 0)))
     numcols = int(layout.get("numcols", layout.get("choices", 0)))
-    radius_pct = float(layout.get("radius_pct", 0.008))
 
-    x_tl = float(layout.get("x_topleft", 0))
-    y_tl = float(layout.get("y_topleft", 0))
-    x_br = float(layout.get("x_bottomright", 0))
-    y_br = float(layout.get("y_bottomright", 0))
+    x_tl, y_tl, x_br, y_br, radius_pct = _get_layout_coords(layout, page_size_mm)
 
     centers = grid_centers(x_tl, y_tl, x_br, y_br, numrows, numcols)
     radius_px = max(1, int(radius_pct * img_w))
@@ -547,6 +603,7 @@ def render_student_sheets(
     version: str,
     darkness_range: Tuple[float, float] = (0.5, 1.0),
     apply_transform: bool = False,
+    page_size_mm: Tuple[float, float] = (215.9, 279.4),
 ) -> List[Image.Image]:
     """
     Render filled bubble sheets for one student (one image per template page).
@@ -580,7 +637,8 @@ def render_student_sheets(
                 draw, page_info["id_layout"],
                 student["student_id"],
                 img_w, img_h,
-                get_darkness()
+                get_darkness(),
+                page_size_mm
             )
 
         # Fill names (typically page 1 only)
@@ -589,7 +647,8 @@ def render_student_sheets(
                 draw, page_info["first_name_layout"],
                 student["first_name"],
                 img_w, img_h,
-                get_darkness()
+                get_darkness(),
+                page_size_mm
             )
 
         if "last_name_layout" in page_info:
@@ -597,7 +656,8 @@ def render_student_sheets(
                 draw, page_info["last_name_layout"],
                 student["last_name"],
                 img_w, img_h,
-                get_darkness()
+                get_darkness(),
+                page_size_mm
             )
 
         # Fill version (typically page 1 only)
@@ -606,12 +666,8 @@ def render_student_sheets(
             labels = str(layout.get("labels", "ABCD"))
             numrows = int(layout.get("numrows", 1))
             numcols = int(layout.get("numcols", len(labels)))
-            radius_pct = float(layout.get("radius_pct", 0.008))
 
-            x_tl = float(layout.get("x_topleft", 0))
-            y_tl = float(layout.get("y_topleft", 0))
-            x_br = float(layout.get("x_bottomright", 0))
-            y_br = float(layout.get("y_bottomright", 0))
+            x_tl, y_tl, x_br, y_br, radius_pct = _get_layout_coords(layout, page_size_mm)
 
             centers = grid_centers(x_tl, y_tl, x_br, y_br, numrows, numcols)
             radius_px = max(1, int(radius_pct * img_w))
@@ -634,7 +690,8 @@ def render_student_sheets(
             fill_layout_by_rows(
                 draw, layout, layout_answers,
                 img_w, img_h,
-                darkness_range=(base_darkness - darkness_var, base_darkness + darkness_var)
+                darkness_range=(base_darkness - darkness_var, base_darkness + darkness_var),
+                page_size_mm=page_size_mm
             )
             answer_idx += numrows
 
@@ -868,6 +925,7 @@ def generate_mock_dataset(
             version=version,
             darkness_range=(darkness_min, darkness_max),
             apply_transform=apply_transform,
+            page_size_mm=format_info.get('page_size_mm', (215.9, 279.4)),
         )
         all_images.extend(sheet_images)
 
