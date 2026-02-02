@@ -88,6 +88,8 @@ def detect_format(bubblemap: Dict[str, Any]) -> Dict[str, Any]:
     """
     Auto-detect format from bubblemap, supporting multi-page templates.
 
+    Accepts both *_zone (preferred) and *_layout (backward compatibility) keys.
+
     Returns dict with:
         - total_questions: int
         - answer_labels: str (e.g., "ABCDE")
@@ -136,41 +138,57 @@ def detect_format(bubblemap: Dict[str, Any]) -> Dict[str, Any]:
     result["page_size_mm"] = _get_page_size_mm(metadata)
 
     # Process each page
-    all_answer_layouts = []
+    all_answer_zones = []
     for page_idx, page_data in enumerate(pages_data):
+        # Accept both answer_zones and answer_layouts (prefer _zone)
+        answer_zones = page_data.get("answer_zones") or page_data.get("answer_layouts", [])
         page_info = {
             "page_num": page_idx + 1,
-            "answer_layouts": page_data.get("answer_layouts", []),
+            "answer_layouts": answer_zones,  # Keep as answer_layouts for internal use
         }
 
-        # Collect answer layouts
-        all_answer_layouts.extend(page_info["answer_layouts"])
+        # Collect answer zones
+        all_answer_zones.extend(answer_zones)
 
-        # Get labels from first layout found
-        if page_info["answer_layouts"] and result["answer_labels"] == "ABCDE":
-            first_layout = page_info["answer_layouts"][0]
-            result["answer_labels"] = str(first_layout.get("labels", "ABCDE"))
+        # Get labels from first zone found
+        if answer_zones and result["answer_labels"] == "ABCDE":
+            first_zone = answer_zones[0]
+            result["answer_labels"] = str(first_zone.get("labels", "ABCDE"))
 
-        # Check for version layout (typically on page 1)
-        version_layout = page_data.get("version_layout")
-        if version_layout:
+        # Check for version zone/layout (typically on page 1)
+        # Accept version_zone (preferred), version_zones (legacy list), or version_layout (legacy)
+        version_zone = page_data.get("version_zone")
+        version_zones = page_data.get("version_zones")  # Legacy: list format
+        version_layout = page_data.get("version_layout")  # Legacy: old naming
+        if version_zone:
+            result["has_version"] = True
+            result["version_labels"] = str(version_zone.get("labels", "ABCD"))
+            page_info["version_layout"] = version_zone
+        elif version_zones:
+            result["has_version"] = True
+            result["version_labels"] = str(version_zones[0].get("labels", "ABCD"))
+            page_info["version_layout"] = version_zones[0]  # Use first for compatibility
+        elif version_layout:
             result["has_version"] = True
             result["version_labels"] = str(version_layout.get("labels", "ABCD"))
             page_info["version_layout"] = version_layout
 
-        # Check for ID layout (typically on page 1)
-        id_layout = page_data.get("id_layout")
-        if id_layout:
-            result["id_digits"] = int(id_layout.get("numcols", id_layout.get("choices", 10)))
-            page_info["id_layout"] = id_layout
+        # Check for ID zone/layout (typically on page 1)
+        id_zone = page_data.get("id_zone") or page_data.get("id_layout")
+        if id_zone:
+            result["id_digits"] = int(id_zone.get("numcols", id_zone.get("choices", 10)))
+            page_info["id_layout"] = id_zone
 
-        # Check for name layouts (typically on page 1)
-        if "first_name_layout" in page_data:
+        # Check for name zones/layouts (typically on page 1)
+        first_name_zone = page_data.get("first_name_zone") or page_data.get("first_name_layout")
+        last_name_zone = page_data.get("last_name_zone") or page_data.get("last_name_layout")
+
+        if first_name_zone:
             result["has_first_name"] = True
-            page_info["first_name_layout"] = page_data["first_name_layout"]
-        if "last_name_layout" in page_data:
+            page_info["first_name_layout"] = first_name_zone
+        if last_name_zone:
             result["has_last_name"] = True
-            page_info["last_name_layout"] = page_data["last_name_layout"]
+            page_info["last_name_layout"] = last_name_zone
 
         result["pages"].append(page_info)
 
@@ -178,7 +196,7 @@ def detect_format(bubblemap: Dict[str, Any]) -> Dict[str, Any]:
     if result["total_questions"] == 0:
         result["total_questions"] = sum(
             int(lay.get("numrows", lay.get("questions", 0)))
-            for lay in all_answer_layouts
+            for lay in all_answer_zones
         )
 
     return result

@@ -60,18 +60,17 @@ styles:
     
   answer_bubbles:
     extends: standard_bubbles
-    number_font_weight: bold
-    number_font_size: 10
-    number_color: black
-    number_format: "{n}."
-    number_font_weight: bold
-    number_align: right
+    question_number_font_weight: bold
+    question_number_font_size: 10
+    question_number_color: black
+    question_number_format: "{n}."
+    question_number_align: right
     show_header_boxes: false
     alternating_shade_axis: row
 
 page_1:
 
-  last_name_layout:
+  last_name_zone:
     style: standard_bubbles
     numrows: 27
     numcols: 14
@@ -82,7 +81,7 @@ page_1:
     width_mm: 82.13
     height_mm: 123.89
 
-  first_name_layout:
+  first_name_zone:
     style: standard_bubbles
     numrows: 27
     numcols: 5
@@ -93,7 +92,7 @@ page_1:
     width_mm: 25.26
     height_mm: 123.89
 
-  id_layout:
+  id_zone:
     style: standard_bubbles
     numrows: 10
     numcols: 10
@@ -105,7 +104,7 @@ page_1:
     height_mm: 43
 
 
-  version_layout:
+  version_zone:
     style: standard_bubbles
     display_label: "TEST VERSION"
     numrows: 1
@@ -115,12 +114,11 @@ page_1:
     x_mm: 15
     y_mm: 93
     width_mm: 56
-    style: standard_bubbles
     show_header_boxes: false
     label_offset_mm: 1.5
     alternating_row_shade: false
 
-  answer_layouts:
+  answer_zones:
   - style: answer_bubbles
     numrows: 16
     numcols: 5
@@ -157,7 +155,6 @@ page_1:
     y_mm: 170
     width_mm: 22
     height_mm: 90
-    style: answer_bubbles
   - style: answer_bubbles
     numrows: 16
     numcols: 5
@@ -167,7 +164,6 @@ page_1:
     y_mm: 170
     width_mm: 22
     height_mm: 90
-    style: answer_bubbles
 
   line_zones:
     - name: divider1

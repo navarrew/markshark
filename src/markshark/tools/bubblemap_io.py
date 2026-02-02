@@ -42,18 +42,21 @@ registration:  # NEW: Alignment configuration
     min_inliers: 30
 
 page_1:
-  last_name_layout: { ... }
-  first_name_layout: { ... }
-  id_layout: { ... }
-  version_layout: { ... }
-  answer_layouts:
+  last_name_zone: { ... }
+  first_name_zone: { ... }
+  id_zone: { ... }
+  test_id_zone: { ... }  # Optional: numerical test ID (distinct from version)
+  version_zone: { ... }  # Test version (A, B, C, D, etc.)
+  answer_zones:
     - { ... }
 
 page_2:
-  # Optional layouts for validation/redundancy
-  last_name_layout: { ... }  # Optional
-  answer_layouts:
+  # Optional zones for validation/redundancy
+  last_name_zone: { ... }  # Optional
+  answer_zones:
     - { ... }
+
+Note: For backward compatibility, *_layout keys are still accepted (e.g., last_name_layout).
 """
 
 from __future__ import annotations
@@ -132,11 +135,43 @@ class RegistrationConfig:
 class PageLayout:
     """Layouts for a single page of the bubble sheet."""
     page_number: int
-    answer_layouts: List[GridLayout]
-    last_name_layout: GridLayout | None = None
-    first_name_layout: GridLayout | None = None
-    id_layout: GridLayout | None = None
-    version_layout: GridLayout | None = None
+    answer_zones: List[GridLayout]
+    last_name_zone: GridLayout | None = None
+    first_name_zone: GridLayout | None = None
+    id_zone: GridLayout | None = None
+    test_id_zone: GridLayout | None = None  # Numerical test ID (distinct from version)
+    version_zone: GridLayout | None = None  # Test version (A, B, C, D, etc.)
+
+    # Backward compatibility aliases
+    @property
+    def answer_layouts(self) -> List[GridLayout]:
+        """Alias for answer_zones (backward compatibility)."""
+        return self.answer_zones
+
+    @property
+    def last_name_layout(self) -> GridLayout | None:
+        """Alias for last_name_zone (backward compatibility)."""
+        return self.last_name_zone
+
+    @property
+    def first_name_layout(self) -> GridLayout | None:
+        """Alias for first_name_zone (backward compatibility)."""
+        return self.first_name_zone
+
+    @property
+    def id_layout(self) -> GridLayout | None:
+        """Alias for id_zone (backward compatibility)."""
+        return self.id_zone
+
+    @property
+    def version_layout(self) -> GridLayout | None:
+        """Alias for version_zone (backward compatibility)."""
+        return self.version_zone
+
+    @property
+    def version_zones(self) -> List[GridLayout]:
+        """Backward compatibility: return version_zone as a list."""
+        return [self.version_zone] if self.version_zone else []
 
 
 @dataclass
@@ -193,41 +228,81 @@ class Bubblemap:
         config = self.get_bubble_grid_config()
         return config.enabled
     
+    # Preferred accessors using *_zone naming
+    @property
+    def answer_zones(self) -> List[GridLayout]:
+        """Get answer zones from page 1."""
+        if self.pages:
+            return self.pages[0].answer_zones
+        return []
+
+    @property
+    def last_name_zone(self) -> GridLayout | None:
+        """Get last_name_zone from page 1."""
+        if self.pages:
+            return self.pages[0].last_name_zone
+        return None
+
+    @property
+    def first_name_zone(self) -> GridLayout | None:
+        """Get first_name_zone from page 1."""
+        if self.pages:
+            return self.pages[0].first_name_zone
+        return None
+
+    @property
+    def id_zone(self) -> GridLayout | None:
+        """Get id_zone from page 1."""
+        if self.pages:
+            return self.pages[0].id_zone
+        return None
+
+    @property
+    def test_id_zone(self) -> GridLayout | None:
+        """Get test_id_zone from page 1."""
+        if self.pages:
+            return self.pages[0].test_id_zone
+        return None
+
+    @property
+    def version_zone(self) -> GridLayout | None:
+        """Get version_zone from page 1."""
+        if self.pages:
+            return self.pages[0].version_zone
+        return None
+
+    @property
+    def version_zones(self) -> List[GridLayout]:
+        """Get version_zone as list from page 1 (backward compatibility)."""
+        if self.pages:
+            return self.pages[0].version_zones
+        return []
+
     # Backward compatibility properties for single-page sheets
     @property
     def answer_layouts(self) -> List[GridLayout]:
-        """Get answer layouts from page 1 (for backward compatibility)."""
-        if self.pages:
-            return self.pages[0].answer_layouts
-        return []
-    
+        """Get answer zones from page 1 (backward compatibility alias)."""
+        return self.answer_zones
+
     @property
     def last_name_layout(self) -> GridLayout | None:
-        """Get last_name_layout from page 1 (for backward compatibility)."""
-        if self.pages:
-            return self.pages[0].last_name_layout
-        return None
-    
+        """Get last_name_zone from page 1 (backward compatibility alias)."""
+        return self.last_name_zone
+
     @property
     def first_name_layout(self) -> GridLayout | None:
-        """Get first_name_layout from page 1 (for backward compatibility)."""
-        if self.pages:
-            return self.pages[0].first_name_layout
-        return None
-    
+        """Get first_name_zone from page 1 (backward compatibility alias)."""
+        return self.first_name_zone
+
     @property
     def id_layout(self) -> GridLayout | None:
-        """Get id_layout from page 1 (for backward compatibility)."""
-        if self.pages:
-            return self.pages[0].id_layout
-        return None
-    
+        """Get id_zone from page 1 (backward compatibility alias)."""
+        return self.id_zone
+
     @property
     def version_layout(self) -> GridLayout | None:
-        """Get version_layout from page 1 (for backward compatibility)."""
-        if self.pages:
-            return self.pages[0].version_layout
-        return None
+        """Get version_zone from page 1 (backward compatibility alias)."""
+        return self.version_zone
 
 
 # ---------------------------------------------------------------------------
@@ -321,42 +396,83 @@ def _parse_layout(name: str, section: Dict[str, Any], page_size_mm: tuple = (215
 
 def _parse_page_layouts(page_num: int, page_data: Dict[str, Any],
                         page_size_mm: tuple = (215.9, 279.4)) -> PageLayout:
-    """Parse layouts for a single page."""
-    # Parse answer layouts
-    answer_layouts_data = page_data.get("answer_layouts", [])
-    answer_layouts: List[GridLayout] = []
-    for i, block in enumerate(answer_layouts_data):
+    """Parse layouts for a single page.
+
+    Accepts both *_zone (preferred) and *_layout (backward compatibility) keys.
+    """
+    # Parse answer zones (accept both answer_zones and answer_layouts)
+    answer_zones_data = page_data.get("answer_zones") or page_data.get("answer_layouts", [])
+    answer_zones: List[GridLayout] = []
+    for i, block in enumerate(answer_zones_data):
         # Default labels for answers if omitted
         if "labels" not in block and "numcols" in block:
             ch = int(block["numcols"])
             block["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
         if "selection_axis" not in block:
             block["selection_axis"] = "row"
-        answer_layouts.append(_parse_layout(f"page{page_num}_answers_{i+1}", block, page_size_mm))
+        answer_zones.append(_parse_layout(f"page{page_num}_answers_{i+1}", block, page_size_mm))
+
+    # Parse version zone (accept version_zone, version_zones list, or version_layout)
+    version_zone: GridLayout | None = None
+    version_zone_data = page_data.get("version_zone")
+    version_zones_data = page_data.get("version_zones")  # Legacy: list format
+    version_layout_data = page_data.get("version_layout")  # Legacy: old naming
+
+    if version_zone_data:
+        # Preferred format: single version_zone dict
+        layout_dict = dict(version_zone_data)
+        layout_dict.setdefault("selection_axis", "row")
+        if "labels" not in layout_dict and "numcols" in layout_dict:
+            ch = int(layout_dict["numcols"])
+            layout_dict["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
+        version_zone = _parse_layout(f"page{page_num}_version", layout_dict, page_size_mm)
+    elif version_zones_data:
+        # Legacy format: list of version zones (use first one)
+        if version_zones_data:
+            layout_dict = dict(version_zones_data[0])
+            layout_dict.setdefault("selection_axis", "row")
+            if "labels" not in layout_dict and "numcols" in layout_dict:
+                ch = int(layout_dict["numcols"])
+                layout_dict["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
+            version_zone = _parse_layout(f"page{page_num}_version", layout_dict, page_size_mm)
+    elif version_layout_data:
+        # Backward compatibility: single version layout (old naming)
+        layout_dict = dict(version_layout_data)
+        layout_dict.setdefault("selection_axis", "row")
+        if "labels" not in layout_dict and "numcols" in layout_dict:
+            ch = int(layout_dict["numcols"])
+            layout_dict["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
+        version_zone = _parse_layout(f"page{page_num}_version", layout_dict, page_size_mm)
 
     page_layout = PageLayout(
         page_number=page_num,
-        answer_layouts=answer_layouts
+        answer_zones=answer_zones,
+        version_zone=version_zone
     )
 
-    # Optional other layouts
-    for opt_name in ["last_name_layout", "first_name_layout", "id_layout", "version_layout"]:
-        if opt_name in page_data:
-            layout_dict = dict(page_data[opt_name])  # Shallow copy
+    # Optional other zones (accept both *_zone and *_layout for backward compatibility)
+    zone_mappings = [
+        ("last_name_zone", "last_name_layout"),
+        ("first_name_zone", "first_name_layout"),
+        ("id_zone", "id_layout"),
+        ("test_id_zone", None),  # New zone type, no legacy name
+    ]
+
+    for zone_name, layout_name in zone_mappings:
+        # Prefer *_zone, fall back to *_layout if available
+        zone_data = page_data.get(zone_name)
+        if not zone_data and layout_name:
+            zone_data = page_data.get(layout_name)
+        if zone_data:
+            layout_dict = dict(zone_data)  # Shallow copy
             # Sensible defaults if omitted
-            if opt_name in ("last_name_layout", "first_name_layout"):
+            if zone_name in ("last_name_zone", "first_name_zone"):
                 layout_dict.setdefault("selection_axis", "col")
                 layout_dict.setdefault("labels", " ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-            elif opt_name == "id_layout":
+            elif zone_name in ("id_zone", "test_id_zone"):
                 layout_dict.setdefault("selection_axis", "col")
                 layout_dict.setdefault("labels", "0123456789")
-            elif opt_name == "version_layout":
-                layout_dict.setdefault("selection_axis", "row")
-                # If numcols present and labels omitted, auto ABCD...
-                if "labels" not in layout_dict and "numcols" in layout_dict:
-                    ch = int(layout_dict["numcols"])
-                    layout_dict["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
-            setattr(page_layout, opt_name, _parse_layout(f"page{page_num}_{opt_name}", layout_dict, page_size_mm))
+            setattr(page_layout, zone_name, _parse_layout(f"page{page_num}_{zone_name}", layout_dict, page_size_mm))
 
     return page_layout
 

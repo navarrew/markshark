@@ -12,7 +12,7 @@ metadata:
     width_mm: 215.9
     height_mm: 279.4
 page_1:
-  last_name_layout:
+  last_name_zone:
     numrows: 27
     numcols: 14
     bubble_shape: circle
@@ -23,7 +23,7 @@ page_1:
     width_mm: 77.79
     height_mm: 117.29
     bubble_diameter_mm: 3.45
-  first_name_layout:
+  first_name_zone:
     numrows: 27
     numcols: 5
     bubble_shape: circle
@@ -34,7 +34,7 @@ page_1:
     width_mm: 23.94
     height_mm: 117.29
     bubble_diameter_mm: 3.45
-  id_layout:
+  id_zone:
     numrows: 10
     numcols: 10
     bubble_shape: circle
@@ -45,7 +45,7 @@ page_1:
     width_mm: 53.87
     height_mm: 40.65
     bubble_diameter_mm: 3.45
-  version_layout:
+  version_zone:
     numrows: 1
     numcols: 4
     bubble_shape: circle
@@ -56,7 +56,7 @@ page_1:
     width_mm: 16.26
     height_mm: 0.0
     bubble_diameter_mm: 3.45
-  answer_layouts:
+  answer_zones:
   - numrows: 20
     numcols: 5
     bubble_shape: circle
