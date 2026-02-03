@@ -74,13 +74,13 @@ Contributions should align with these guiding principles:
 
 -	No permission required.  Users should be able to try and use MarkShark without institutional approval.
 -	First success should be fast.  A new user should be able to score a small exam quickly using defaults.
--	Instructor control comes first
+-	Instructor control comes first.
 Scoring, rescoring, and timing decisions belong to the instructor.
 -	Ordinary hardware only
 The software should work with scanners and photocopiers instructors already have.
-	•	Transparent results
+-	Transparent results
 Users should be able to inspect and verify scoring decisions.
-	•	Power is optional
+-	Power is optional
 Advanced configuration should never be required for basic use.
 
 If a contribution conflicts with these principles, it may not be accepted, even if technically sound.
