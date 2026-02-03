@@ -18,6 +18,7 @@ For many instructors, automated grading still means giving up control. Exams mus
 MarkShark is designed so instructors can grade their own assessments, on their own timeline, using forms they designed themselves or selected from ready-made templates. It works with ordinary scanners or photocopiers, runs on Mac, Windows, and Linux, and produces results you can inspect and reuse anywhere.
 
 If you can print an exam and scan it, you should be able to grade it quickly and move on.
+
 ---
 
 ## Prerequisites
