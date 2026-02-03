@@ -5,7 +5,6 @@ Thank you for your interest in MarkShark. Contributions of all kinds are welcome
 
 MarkShark was built to reduce friction in grading paper exams. The goal of this document is to make contributing just as low friction.
 
-⸻
 
 ## What counts as a contribution
 
@@ -20,9 +19,8 @@ Useful contributions include:
 	•	Testing new releases and reporting issues
 	•	Small code fixes or larger feature proposals
 
-If it helps instructors grade exams more easily, it belongs here.
+If it helps instructors grade exams more easily, it belongs here!
 
-⸻
 
 ## Before opening an issue
 
@@ -37,7 +35,6 @@ Screenshots, sample PDFs, or anonymized examples are extremely helpful, but not 
 
 If you are unsure whether something is a bug or a feature request, open an issue anyway. We can sort it out together.
 
-⸻
 
 ## Feature requests
 
@@ -54,7 +51,6 @@ When suggesting a feature, it helps to explain:
 
 Requests that increase complexity or setup burden may be deferred, even if technically feasible.
 
-⸻
 
 ## Contributing code
 
@@ -81,7 +77,6 @@ Contributions should align with these guiding principles:
 
 If a contribution conflicts with these principles, it may not be accepted, even if technically sound.
 
-⸻
 
 ## Tone and expectations
 
@@ -89,13 +84,11 @@ MarkShark is used by educators under time pressure. Discussions should be respec
 
 There is no expectation of perfection. Questions, partial ideas, and exploratory contributions are welcome.
 
-⸻
 
 ## Licensing
 
 By contributing to MarkShark, you agree that your contributions will be licensed under the same open-source license as the project.
 
-⸻
 
 ## Final note
 
