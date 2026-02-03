@@ -4,7 +4,6 @@
 
 MarkShark is an open-source project used by educators. Its goal is to reduce friction in teaching workflows. This code of conduct exists to ensure that participation in the project remains respectful, practical, and welcoming.
 
-⸻
 
 ## Expected behavior
 
@@ -16,7 +15,6 @@ Participants are expected to:
 
 Disagreement is normal. Dismissive, hostile, or personal behavior is not.
 
-⸻
 
 ## Unacceptable behavior
 
@@ -28,13 +26,11 @@ Unacceptable behavior includes:
 
 This applies to all project spaces, including issues, pull requests, and discussions.
 
-⸻
 
 ## Scope
 
 This code of conduct applies within all MarkShark project spaces and when representing the project in public forums.
 
-⸻
 
 ## Enforcement
 
@@ -42,13 +38,11 @@ Project maintainers are responsible for clarifying expectations and addressing b
 
 The goal of enforcement is to maintain a productive, respectful environment, not to punish.
 
-⸻
 
 ## Reporting concerns
 
 If you experience or witness behavior that violates this code of conduct, please contact the project maintainer privately.
 
-⸻
 
 ## Final note
 
