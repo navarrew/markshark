@@ -62,7 +62,6 @@ If you would like to contribute code:
 
 MarkShark is used by educators who may not be programmers. Changes that improve readability, robustness, or usability are valued more than micro-optimizations.
 
-⸻
 
 ## Design principles
 
