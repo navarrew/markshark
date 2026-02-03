@@ -1,6 +1,4 @@
 
-⸻
-
 Contributing to MarkShark
 
 Thank you for your interest in MarkShark. Contributions of all kinds are welcome, including feedback from instructors and teachers who use the software in real classes.
