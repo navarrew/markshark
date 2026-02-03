@@ -1,5 +1,5 @@
 # MarkShark
-## A fast, accurate, customizable, open-source test bubble sheet scanner
+## An easy, fast, accurate, customizable, test bubble sheet scorer
 
 ![MarkShark Logo](images/shark.png)
 
@@ -8,6 +8,16 @@ MarkSharkOMR is a versatile and fast tool to **grade, and analyze your own bubbl
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![PyPI version](https://img.shields.io/pypi/v/markshark)](https://pypi.org/project/markshark/)
 
+---
+MarkShark exists because grading paper exams should not require permission, fees, or delays.
+
+I built MarkShark so I could scan and score exams in my own office, release results the same day, and use bubble sheets that actually fit my tests. I wanted to work on the computer I already use, without buying software or relying on a central scanning service.
+
+For many instructors, automated grading still means giving up control. Exams must fit a single Scantron form. Requests are submitted in advance. Tests are processed on someone else’s schedule. Small changes or rescoring take days. Students wait, email, and worry.
+
+MarkShark is designed so instructors can grade their own assessments, on their own timeline, using forms they designed themselves or selected from ready-made templates. It works with ordinary scanners or photocopiers, runs on Mac, Windows, and Linux, and produces results you can inspect and reuse anywhere.
+
+If you can print an exam and scan it, you should be able to grade it quickly and move on.
 ---
 
 ## Prerequisites
