@@ -1,5 +1,5 @@
 
-Contributing to MarkShark
+# Contributing to MarkShark
 
 Thank you for your interest in MarkShark. Contributions of all kinds are welcome, including feedback from instructors and teachers who use the software in real classes.
 
@@ -7,7 +7,7 @@ MarkShark was built to reduce friction in grading paper exams. The goal of this 
 
 ⸻
 
-What counts as a contribution
+## What counts as a contribution
 
 You do not need to be a software developer to contribute.
 
@@ -24,7 +24,7 @@ If it helps instructors grade exams more easily, it belongs here.
 
 ⸻
 
-Before opening an issue
+## Before opening an issue
 
 If you encounter a problem, please include:
 	•	What you were trying to do
@@ -39,7 +39,7 @@ If you are unsure whether something is a bug or a feature request, open an issue
 
 ⸻
 
-Feature requests
+## Feature requests
 
 Feature requests are welcome, but MarkShark has a clear design philosophy:
 	•	Reduce setup friction
@@ -56,7 +56,7 @@ Requests that increase complexity or setup burden may be deferred, even if techn
 
 ⸻
 
-Contributing code
+## Contributing code
 
 If you would like to contribute code:
 	•	Small, focused changes are preferred
@@ -68,27 +68,27 @@ MarkShark is used by educators who may not be programmers. Changes that improve 
 
 ⸻
 
-Design principles
+## Design principles
 
-Contributions should align with these guiding principles:
+### Contributions should align with these guiding principles:
 	•	No permission required
-Users should be able to try and use MarkShark without institutional approval.
+### Users should be able to try and use MarkShark without institutional approval.
 	•	First success should be fast
-A new user should be able to score a small exam quickly using defaults.
+### A new user should be able to score a small exam quickly using defaults.
 	•	Instructor control comes first
-Scoring, rescoring, and timing decisions belong to the instructor.
+#### Scoring, rescoring, and timing decisions belong to the instructor.
 	•	Ordinary hardware only
-The software should work with scanners and photocopiers instructors already have.
+### The software should work with scanners and photocopiers instructors already have.
 	•	Transparent results
-Users should be able to inspect and verify scoring decisions.
+### Users should be able to inspect and verify scoring decisions.
 	•	Power is optional
-Advanced configuration should never be required for basic use.
+### Advanced configuration should never be required for basic use.
 
 If a contribution conflicts with these principles, it may not be accepted, even if technically sound.
 
 ⸻
 
-Tone and expectations
+## Tone and expectations
 
 MarkShark is used by educators under time pressure. Discussions should be respectful, practical, and focused on helping people get work done.
 
