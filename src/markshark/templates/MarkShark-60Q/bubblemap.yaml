@@ -1,8 +1,8 @@
 metadata:
-  display_name: MarkShark 80 Question Template
-  description: 80 questions, 5 choices (A-E)
+  display_name: MarkShark 60 Question Template
+  description: 60 questions, 5 choices (A-E)
   pages: 1
-  total_questions: 80
+  total_questions: 60
   alignment:
     aruco:
       enabled: true
@@ -41,11 +41,7 @@ styles:
     font_size: 12
     text_color: gray
 
-  # Style with inheritance
-  subsection_label:
-    extends: section_label
-    font_size: 8
-    font_weight: bold
+
     
   standard_bubbles:
     bubble_shape: circle
@@ -78,38 +74,16 @@ styles:
     alternating_shade_axis: row
 
 page_1:
-  last_name_zone:
-    style: standard_bubbles
-    numrows: 27
-    numcols: 14
-    selection_axis: col
-    labels: ' ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-    x_mm: 82
-    y_mm: 30
-    width_mm: 82.13
-    height_mm: 123.89
 
-  first_name_zone:
-    style: standard_bubbles
-    numrows: 27
-    numcols: 5
-    selection_axis: col
-    labels: ' ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-    x_mm: 176
-    y_mm: 30
-    width_mm: 25.26
-    height_mm: 123.89
-
-  id_zone:
-    style: standard_bubbles
-    numrows: 10
-    numcols: 10
-    selection_axis: col
-    labels: 0123456789
-    x_mm: 14
-    y_mm: 111
-    width_mm: 56
-    height_mm: 43
+  text_zones:
+  - content: "- please fill bubbles completely -"
+    font_family: Poppins
+    font_size_pt: 8
+    font_weight: semibold
+    font_style: italic
+    text_align: center
+    x_mm: 108.0
+    y_mm: 272.0
 
   textbox_zones:
     - x_mm: 10
@@ -158,39 +132,40 @@ page_1:
           font_size_pt: 7
           font_family: Poppins
           text_align: left
- 
-#         - type: labeled_line
-#           label: "Class:"
-#           font_size_pt: 9
-#           font_family: Lexend
-#           font_weight: bold
-          
- #    - x_mm: 12
-#       y_mm: 63
-#       border_style: none
-#       width_mm: 61
-#       padding_mm: 0
-#       label_font_weight: bold
-#       label_font_family: Lexend
-#       items:
-#         - type: text
-#           content: "DIRECTIONS"
-#           font_size_pt: 9
-#           text_align: left
-#           font_weight: bold
-#           spacing_mm: 0.5
-#   
-#         - type: text
-#           content: |
-#             • Read each question carefully before answering
-#             • Use a #2 pencil only
-#             • Fill bubbles completely
-#             • Erase changes thoroughly
-#             • Do not fold or crease this form
-#           font_size_pt: 7
-#           font_family: Lexend
-#           text_align: left
-#           
+
+  last_name_zone:
+    style: standard_bubbles
+    numrows: 27
+    numcols: 14
+    selection_axis: col
+    labels: ' ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    x_mm: 82
+    y_mm: 30
+    width_mm: 82.13
+    height_mm: 123.89
+
+  first_name_zone:
+    style: standard_bubbles
+    numrows: 27
+    numcols: 5
+    selection_axis: col
+    labels: ' ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    x_mm: 176
+    y_mm: 30
+    width_mm: 25.26
+    height_mm: 123.89
+
+  id_zone:
+    style: standard_bubbles
+    numrows: 10
+    numcols: 10
+    selection_axis: col
+    labels: 0123456789
+    x_mm: 14
+    y_mm: 111
+    width_mm: 56
+    height_mm: 43
+           
   version_zone:
     style: standard_bubbles
     display_label: TEST VERSION
@@ -207,101 +182,71 @@ page_1:
 
   answer_zones:
   - style: answer_bubbles
-    numrows: 16
+    numrows: 15
     numcols: 5
     selection_axis: row
     labels: ABCDE
     x_mm: 18
     y_mm: 170
-    width_mm: 22
+    width_mm: 30
     height_mm: 90
   - style: answer_bubbles
-    numrows: 16
+    numrows: 15
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 58.5
+    x_mm: 69
     y_mm: 170
-    width_mm: 22
+    width_mm: 30
     height_mm: 90
   - style: answer_bubbles
-    numrows: 16
+    numrows: 15
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 99
+    x_mm: 120
     y_mm: 170
-    width_mm: 22
+    width_mm: 30
     height_mm: 90
   - style: answer_bubbles
-    numrows: 16
+    numrows: 15
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 139.5
+    x_mm: 171
     y_mm: 170
-    width_mm: 22
+    width_mm: 30
     height_mm: 90
-  - style: answer_bubbles
-    numrows: 16
-    numcols: 5
-    selection_axis: row
-    labels: ABCDE
-    x_mm: 180
-    y_mm: 170
-    width_mm: 22
-    height_mm: 90
-
+       
   line_zones:
-    - name: divider1
-      x1_mm: 11
-      y1_mm: 162
-      x2_mm: 206
-      y2_mm: 162
-      stroke_color: black
-      stroke_width_mm: 0.3
-
-    - name: divider2
-      x1_mm: 46
-      y1_mm: 166
-      x2_mm: 46
-      y2_mm: 263
-      stroke_color: black
-      stroke_width_mm: 0.2
-      
-    - name: divider3
-      x1_mm: 86.5
-      y1_mm: 166
-      x2_mm: 86.5
-      y2_mm: 263
-      stroke_color: black
-      stroke_width_mm: 0.2
-      
-    - name: divider4
-      x1_mm: 127
-      y1_mm: 166
-      x2_mm: 127
-      y2_mm: 263
-      stroke_color: black
-      stroke_width_mm: 0.2
-
-    - name: divider4
-      x1_mm: 167.5
-      y1_mm: 166
-      x2_mm: 167.5
-      y2_mm: 263
-      stroke_color: black
-      stroke_width_mm: 0.2
+  - name: divider1
+    x1_mm: 10
+    y1_mm: 162
+    x2_mm: 204
+    y2_mm: 162
+    stroke_color: black
+    stroke_width_mm: 0.5
+  - name: divider2
+    x1_mm: 56
+    y1_mm: 166
+    x2_mm: 56
+    y2_mm: 263
+    stroke_color: black
+    stroke_width_mm: 0.2
+  - name: divider3
+    x1_mm: 107
+    y1_mm: 166
+    x2_mm: 107
+    y2_mm: 263
+    stroke_color: black
+    stroke_width_mm: 0.2
+  - name: divider4
+    x1_mm: 158
+    y1_mm: 166
+    x2_mm: 158
+    y2_mm: 263
+    stroke_color: black
+    stroke_width_mm: 0.2
       
 
-
-  text_zones:
-  - content: "- please fill bubbles completely -"
-    font_family: Poppins
-    font_size_pt: 8
-    font_weight: semibold
-    font_style: italic
-    text_align: center
-    x_mm: 108.0
-    y_mm: 272.0
 

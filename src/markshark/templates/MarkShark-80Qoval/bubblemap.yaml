@@ -1,5 +1,5 @@
 metadata:
-  display_name: MarkShark 80 Question Template
+  display_name: MarkShark 80 Question Template Oval
   description: 80 questions, 5 choices (A-E)
   pages: 1
   total_questions: 80
@@ -41,6 +41,7 @@ styles:
     font_size: 12
     text_color: gray
 
+
   # Style with inheritance
   subsection_label:
     extends: section_label
@@ -48,7 +49,7 @@ styles:
     font_weight: bold
     
   standard_bubbles:
-    bubble_shape: circle
+    bubble_shape: oval
     bubble_diameter_mm: 3.8
     bubble_stroke_width_mm: 0.25
     bubble_stroke_color: dark_gray
@@ -66,8 +67,6 @@ styles:
     
   answer_bubbles:
     extends: standard_bubbles
-    bubble_shape: circle
-    bubble_diameter_mm: 4
     number_font_weight: bold
     number_font_size: 10
     number_color: black
@@ -78,13 +77,14 @@ styles:
     alternating_shade_axis: row
 
 page_1:
+
   last_name_zone:
     style: standard_bubbles
     numrows: 27
     numcols: 14
     selection_axis: col
     labels: ' ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-    x_mm: 82
+    x_mm: 82.84
     y_mm: 30
     width_mm: 82.13
     height_mm: 123.89
@@ -95,7 +95,7 @@ page_1:
     numcols: 5
     selection_axis: col
     labels: ' ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-    x_mm: 176
+    x_mm: 177.15
     y_mm: 30
     width_mm: 25.26
     height_mm: 123.89
@@ -106,99 +106,20 @@ page_1:
     numcols: 10
     selection_axis: col
     labels: 0123456789
-    x_mm: 14
+    x_mm: 15
     y_mm: 111
     width_mm: 56
     height_mm: 43
 
-  textbox_zones:
-    - x_mm: 10
-      y_mm: 18.5
-      width_mm: 63
-      padding_mm: 2
-      border_style: none
-      line_spacing_mm: 4
-      items:
-        - type: spacer
-          height_mm: 1
-  
-        - type: labeled_line
-          label: "Name:"
-          font_size_pt: 9
-          font_family: Poppins
-          font_weight: semibold
-  
-        - type: labeled_line
-          label: "Signature:"
-          font_size_pt: 9
-          font_family: Poppins
-          font_weight: semibold
 
-        - type: labeled_line
-          label: "Date:"
-          font_size_pt: 9
-          font_family: Poppins
-          font_weight: semibold
-
-        - type: text
-          content: "DIRECTIONS"
-          font_family: Poppins
-          font_size_pt: 9
-          text_align: left
-          font_weight: bold
-          spacing_mm: 0.5
-  
-        - type: text
-          content: |
-            • Read each question carefully before answering
-            • Use a #2 pencil only
-            • Fill bubbles completely
-            • Erase changes thoroughly
-            • Do not fold or crease this form
-          font_size_pt: 7
-          font_family: Poppins
-          text_align: left
- 
-#         - type: labeled_line
-#           label: "Class:"
-#           font_size_pt: 9
-#           font_family: Lexend
-#           font_weight: bold
-          
- #    - x_mm: 12
-#       y_mm: 63
-#       border_style: none
-#       width_mm: 61
-#       padding_mm: 0
-#       label_font_weight: bold
-#       label_font_family: Lexend
-#       items:
-#         - type: text
-#           content: "DIRECTIONS"
-#           font_size_pt: 9
-#           text_align: left
-#           font_weight: bold
-#           spacing_mm: 0.5
-#   
-#         - type: text
-#           content: |
-#             • Read each question carefully before answering
-#             • Use a #2 pencil only
-#             • Fill bubbles completely
-#             • Erase changes thoroughly
-#             • Do not fold or crease this form
-#           font_size_pt: 7
-#           font_family: Lexend
-#           text_align: left
-#           
-  version_zone:
-    style: standard_bubbles
-    display_label: TEST VERSION
+  version_zones:
+  - style: standard_bubbles
+    display_label: "TEST VERSION"
     numrows: 1
     numcols: 10
     selection_axis: row
     labels: ABCDEFGHIJ
-    x_mm: 14
+    x_mm: 15
     y_mm: 93
     width_mm: 56
     show_header_boxes: false
@@ -211,7 +132,7 @@ page_1:
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 18
+    x_mm: 19
     y_mm: 170
     width_mm: 22
     height_mm: 90
@@ -220,7 +141,7 @@ page_1:
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 58.5
+    x_mm: 59.5
     y_mm: 170
     width_mm: 22
     height_mm: 90
@@ -229,7 +150,7 @@ page_1:
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 99
+    x_mm: 100
     y_mm: 170
     width_mm: 22
     height_mm: 90
@@ -238,7 +159,7 @@ page_1:
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 139.5
+    x_mm: 140.5
     y_mm: 170
     width_mm: 22
     height_mm: 90
@@ -247,7 +168,7 @@ page_1:
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 180
+    x_mm: 181
     y_mm: 170
     width_mm: 22
     height_mm: 90
@@ -262,46 +183,55 @@ page_1:
       stroke_width_mm: 0.3
 
     - name: divider2
-      x1_mm: 46
+      x1_mm: 47
       y1_mm: 166
-      x2_mm: 46
+      x2_mm: 47
       y2_mm: 263
       stroke_color: black
       stroke_width_mm: 0.2
       
     - name: divider3
-      x1_mm: 86.5
+      x1_mm: 87.5
       y1_mm: 166
-      x2_mm: 86.5
+      x2_mm: 87.5
       y2_mm: 263
       stroke_color: black
       stroke_width_mm: 0.2
       
     - name: divider4
-      x1_mm: 127
+      x1_mm: 128
       y1_mm: 166
-      x2_mm: 127
+      x2_mm: 128
       y2_mm: 263
       stroke_color: black
       stroke_width_mm: 0.2
 
     - name: divider4
-      x1_mm: 167.5
+      x1_mm: 168.5
       y1_mm: 166
-      x2_mm: 167.5
+      x2_mm: 168.5
       y2_mm: 263
       stroke_color: black
       stroke_width_mm: 0.2
       
-
+  empty_zones:
+  - name: signature_box
+    x_mm: 12
+    y_mm: 70
+    width_mm: 61
+    height_mm: 14
+    style: thick_border
+    display_label: "Signature:"
+    label_inside: top_left
+    label_padding_mm: 1
 
   text_zones:
-  - content: "- please fill bubbles completely -"
-    font_family: Poppins
+  - content: "Please fill bubbles completely."
+    font_family: Lexend
     font_size_pt: 8
-    font_weight: semibold
-    font_style: italic
+    font_weight: bold
+#    text_decoration: underline      # none | underline | strikethrough
     text_align: center
-    x_mm: 108.0
-    y_mm: 272.0
+    x_mm: 108.0                 # Reference point X
+    y_mm: 271.0                 # Reference point Y
 
