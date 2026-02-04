@@ -61,9 +61,7 @@ MarkShark works with a variety of bubblesheet formats (you can easily generate y
 
 It accepts multiple versions of the same test (you provide a single key file that has the correct answsers for all versions).  
 
-It can flag issues like unfilled buubles, rows where more than one bubble was filled in.
-
-If you provide MarkShark with your class roster it can tell you who was missing from the test (absent) and flag 'orphan' scans (where the student didn't fill in their information properly.  It provides student scores in a format that is easily pasted into spreadsheets and into LMSs like Blackboard and Canvas.
+If you provide MarkShark with your class roster it can tell you who was missing from the test (absent) and flag 'orphan' scans (where the student didn't fill in their information properly.  MarkShark also flags issues like unfilled bubbles (unanswered question), rows where more than one bubble was filled in, for you to review and correct if necessary.  It provides student scores in a spreadsheet format that is easily pasted into spreadsheets and into LMSs like Blackboard and Canvas.
 
 For testing prior to use MarkShark can generate fake student data ncluding fake filled in bubblesheets that you can print out, rescan, and test for yourself before committing yourself to using MarkShark.
 
