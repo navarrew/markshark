@@ -52,6 +52,159 @@ from .tools.score_tools import (
 
 
 # ----------------------------
+# Roster Loading and Matching
+# ----------------------------
+
+def load_roster(roster_path: str) -> Dict[str, Dict[str, str]]:
+    """
+    Load a roster CSV file.
+
+    Expected columns: StudentID, FirstName, LastName (case-insensitive)
+    Additional columns are preserved but not required.
+
+    Returns:
+        Dict mapping student_id -> {first_name, last_name, ...}
+    """
+    roster = {}
+
+    with open(roster_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+
+        # Normalize header names (case-insensitive)
+        fieldnames_lower = {name.lower(): name for name in reader.fieldnames} if reader.fieldnames else {}
+
+        id_col = fieldnames_lower.get('studentid') or fieldnames_lower.get('student_id') or fieldnames_lower.get('id')
+        first_col = fieldnames_lower.get('firstname') or fieldnames_lower.get('first_name') or fieldnames_lower.get('first')
+        last_col = fieldnames_lower.get('lastname') or fieldnames_lower.get('last_name') or fieldnames_lower.get('last')
+
+        if not id_col:
+            raise ValueError(f"Roster must have a StudentID column. Found: {reader.fieldnames}")
+
+        for row in reader:
+            sid = row.get(id_col, '').strip()
+            if not sid:
+                continue
+
+            roster[sid] = {
+                'first_name': row.get(first_col, '').strip() if first_col else '',
+                'last_name': row.get(last_col, '').strip() if last_col else '',
+                'full_name': f"{row.get(first_col, '').strip()} {row.get(last_col, '').strip()}".strip() if first_col else '',
+            }
+
+    return roster
+
+
+def match_roster(
+    scored_students: List[Dict],
+    roster: Dict[str, Dict[str, str]],
+) -> Tuple[List[Dict], List[Dict], List[str]]:
+    """
+    Match scored students against roster.
+
+    Args:
+        scored_students: List of scored student dicts with 'student_id' key
+        roster: Dict from load_roster()
+
+    Returns:
+        Tuple of:
+        - matched: Students found in roster
+        - orphans: Students NOT found in roster (possible ID errors)
+        - absent_ids: Roster IDs with no matching scan
+    """
+    matched = []
+    orphans = []
+    found_ids = set()
+
+    for student in scored_students:
+        sid = student.get('student_id', '').strip()
+        if sid in roster:
+            matched.append(student)
+            found_ids.add(sid)
+        else:
+            orphans.append(student)
+
+    # Find absent students (on roster but no scan)
+    absent_ids = [sid for sid in roster.keys() if sid not in found_ids]
+
+    return matched, orphans, absent_ids
+
+
+def suggest_matches(
+    orphan_id: str,
+    orphan_name: str,
+    absent_roster: Dict[str, Dict[str, str]],
+    max_suggestions: int = 3
+) -> List[Dict[str, str]]:
+    """
+    Suggest possible roster matches for an orphan scan.
+
+    Uses fuzzy matching on both ID (digit transposition) and name similarity.
+
+    Args:
+        orphan_id: The student ID from the scan
+        orphan_name: The student name from the scan
+        absent_roster: Dict of absent students from roster
+        max_suggestions: Maximum number of suggestions to return
+
+    Returns:
+        List of suggestions with {student_id, name, reason}
+    """
+    suggestions = []
+    orphan_name_lower = orphan_name.lower().strip()
+
+    for roster_id, roster_info in absent_roster.items():
+        score = 0
+        reasons = []
+
+        # Check for similar IDs (digit transposition, off-by-one)
+        if len(orphan_id) == len(roster_id):
+            # Count different digits
+            diff_count = sum(1 for a, b in zip(orphan_id, roster_id) if a != b)
+            if diff_count == 1:
+                score += 3
+                reasons.append("1 digit off")
+            elif diff_count == 2:
+                # Check for transposition
+                for i in range(len(orphan_id) - 1):
+                    swapped = orphan_id[:i] + orphan_id[i+1] + orphan_id[i] + orphan_id[i+2:]
+                    if swapped == roster_id:
+                        score += 4
+                        reasons.append("digit swap")
+                        break
+                else:
+                    score += 1
+                    reasons.append("2 digits off")
+
+        # Check for name similarity
+        roster_name_lower = roster_info.get('full_name', '').lower().strip()
+        if roster_name_lower and orphan_name_lower:
+            # Simple substring match
+            if orphan_name_lower in roster_name_lower or roster_name_lower in orphan_name_lower:
+                score += 5
+                reasons.append("name match")
+            else:
+                # Check individual name parts
+                orphan_parts = set(orphan_name_lower.split())
+                roster_parts = set(roster_name_lower.split())
+                common = orphan_parts & roster_parts
+                if common:
+                    score += 2 * len(common)
+                    reasons.append(f"partial name")
+
+        if score > 0:
+            suggestions.append({
+                'student_id': roster_id,
+                'name': roster_info.get('full_name', ''),
+                'score': score,
+                'reason': ', '.join(reasons),
+            })
+
+    # Sort by score descending, take top N
+    suggestions.sort(key=lambda x: x['score'], reverse=True)
+    return suggestions[:max_suggestions]
+
+
+# ----------------------------
 # Basic Stats Functions (for inline stats during scoring)
 # ----------------------------
 
@@ -706,6 +859,8 @@ def score_pdf(
     low_confidence_threshold: float = 0.15,  # Flag answers with separation below this
     # NEW: Inline stats option
     include_stats: bool = True,  # Append summary stats rows to CSV
+    # NEW: Roster matching
+    roster_csv: Optional[str] = None,  # Optional roster CSV for matching/absent detection
 ) -> str:
     
     """
@@ -877,7 +1032,17 @@ def score_pdf(
     # Collect data for computing basic statistics at the end
     # Now includes version info for multi-version support
     # Also stores full CSV row for grouped output by version
-    all_student_data: List[Dict] = []  # {answers, correct, total, version, csv_row}
+    all_student_data: List[Dict] = []  # {answers, correct, total, version, csv_row, student_id, student_name}
+    # ==================================================================
+
+    # ==================== ROSTER LOADING ==============================
+    roster = None
+    if roster_csv:
+        try:
+            roster = load_roster(roster_csv)
+            print(f"[info] Loaded roster with {len(roster)} students", file=sys.stderr)
+        except Exception as e:
+            print(f"[warn] Failed to load roster: {e}", file=sys.stderr)
     # ==================================================================
     
     # Store header for later use when writing grouped output
@@ -1044,12 +1209,16 @@ def score_pdf(
                 
                 # ==================== STATS COLLECTION ====================
                 # Collect data for stats computation (with version for multi-version support)
+                student_name = f"{student_info.get('last_name', '')} {student_info.get('first_name', '')}".strip()
                 all_student_data.append({
                     "answers": answers_out,
                     "correct": correct if (keys_dict or use_advanced_scoring) else 0,
                     "total": total_scored if (keys_dict or use_advanced_scoring) else q_out,
                     "version": version_used.rstrip("*") if version_used else "",
                     "csv_row": row,  # Store for grouped output
+                    "student_id": student_info.get("student_id", ""),
+                    "student_name": student_name,
+                    "page": start_page_idx + 1,
                 })
                 # ==========================================================
 
@@ -1284,6 +1453,9 @@ def score_pdf(
                     "total": total_scored if (keys_dict or use_advanced_scoring) else q_out,
                     "version": version_used.rstrip("*") if version_used else "",
                     "csv_row": row,  # Store for grouped output
+                    "student_id": info.get("student_id", ""),
+                    "student_name": student_name,
+                    "page": page_idx,
                 })
                 # ==========================================================
 
@@ -1454,16 +1626,68 @@ def score_pdf(
                         print(f"[info] KR-20 version {ver}: {ver_stats['kr20']:.3f} (N={ver_stats['n']})", file=sys.stderr)
     # =================================================================
 
+    # ==================== ROSTER MATCHING =============================
+    # If roster provided, find orphan scans and absent students
+    orphan_students = []
+    absent_roster = {}
+    if roster:
+        matched, orphans, absent_ids = match_roster(all_student_data, roster)
+        orphan_students = orphans
+        absent_roster = {sid: roster[sid] for sid in absent_ids}
+
+        # Log roster matching results
+        print(f"[info] Roster matching: {len(matched)} matched, {len(orphans)} orphan scans, {len(absent_ids)} absent students", file=sys.stderr)
+
+        if orphans:
+            print(f"[warn] Orphan scans (ID not in roster):", file=sys.stderr)
+            for o in orphans[:5]:  # Show first 5
+                print(f"       - {o.get('student_id', '?')} ({o.get('student_name', 'unknown')})", file=sys.stderr)
+            if len(orphans) > 5:
+                print(f"       ... and {len(orphans) - 5} more", file=sys.stderr)
+
+        if absent_ids:
+            print(f"[info] Absent students (on roster, no scan):", file=sys.stderr)
+            for sid in absent_ids[:5]:  # Show first 5
+                info = roster[sid]
+                print(f"       - {sid} ({info.get('full_name', 'unknown')})", file=sys.stderr)
+            if len(absent_ids) > 5:
+                print(f"       ... and {len(absent_ids) - 5} more", file=sys.stderr)
+
+        # Add orphan scans to flagged items for review
+        for orphan in orphan_students:
+            # Get suggestions from absent roster
+            suggestions = suggest_matches(
+                orphan.get('student_id', ''),
+                orphan.get('student_name', ''),
+                absent_roster,
+                max_suggestions=3
+            )
+            suggestion_text = "; ".join([
+                f"{s['student_id']} ({s['name']}) [{s['reason']}]"
+                for s in suggestions
+            ]) if suggestions else ""
+
+            flagged_items.append({
+                "student_id": orphan.get("student_id", ""),
+                "student_name": orphan.get("student_name", ""),
+                "page": orphan.get("page", ""),
+                "question": "ID",  # Special question marker for ID issues
+                "issue": "orphan",  # Not in roster
+                "current_answer": orphan.get("student_id", ""),
+                "suggested_match": suggestion_text,
+            })
+    # =================================================================
+
     # ==================== GENERATE REVIEW OUTPUTS ====================
     # Write flagged XLSX if requested
-    if flagged_xlsx and flagged_items:
+    if flagged_xlsx and (flagged_items or orphan_students):
         _ensure_dir(os.path.dirname(flagged_xlsx) or ".")
         wb = Workbook()
         ws = wb.active
         ws.title = "Flagged Items"
 
-        # Header row
-        headers = ["Student ID", "Student Name", "Page", "Question", "Issue", "Current Answer", "Corrected Answer"]
+        # Header row - add Suggested Match column for roster matching
+        headers = ["Student ID", "Student Name", "Page", "Question", "Issue", "Current Answer", "Corrected Answer", "Suggested Match"]
         ws.append(headers)
 
         # Style header row
@@ -1491,19 +1715,29 @@ def score_pdf(
                 item["page"],
                 item["question"],
                 item["issue"],
-                item["current_answer"],
+                item.get("current_answer", ""),
                 "",  # Empty Corrected Answer column for teacher input
+                item.get("suggested_match", ""),  # Suggested match from roster
             ])
 
         # Style data rows and highlight Corrected Answer column
         yellow_fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
+        orange_fill = PatternFill(start_color="FFD699", end_color="FFD699", fill_type="solid")  # For orphan rows
         for row_num in range(2, len(flagged_items) + 2):
+            item = flagged_items[row_num - 2]
+            is_orphan = item.get("issue") == "orphan"
+
             for col_num in range(1, len(headers) + 1):
                 cell = ws.cell(row=row_num, column=col_num)
                 cell.border = thin_border
-                # Highlight the Corrected Answer column
-                if col_num == 7:  # Corrected Answer column
+                # Highlight the Corrected Answer column (yellow) or entire row if orphan (orange)
+                if is_orphan:
+                    cell.fill = orange_fill
+                elif col_num == 7:  # Corrected Answer column
                     cell.fill = yellow_fill
+                # Format ID columns as text to prevent Excel from treating them as numbers
+                if col_num in (1, 7):  # Student ID and Corrected Answer columns
+                    cell.number_format = '@'  # Text format
 
         # Set column widths
         ws.column_dimensions['A'].width = 12  # Student ID
@@ -1513,12 +1747,55 @@ def score_pdf(
         ws.column_dimensions['E'].width = 10  # Issue
         ws.column_dimensions['F'].width = 15  # Current Answer
         ws.column_dimensions['G'].width = 18  # Corrected Answer
+        ws.column_dimensions['H'].width = 45  # Suggested Match
 
         # Freeze header row
         ws.freeze_panes = 'A2'
 
+        # Add Absent Students sheet if there are absent students
+        if absent_roster:
+            ws_absent = wb.create_sheet(title="Absent Students")
+            absent_headers = ["Student ID", "First Name", "Last Name", "Notes"]
+            ws_absent.append(absent_headers)
+
+            # Style header
+            for col_num, header in enumerate(absent_headers, 1):
+                cell = ws_absent.cell(row=1, column=col_num)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.border = thin_border
+                cell.alignment = Alignment(horizontal='center')
+
+            # Data rows
+            for sid, info in sorted(absent_roster.items()):
+                ws_absent.append([
+                    sid,
+                    info.get("first_name", ""),
+                    info.get("last_name", ""),
+                    "",  # Notes column for teacher
+                ])
+
+            # Style and width
+            for row_num in range(2, len(absent_roster) + 2):
+                for col_num in range(1, len(absent_headers) + 1):
+                    cell = ws_absent.cell(row=row_num, column=col_num)
+                    cell.border = thin_border
+                    # Format Student ID column as text
+                    if col_num == 1:
+                        cell.number_format = '@'
+
+            ws_absent.column_dimensions['A'].width = 12
+            ws_absent.column_dimensions['B'].width = 15
+            ws_absent.column_dimensions['C'].width = 15
+            ws_absent.column_dimensions['D'].width = 30
+            ws_absent.freeze_panes = 'A2'
+
         wb.save(flagged_xlsx)
-        print(f"[info] Wrote {len(flagged_items)} flagged items to {flagged_xlsx}", file=sys.stderr)
+        orphan_count = sum(1 for item in flagged_items if item.get("issue") == "orphan")
+        answer_flags = len(flagged_items) - orphan_count
+        print(f"[info] Wrote {answer_flags} answer flags + {orphan_count} orphan scans to {flagged_xlsx}", file=sys.stderr)
+        if absent_roster:
+            print(f"[info] Added {len(absent_roster)} absent students to separate sheet", file=sys.stderr)
     
     # Generate review PDF with flagged pages
     if review_pdf and flagged_page_images:

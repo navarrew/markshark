@@ -270,6 +270,11 @@ def score(
         "--flagged-xlsx",
         help="Output XLSX listing flagged items (blank/multi) with Corrected Answer column for manual review.",
     ),
+    roster_csv: Optional[str] = typer.Option(
+        None,
+        "--roster-csv",
+        help="Class roster CSV with StudentID column. Flags orphan scans (ID not in roster) and tracks absent students.",
+    ),
     annotate_all_cells: bool = typer.Option(False, "--annotate-all-cells", help="Draw every bubble in each row"),
     label_density: bool = typer.Option(False, "--label-density", help="Overlay % fill text at bubble centers"),
     dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Scan/PDF render DPI"),
@@ -363,6 +368,7 @@ def score(
             review_pdf=review_pdf,
             flagged_xlsx=flagged_xlsx,
             include_stats=include_stats,
+            roster_csv=roster_csv,
         )
     except Exception as e:
         rprint(f"[red]Scoring failed:[/red] {e}")
@@ -375,6 +381,8 @@ def score(
         rprint(f"[yellow]Review PDF:[/yellow] {review_pdf}")
     if flagged_xlsx:
         rprint(f"[yellow]Flagged XLSX:[/yellow] {flagged_xlsx}")
+    if roster_csv:
+        rprint(f"[cyan]Roster matching:[/cyan] Check flagged XLSX for orphan scans and absent students")
 
 
 # ---------------------- REPORT ----------------------

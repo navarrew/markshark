@@ -692,7 +692,7 @@ if page.startswith("0"):
 
         roster_csv = _tempfile_from_uploader("Upload your class roster (CSV)", "quick_roster", types=("csv",))
         if roster_csv:
-            st.caption("✓ Roster will be used for report generation")
+            st.caption("✓ Roster will be used for orphan detection during scoring and report generation")
 
         # Custom upload option
         if template_choice is None:
@@ -905,6 +905,8 @@ if page.startswith("0"):
                 if generate_flagged_xlsx:
                     flagged_xlsx_path = work_dir / "flagged.xlsx"
                     score_args += ["--flagged-xlsx", str(flagged_xlsx_path)]
+                if roster_csv:
+                    score_args += ["--roster-csv", str(roster_csv)]
                 
                 with st.spinner("Scoring sheets..."):
                     score_out = _run_cli(score_args)
@@ -1018,6 +1020,7 @@ if page.startswith("0"):
                                 input_csv=str(csv_path),
                                 corrections_xlsx=str(corrections_xlsx),
                                 output_csv=str(corrected_csv_path),
+                                roster_csv=str(roster_csv) if roster_csv else None,
                             )
                         if corrections_applied > 0:
                             st.success(f"Applied {corrections_applied} corrections to CSV")
@@ -1379,6 +1382,8 @@ elif page.startswith("2"):
                                           help="Creates a separate PDF with only pages containing blank/multi answers for manual review")
         generate_flagged_xlsx = st.checkbox("Generate flagged items XLSX", value=True,
                                            help="Creates an Excel file listing flagged items with a column for corrections")
+        roster_csv = _tempfile_from_uploader("Class roster CSV (optional)", "score_roster", types=("csv",))
+        st.caption("*Upload a roster CSV to flag orphan scans (IDs not in roster) and track absent students. Must have StudentID column.*")
         st.markdown("---")
         st.markdown("**Statistics**")
         include_stats = st.checkbox("Include basic statistics in CSV", value=True,
@@ -1458,6 +1463,8 @@ elif page.startswith("2"):
             if generate_flagged_xlsx:
                 flagged_xlsx_path = out_dir / "flagged.xlsx"
                 args += ["--flagged-xlsx", str(flagged_xlsx_path)]
+            if roster_csv:
+                args += ["--roster-csv", str(roster_csv)]
 
             try:
                 with st.spinner("Scoring via CLI..."):
@@ -1679,6 +1686,7 @@ elif page.startswith("3"):
                             input_csv=str(selected_csv_path),
                             corrections_xlsx=str(corrections_xlsx),
                             output_csv=str(corrected_csv_path),
+                            roster_csv=str(roster_csv) if roster_csv else None,
                         )
                     if corrections_applied > 0:
                         st.success(f"Applied {corrections_applied} corrections to CSV")

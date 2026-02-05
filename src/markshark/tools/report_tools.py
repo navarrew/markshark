@@ -149,6 +149,7 @@ def merge_corrections(
     corrections: pd.DataFrame,
     item_cols: List[str],
     key_row_idx: int,
+    roster: Optional[pd.DataFrame] = None,
 ) -> Tuple[pd.DataFrame, int]:
     """
     Apply corrections to the results DataFrame.
@@ -156,11 +157,16 @@ def merge_corrections(
     For each correction, updates the corresponding question answer
     in the student's row and recalculates the scoring columns.
 
+    Special handling for ID corrections (Question="ID"):
+    - Updates the StudentID column to the corrected value
+    - If roster provided, also updates name columns from roster
+
     Args:
         df: Results DataFrame from scored CSV
         corrections: DataFrame with columns: student_id, question, corrected_answer
         item_cols: List of question column names (Q1, Q2, etc.)
         key_row_idx: Index of the KEY row
+        roster: Optional roster DataFrame for ID corrections
 
     Returns:
         Tuple of (modified DataFrame, number of corrections applied)
@@ -182,12 +188,59 @@ def merge_corrections(
         print(f"[corrections] Warning: No student ID column found in {list(df.columns)}", file=sys.stderr)
         return df, 0
 
+    # Find name columns for ID corrections
+    firstname_col = _find_col(df, ['firstname', 'FirstName', 'First_Name', 'first_name', 'First'])
+    lastname_col = _find_col(df, ['lastname', 'LastName', 'Last_Name', 'last_name', 'Last'])
+
     # Pre-normalize all IDs in the DataFrame for matching
     df_ids_normalized = df[id_col].apply(_normalize_id)
 
     for _, correction in corrections.iterrows():
         student_id_normalized = _normalize_id(correction['student_id'])
-        new_answer = str(correction['corrected_answer']).upper().strip()
+        question_str = str(correction['question']).strip().upper()
+        new_value = str(correction['corrected_answer']).strip()
+
+        # Special handling for ID corrections (orphan scans)
+        if question_str == 'ID':
+            # This is an ID correction - update the StudentID column
+            new_id = new_value.upper() if new_value else ''
+
+            # Find the student row by their ORIGINAL (wrong) ID
+            student_mask = df_ids_normalized == student_id_normalized
+            student_indices = [i for i in df[student_mask].index.tolist() if i != key_row_idx]
+
+            if not student_indices:
+                sample_ids = df_ids_normalized[df_ids_normalized != 'KEY'].head(5).tolist()
+                print(f"[corrections] Warning: Could not find student with ID '{student_id_normalized}' "
+                      f"for ID correction (sample IDs: {sample_ids})", file=sys.stderr)
+                continue
+
+            for idx in student_indices:
+                old_id = str(df.at[idx, id_col])
+                df.at[idx, id_col] = new_id
+                corrections_applied += 1
+                print(f"[corrections] ID Correction: '{old_id}' -> '{new_id}'", file=sys.stderr)
+
+                # Also update name from roster if available
+                if roster is not None and new_id:
+                    roster_match = roster[roster['StudentID'].apply(_normalize_id) == _normalize_id(new_id)]
+                    if not roster_match.empty:
+                        roster_row = roster_match.iloc[0]
+                        if firstname_col and 'FirstName' in roster_row:
+                            old_first = df.at[idx, firstname_col]
+                            df.at[idx, firstname_col] = roster_row['FirstName']
+                            print(f"[corrections]   FirstName: '{old_first}' -> '{roster_row['FirstName']}'", file=sys.stderr)
+                        if lastname_col and 'LastName' in roster_row:
+                            old_last = df.at[idx, lastname_col]
+                            df.at[idx, lastname_col] = roster_row['LastName']
+                            print(f"[corrections]   LastName: '{old_last}' -> '{roster_row['LastName']}'", file=sys.stderr)
+
+            # Update normalized IDs cache since we changed an ID
+            df_ids_normalized = df[id_col].apply(_normalize_id)
+            continue
+
+        # Normal answer correction
+        new_answer = new_value.upper()
 
         # Map question to column name
         q_col = _question_to_col(correction['question'], item_cols)
@@ -261,6 +314,7 @@ def apply_corrections_to_csv(
     input_csv: str,
     corrections_xlsx: str,
     output_csv: str,
+    roster_csv: Optional[str] = None,
 ) -> int:
     """
     Apply teacher corrections to a scored CSV and write a new corrected CSV.
@@ -268,10 +322,15 @@ def apply_corrections_to_csv(
     Reads the scored CSV, loads corrections from the filled flagged.xlsx,
     updates the answer columns, recalculates scores, and writes a new CSV.
 
+    Special handling for ID corrections (Question="ID" in flagged XLSX):
+    - Updates StudentID column to the corrected value
+    - If roster provided, also updates name columns from roster
+
     Args:
         input_csv: Path to original scored CSV
         corrections_xlsx: Path to filled flagged.xlsx with corrections
         output_csv: Path to write the corrected CSV
+        roster_csv: Optional roster CSV for ID corrections (to look up names)
 
     Returns:
         Number of corrections applied
@@ -288,6 +347,15 @@ def apply_corrections_to_csv(
 
     key_row_idx = detect_key_row_index(df, item_cols, key_label="KEY")
 
+    # Load roster if provided (for ID corrections)
+    roster = None
+    if roster_csv:
+        try:
+            roster = load_roster(roster_csv)
+            print(f"[corrections] Loaded roster with {len(roster)} students for ID corrections", file=sys.stderr)
+        except Exception as e:
+            print(f"[corrections] Warning: Could not load roster: {e}", file=sys.stderr)
+
     # Load and apply corrections
     corrections = load_corrections(corrections_xlsx)
     if corrections.empty:
@@ -296,7 +364,7 @@ def apply_corrections_to_csv(
         df.to_csv(output_csv, index=False)
         return 0
 
-    df, corrections_applied = merge_corrections(df, corrections, item_cols, key_row_idx)
+    df, corrections_applied = merge_corrections(df, corrections, item_cols, key_row_idx, roster=roster)
 
     # Write corrected CSV
     df.to_csv(output_csv, index=False)
@@ -1049,28 +1117,44 @@ def create_summary_tab(
                 ws[f'C{row}'] = student['FirstName']
                 row += 1
 
-    # Corrections detail (copy of the flagged XLSX rows)
+    # Corrections detail (only rows with actual corrections from flagged XLSX)
     if corrections_detail is not None and not corrections_detail.empty:
-        row += 2
-        ws[f'A{row}'] = "Corrections Applied"
-        ws[f'A{row}'].font = Font(size=14, bold=True, color="FF0000")
-        row += 1
+        # Find the "Corrected Answer" column (case-insensitive)
+        corrected_col = None
+        for col in corrections_detail.columns:
+            if 'corrected' in col.lower() and 'answer' in col.lower():
+                corrected_col = col
+                break
 
-        # Write all columns from the flagged xlsx as-is
-        flagged_cols = list(corrections_detail.columns)
-        for col_idx, col_name in enumerate(flagged_cols, start=1):
-            ws.cell(row=row, column=col_idx, value=str(col_name))
-        format_header_row(ws, row)
-        row += 1
+        # Filter to only rows with non-empty corrections
+        if corrected_col:
+            corrections_detail = corrections_detail[
+                corrections_detail[corrected_col].notna() &
+                (corrections_detail[corrected_col].astype(str).str.strip() != '') &
+                (corrections_detail[corrected_col].astype(str).str.lower() != 'nan')
+            ]
 
-        for _, corr_row in corrections_detail.iterrows():
-            for col_idx, col_name in enumerate(flagged_cols, start=1):
-                val = corr_row.get(col_name, '')
-                # Clean up NaN display
-                if pd.isna(val):
-                    val = ''
-                ws.cell(row=row, column=col_idx, value=val)
+        if not corrections_detail.empty:
+            row += 2
+            ws[f'A{row}'] = "Corrections Applied"
+            ws[f'A{row}'].font = Font(size=14, bold=True, color="FF0000")
             row += 1
+
+            # Write all columns from the flagged xlsx as-is
+            flagged_cols = list(corrections_detail.columns)
+            for col_idx, col_name in enumerate(flagged_cols, start=1):
+                ws.cell(row=row, column=col_idx, value=str(col_name))
+            format_header_row(ws, row)
+            row += 1
+
+            for _, corr_row in corrections_detail.iterrows():
+                for col_idx, col_name in enumerate(flagged_cols, start=1):
+                    val = corr_row.get(col_name, '')
+                    # Clean up NaN display
+                    if pd.isna(val):
+                        val = ''
+                    ws.cell(row=row, column=col_idx, value=val)
+                row += 1
 
     auto_size_columns(ws)
 
