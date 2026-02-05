@@ -316,7 +316,7 @@ The template includes:
 | AND | `A&B` | ✗ 0 | ✗ 0 | ✓ Full | ✗ 0 | ✗ 0 |
 | Partial@ | `A@B` | ½ | ½ | ✓ Full | ½ | ✗ 0 (spam) |
 | Partial~ | `A~B` | ½ | ½ | ✓ Full | ✗ 0 | ✗ 0 (spam) |
-| Freebie | `*` | ✓ Full | ✓ Full | ✓ Full | ✓ Full |
+| Freebie | `*` | ✓ Full | ✓ Full | ✓ Full | ✓ Full | ✓ Full |
 
 ---
 
