@@ -2093,6 +2093,7 @@ answer_rows:
         - **mock_scans.pdf** - PDF with filled bubble sheets
         - **mock_answer_key.txt** - Answer key file
         - **mock_student_responses.csv** - CSV with expected student answers
+        - **mock_roster.csv** - Class roster (optionally includes absent students)
         """)
 
         with st.expander("Generate mock dataset from a template", expanded=False):
@@ -2156,7 +2157,12 @@ answer_rows:
                             value=True,
                             help="Simulate slightly misaligned scans"
                         )
-                        st.caption("*Check the box above to have the output scans misaligned so you can test both the alignment and scoring systems.*")
+                        mock_num_absent = st.number_input(
+                            "Absent students",
+                            min_value=0, max_value=20, value=2,
+                            help="Number of students on roster who don't have scans"
+                        )
+                        st.caption("*Absent students appear in the roster but have no scantron, useful for testing roster matching.*")
 
                     # Output location
                     base = WORKDIR or Path(os.getcwd())
@@ -2184,6 +2190,7 @@ answer_rows:
                                     bubblemap_path=str(selected_template.bubblemap_yaml_path),
                                     out_dir=mock_out_dir,
                                     num_students=mock_num_students,
+                                    num_absent=mock_num_absent,
                                     seed=mock_seed,
                                     dpi=mock_dpi,
                                     darkness_min=mock_darkness_min,
@@ -2195,12 +2202,15 @@ answer_rows:
                                 )
 
                             st.success("✅ Mock dataset generated!")
+                            if mock_num_absent > 0:
+                                st.info(f"📋 Roster includes {mock_num_absent} absent student(s)")
 
                             # Store results for download
                             st.session_state["mock_results"] = {
                                 "answer_key": str(results['answer_key']),
                                 "scans": str(results['scans']),
                                 "responses": str(results['responses']),
+                                "roster": str(results['roster']),
                             }
 
                         except Exception as e:
@@ -2212,13 +2222,14 @@ answer_rows:
                     if "mock_results" in st.session_state:
                         mr = st.session_state["mock_results"]
                         st.markdown("**Download generated files:**")
-                        dl_col1, dl_col2, dl_col3 = st.columns(3)
+                        dl_col1, dl_col2 = st.columns(2)
                         with dl_col1:
                             _download_file_button("📄 Answer Key", Path(mr["answer_key"]))
-                        with dl_col2:
                             _download_file_button("📑 Mock Scans PDF", Path(mr["scans"]))
-                        with dl_col3:
+                        with dl_col2:
                             _download_file_button("📊 Responses CSV", Path(mr["responses"]))
+                            if "roster" in mr:
+                                _download_file_button("📋 Roster CSV", Path(mr["roster"]))
 
                         st.info(f"Files saved to: `{Path(mr['scans']).parent}`")
             else:

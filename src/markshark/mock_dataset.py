@@ -27,7 +27,7 @@ Usage (as module):
     )
 
 Output:
-    - mock_answer_key.txt: Key file in MarkShark format (#A\nA,B,C,...\n#B\n...)
+    - mock_answer_key.txt: Key file in modern MarkShark format (ver:A\\nA\\nB\\nC\\n...)
     - mock_scans.pdf: PDF of all synthesized student sheets
     - mock_student_responses.csv: CSV with student info and expected answers
 """
@@ -247,18 +247,28 @@ def generate_versioned_keys(
 
 def write_answer_key(keys: Dict[str, List[str]], output_path: str):
     """
-    Write answer key in MarkShark format.
+    Write answer key in modern MarkShark format.
 
     Format:
-        #A
-        A,B,C,D,E,...
-        #B
-        B,A,D,C,E,...
+        ver:A
+        A
+        B
+        C
+        ...
+
+        ver:B
+        B
+        A
+        D
+        ...
     """
     with open(output_path, "w", encoding="utf-8") as f:
-        for version, answers in keys.items():
-            f.write(f"#{version}\n")
-            f.write(",".join(answers) + "\n")
+        for i, (version, answers) in enumerate(keys.items()):
+            if i > 0:
+                f.write("\n")  # Blank line between versions
+            f.write(f"ver:{version}\n")
+            for answer in answers:
+                f.write(f"{answer}\n")
 
 
 # =============================================================================
@@ -799,6 +809,71 @@ def write_students_csv(
             writer.writerow(row)
 
 
+def generate_absent_students(
+    num_absent: int,
+    id_digits: int = 10,
+    used_ids: Optional[set] = None
+) -> List[Dict[str, Any]]:
+    """
+    Generate absent students (name and ID only, no answers).
+
+    Args:
+        num_absent: Number of absent students to generate
+        id_digits: Number of digits in student ID
+        used_ids: Set of already-used student IDs to avoid duplicates
+
+    Returns:
+        List of dicts with: student_id, first_name, last_name, absent=True
+    """
+    if used_ids is None:
+        used_ids = set()
+
+    absent_students = []
+    for _ in range(num_absent):
+        # Generate unique ID
+        while True:
+            sid = generate_student_id(id_digits)
+            if sid not in used_ids:
+                used_ids.add(sid)
+                break
+
+        absent_students.append({
+            "student_id": sid,
+            "first_name": random.choice(FIRST_NAMES),
+            "last_name": random.choice(LAST_NAMES),
+            "absent": True,
+        })
+
+    return absent_students
+
+
+def write_roster_csv(
+    students: List[Dict[str, Any]],
+    absent_students: List[Dict[str, Any]],
+    output_path: str
+):
+    """
+    Write class roster to CSV (all students including absent ones).
+
+    The roster contains StudentID, FirstName, LastName columns only.
+    This can be used as input for scoring to identify absent students.
+    """
+    # Combine and shuffle all students
+    all_students = students + absent_students
+    random.shuffle(all_students)
+
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["StudentID", "FirstName", "LastName"])
+
+        for student in all_students:
+            writer.writerow([
+                student["student_id"],
+                student["first_name"],
+                student["last_name"],
+            ])
+
+
 # =============================================================================
 # Main API function
 # =============================================================================
@@ -808,6 +883,7 @@ def generate_mock_dataset(
     bubblemap_path: str,
     out_dir: str,
     num_students: int = 100,
+    num_absent: int = 2,
     seed: int = 42,
     dpi: int = 150,
     darkness_min: float = 0.4,
@@ -825,6 +901,7 @@ def generate_mock_dataset(
         bubblemap_path: Path to bubblemap YAML file
         out_dir: Output directory for generated files
         num_students: Number of fake students to generate (default: 100)
+        num_absent: Number of absent students to add to roster (default: 2)
         seed: Random seed for reproducibility (default: 42)
         dpi: DPI for rendered images (default: 150)
         darkness_min: Minimum bubble darkness 0-1 (default: 0.4)
@@ -839,6 +916,7 @@ def generate_mock_dataset(
         - 'answer_key': Path to mock_answer_key.txt
         - 'scans': Path to mock_scans.pdf
         - 'responses': Path to mock_student_responses.csv
+        - 'roster': Path to mock_roster.csv (includes absent students)
     """
     # Set random seed
     random.seed(seed)
@@ -905,9 +983,11 @@ def generate_mock_dataset(
             for ver, ans in keys.items():
                 print(f"    Version {ver}: {','.join(ans[:5])}... ({len(ans)} answers)")
     else:
-        # Single version format: just comma-separated
+        # Single version format: modern format with ver:A header
         with open(key_path, "w") as f:
-            f.write(",".join(keys[""]) + "\n")
+            f.write("ver:A\n")
+            for answer in keys[""]:
+                f.write(f"{answer}\n")
         if verbose:
             print(f"  Wrote key to {key_path}")
 
@@ -964,6 +1044,22 @@ def generate_mock_dataset(
     first_key = keys[versions_to_use[0]]
     write_students_csv(all_students, str(csv_path), first_key, format_info['total_questions'])
 
+    # Generate absent students and save roster
+    roster_path = out_dir_path / "mock_roster.csv"
+    used_ids = {s["student_id"] for s in all_students}
+    absent_students = []
+    if num_absent > 0:
+        if verbose:
+            print(f"\nGenerating {num_absent} absent students...")
+        absent_students = generate_absent_students(
+            num_absent=num_absent,
+            id_digits=format_info['id_digits'],
+            used_ids=used_ids
+        )
+    if verbose:
+        print(f"Saving roster: {roster_path}")
+    write_roster_csv(all_students, absent_students, str(roster_path))
+
     # Print summary
     if verbose:
         print("\n" + "="*60)
@@ -971,6 +1067,9 @@ def generate_mock_dataset(
         print("="*60)
         scores = [s["expected_score"] * 100 for s in all_students]
         print(f"  Students generated: {len(all_students)}")
+        if num_absent > 0:
+            print(f"  Absent students: {len(absent_students)}")
+            print(f"  Total roster size: {len(all_students) + len(absent_students)}")
         print(f"  Score range: {min(scores):.1f}% - {max(scores):.1f}%")
         print(f"  Mean score: {np.mean(scores):.1f}%")
         print(f"  Median score: {np.median(scores):.1f}%")
@@ -985,12 +1084,14 @@ def generate_mock_dataset(
         print(f"  {key_path}")
         print(f"  {pdf_path}")
         print(f"  {csv_path}")
+        print(f"  {roster_path}")
         print("\nDone!")
 
     return {
         'answer_key': key_path,
         'scans': pdf_path,
         'responses': csv_path,
+        'roster': roster_path,
     }
 
 
@@ -1049,6 +1150,10 @@ def main():
         "--multi-rate", type=float, default=0.01,
         help="Rate of multi-fill answers among wrong answers (default: 0.01)"
     )
+    parser.add_argument(
+        "--num-absent", type=int, default=2,
+        help="Number of absent students to add to roster (default: 2)"
+    )
 
     args = parser.parse_args()
 
@@ -1057,6 +1162,7 @@ def main():
         bubblemap_path=args.bubblemap,
         out_dir=args.out_dir,
         num_students=args.num_students,
+        num_absent=args.num_absent,
         seed=args.seed,
         dpi=args.dpi,
         darkness_min=args.darkness_min,
