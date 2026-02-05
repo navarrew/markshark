@@ -7,14 +7,14 @@ MarkShark supports flexible answer key formats that go far beyond simple single-
 | Extension | Description |
 |-----------|-------------|
 | `.txt` | Plain text file (single or multi-version) |
-| `.csv` | Comma-separated values |
-| `.tsv` | Tab-separated values |
+| `.csv` | Comma-separated tables of values |
+| `.tsv` | Tab-separated tables of values |
 | `.xlsx` | Excel workbook (recommended for complex keys) |
 
 ## Quick Start
 
 ### Simple Text File (Legacy Format)
-For basic exams with single correct answers:
+For basic exams with a single version and single simple correct answers worth 1 point each:
 ```
 A
 B
@@ -25,6 +25,8 @@ D
 Each line is one question. This format assumes Version A and 1 point per question.
 
 ### Modern Text File Format
+for more complex scenarios.  
+Here you have a test with multiple versions and where each question is worth 2 points unless specified otherwise.
 ```
 # Chemistry Final Exam
 ver:A default:2
@@ -35,6 +37,11 @@ A@B
 *
 B
 ```
+In the example above:
+- the answer to the first question is 'A' and worth the default 2 points
+- The answer to the second question is 'B' and worth 4 points 
+- for question 3 either C OR D are acceptable answers
+
 
 ### Excel/CSV Format
 | Q# | ver:A default:2 | ver:B | code:101 |
