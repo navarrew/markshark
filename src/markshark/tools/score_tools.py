@@ -1082,6 +1082,120 @@ def load_key_txt(path: str) -> List[str]:
 
 
 # ------------------------------------------------------------------------------
+# Advanced Key Scoring (with partial credit, OR, AND, etc.)
+# ------------------------------------------------------------------------------
+
+def load_advanced_key(path: str):
+    """
+    Load an answer key file using the advanced key parser.
+
+    Supports: .txt, .csv, .tsv, .xlsx with advanced answer formats:
+    - A^B (OR), A&B (AND), A@B (partial lenient), A~B (partial strict)
+    - Custom point values (A:3, A:2@B:1)
+    - Freebies (*) and discards (blank)
+
+    Returns:
+        AnswerKeySet from key_parser module, or None if parsing fails
+    """
+    try:
+        from ..key_parser import load_key_file
+        return load_key_file(path)
+    except Exception as e:
+        import sys
+        print(f"[warning] Could not load advanced key format: {e}", file=sys.stderr)
+        return None
+
+
+def is_advanced_key_format(path: str) -> bool:
+    """
+    Check if a key file uses advanced format features.
+
+    Returns True if the file contains:
+    - New header format (ver:, code:, default:)
+    - Advanced operators (^, &, @, ~)
+    - Point overrides (:N)
+    - Freebies (*) or explicit discards
+
+    Returns False for simple legacy format (just letters).
+    """
+    from pathlib import Path
+    import re
+
+    path = Path(path)
+    suffix = path.suffix.lower()
+
+    # Excel files are always advanced format
+    if suffix == ".xlsx":
+        return True
+
+    # For text-based files, check content
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read(4096)  # Check first 4KB
+
+        # Check for new header format
+        if re.search(r'\b(ver|version|code):', content, re.IGNORECASE):
+            return True
+
+        # Check for advanced operators
+        if re.search(r'[A-Za-z][&^@~][A-Za-z]', content):
+            return True
+
+        # Check for point overrides
+        if re.search(r'[A-Za-z]:\d', content):
+            return True
+
+        # Check for freebies
+        if re.search(r'^\s*\*', content, re.MULTILINE):
+            return True
+
+        return False
+    except Exception:
+        return False
+
+
+def score_with_advanced_key(
+    student_answers: List[Optional[str]],
+    version: str,
+    key_set,  # AnswerKeySet
+    code: Optional[str] = None,
+) -> Tuple[float, float, str, Dict[str, int]]:
+    """
+    Score student answers using advanced key features.
+
+    Args:
+        student_answers: List of student's answers (can contain None or "A,B" for multi)
+        version: Version identifier ("A", "B", etc.)
+        key_set: AnswerKeySet from key_parser
+        code: Optional test code for matching
+
+    Returns:
+        (points_earned, max_points, version_used, status_counts)
+
+        status_counts: {"correct": n, "incorrect": n, "blank": n, "multi": n,
+                       "partial": n, "spam": n, "freebie": n, "discard": n}
+    """
+    from ..key_parser import score_student
+
+    # Get the appropriate key
+    version_key = key_set.get_key(version=version, code=code)
+
+    if version_key is None:
+        # No matching key found
+        return 0.0, float(len(student_answers)), version or "", {}
+
+    # Score using the advanced scorer
+    points_earned, max_points, status_counts = score_student(student_answers, version_key)
+
+    # Determine version used
+    version_used = version_key.identifier
+    if version and version.upper() != version_used.upper():
+        version_used += "*"  # Mark as auto-detected/different
+
+    return points_earned, max_points, version_used, status_counts
+
+
+# ------------------------------------------------------------------------------
 # Page processing
 # ------------------------------------------------------------------------------
 

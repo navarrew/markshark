@@ -145,17 +145,22 @@ def _init_workdir() -> Path:
     saved_workdir = get_preference("default_workdir") if get_preference else None
     saved_project = get_preference("last_project") if get_preference else None
 
-    # Determine default directory (preference > cwd)
+    # Determine default directory
+    # For workdir: use saved preference if it exists, otherwise cwd
     if saved_workdir and Path(saved_workdir).exists():
-        default_dir = Path(saved_workdir)
+        default_workdir = Path(saved_workdir)
     else:
-        default_dir = Path(os.getcwd()).expanduser()
+        default_workdir = Path(os.getcwd()).expanduser()
+
+    # For tree_base: always start at cwd (where the app was launched)
+    # This makes the file browser start at the user's current location
+    launch_dir = Path(os.getcwd()).expanduser()
 
     # Initialize session state
     if "workdir" not in st.session_state:
-        st.session_state["workdir"] = str(default_dir)
+        st.session_state["workdir"] = str(default_workdir)
     if "tree_base" not in st.session_state:
-        st.session_state["tree_base"] = str(default_dir)
+        st.session_state["tree_base"] = str(launch_dir)
     if "project_name" not in st.session_state:
         st.session_state["project_name"] = saved_project or ""
 
@@ -616,23 +621,24 @@ if TemplateManager is not None:
 if page.startswith("0"):
     st.header("Quick Grade")
     st.markdown("""
-    Select a **template**, upload your **scanned answer sheets** and **answer key**, and MarkShark will:
-    1. Align the scans to the template
-    2. Score them automatically using default parameters
+    Complete grading workflow in one page: upload your **scans**, **answer key**, and **roster**,
+    then align, score, apply corrections, and generate the final Excel report.
     """)
-    
-    # Top-of-page controls
-    top_col1, top_col2 = st.columns([1, 3])
+
+    # Top-of-page controls - two buttons side by side
+    top_col1, top_col2, top_col3 = st.columns([1, 1, 2])
     with top_col1:
-        run_quick_grade = st.button("Run Quick Grade", type="primary")
+        run_quick_grade = st.button("1. Align & Score", type="primary")
     with top_col2:
+        run_report = st.button("2. Generate Report", type="secondary")
+    with top_col3:
         quick_status = st.empty()
-    
+
     st.divider()
-    
+
     colA, colB = st.columns(2)
     with colA:
-        st.subheader("Inputs")
+        st.subheader("Required Inputs")
         # Template selection
         template_choice = _template_selector_with_archive("quick_grade")
         if template_choice:
@@ -642,9 +648,52 @@ if page.startswith("0"):
         custom_bublmap = None
 
         scans = _tempfile_from_uploader("Upload your scanned answer sheets (PDF)", "quick_scans", types=("pdf",))
-        key_txt = _tempfile_from_uploader("Upload your answer key (TXT)", "quick_key", types=("txt",))
-        
-        
+
+        # Answer key upload - supports multiple formats
+        key_txt = _tempfile_from_uploader(
+            "Upload your answer key (TXT, CSV, XLSX)",
+            "quick_key",
+            types=("txt", "csv", "tsv", "xlsx")
+        )
+        if key_txt:
+            # Check if advanced format
+            try:
+                from markshark.tools.score_tools import is_advanced_key_format
+                if is_advanced_key_format(str(key_txt)):
+                    st.caption("✓ Advanced key format detected (supports partial credit, OR, AND)")
+                else:
+                    st.caption("✓ Legacy key format")
+            except Exception:
+                pass
+
+        # Template download button
+        with st.expander("📥 Download answer key template", expanded=False):
+            template_path = Path(__file__).parent / "assets" / "answer_key_template.xlsx"
+            if template_path.exists():
+                st.download_button(
+                    "Download Excel Template",
+                    data=template_path.read_bytes(),
+                    file_name="answer_key_template.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help="Excel template with instructions for creating answer keys"
+                )
+                st.markdown("""
+                **Supported formats:**
+                - `A` - Single answer
+                - `A^B` - A OR B accepted
+                - `A&B` - Must select both A AND B
+                - `A@B` - Partial credit (lenient)
+                - `A~B` - Partial credit (strict)
+                - `*` - Freebie (everyone gets points)
+                - `A:3` - Custom point values
+                """)
+            else:
+                st.info("Template file not found. Run: python -m markshark.assets.answer_key_template")
+
+        roster_csv = _tempfile_from_uploader("Upload your class roster (CSV)", "quick_roster", types=("csv",))
+        if roster_csv:
+            st.caption("✓ Roster will be used for report generation")
+
         # Custom upload option
         if template_choice is None:
             st.markdown("---")
@@ -694,8 +743,20 @@ if page.startswith("0"):
                      "aruco: ArUco markers only."
             )
             min_markers = st.number_input("Min ArUco markers", min_value=0, max_value=32, value=int(_dflt(ALIGN_DEFAULTS, "min_aruco", 4)), step=1)
-    
-    # Run quick grade workflow
+
+        # Corrections section (for report generation)
+        st.markdown("---")
+        st.subheader("After Scoring: Corrections")
+        st.caption("After reviewing flagged items, upload the filled corrections file")
+        corrections_xlsx = _tempfile_from_uploader(
+            "Corrections XLSX (filled flagged.xlsx)",
+            "quick_corrections",
+            types=("xlsx",),
+        )
+        if corrections_xlsx:
+            st.success("✓ Corrections will be applied before report generation")
+
+    # Run quick grade workflow (Align & Score)
     if run_quick_grade:
         # Validate inputs
         if not scans:
@@ -865,7 +926,7 @@ if page.startswith("0"):
                 # Display results
                 st.success("Processing complete!")
 
-                # Store results in session state for persistent download buttons
+                # Store results in session state for persistent download buttons and report generation
                 st.session_state["quick_grade_results"] = {
                     "out_csv": str(out_csv),
                     "out_pdf": str(out_pdf),
@@ -876,6 +937,11 @@ if page.startswith("0"):
                     "has_key": bool(key_txt),
                     "align_out": align_out or "Done.",
                     "score_out": score_out or "Done.",
+                    # Additional fields for report generation
+                    "work_dir": str(work_dir),
+                    "project_dir": str(project_dir) if use_project_mode else None,
+                    "run_label": run_label if use_project_mode else None,
+                    "use_project_mode": use_project_mode,
                 }
 
             except Exception as e:
@@ -911,6 +977,126 @@ if page.startswith("0"):
             st.code(qr.get("align_out", "Done."), language="bash")
             st.text("Scoring output:")
             st.code(qr.get("score_out", "Done."), language="bash")
+
+    # --- Report Generation (Step 2) ---
+    if run_report:
+        if "quick_grade_results" not in st.session_state:
+            quick_status.error("Please run 'Align & Score' first before generating a report.")
+        else:
+            qr = st.session_state["quick_grade_results"]
+            csv_path = Path(qr["out_csv"])
+
+            if not csv_path.exists():
+                quick_status.error(f"Results CSV not found: {csv_path}")
+            else:
+                quick_status.info("Generating Excel report...")
+
+                # Determine output path
+                use_project_mode = qr.get("use_project_mode", False)
+                project_dir = Path(qr["project_dir"]) if qr.get("project_dir") else None
+                work_dir = Path(qr["work_dir"])
+                run_label = qr.get("run_label")
+
+                if use_project_mode and project_dir and get_report_path:
+                    out_path = get_report_path(project_dir)
+                    out_filename = out_path.name
+                else:
+                    out_filename = "exam_report.xlsx"
+                    out_path = work_dir / out_filename
+
+                # Apply corrections to CSV first (if provided)
+                csv_for_report = csv_path
+                corrections_applied = 0
+                corrected_csv_path = None
+
+                if corrections_xlsx:
+                    try:
+                        from markshark.tools.report_tools import apply_corrections_to_csv
+                        corrected_csv_path = Path(str(csv_path).replace('.csv', '_corrected.csv'))
+                        with st.spinner("Applying corrections to scored CSV..."):
+                            corrections_applied = apply_corrections_to_csv(
+                                input_csv=str(csv_path),
+                                corrections_xlsx=str(corrections_xlsx),
+                                output_csv=str(corrected_csv_path),
+                            )
+                        if corrections_applied > 0:
+                            st.success(f"Applied {corrections_applied} corrections to CSV")
+                            csv_for_report = corrected_csv_path
+                        else:
+                            st.warning("No corrections found in the uploaded XLSX")
+                            corrected_csv_path = None
+                    except Exception as e:
+                        st.error(f"Error applying corrections: {e}")
+                        corrected_csv_path = None
+
+                # Build report command
+                args = [
+                    "report",
+                    str(csv_for_report),
+                    "--out-xlsx", str(out_path),
+                ]
+
+                if roster_csv:
+                    args.extend(["--roster", str(roster_csv)])
+
+                # Pass corrections XLSX so details appear on Summary tab
+                if corrections_xlsx and corrected_csv_path:
+                    args.extend(["--corrections-xlsx", str(corrections_xlsx)])
+
+                # Add project metadata if in project mode
+                project_name = st.session_state.get("project_name", "").strip()
+                if use_project_mode and project_name:
+                    args.extend(["--project-name", project_name])
+                    if run_label:
+                        args.extend(["--run-label", run_label])
+
+                try:
+                    with st.spinner("Generating Excel report..."):
+                        out = _run_cli(args)
+                    quick_status.success("✅ Report generated!")
+
+                    # Store report results in session state
+                    st.session_state["quick_report_results"] = {
+                        "out_path": str(out_path) if out_path.exists() else None,
+                        "out_filename": out_filename,
+                        "corrected_csv": str(corrected_csv_path) if corrected_csv_path else None,
+                        "cli_output": out or "Done.",
+                    }
+
+                except Exception as e:
+                    quick_status.error(f"Error generating report: {e}")
+
+    # --- Persistent report download buttons ---
+    if "quick_report_results" in st.session_state:
+        rr = st.session_state["quick_report_results"]
+        st.divider()
+        st.subheader("📊 Report Results")
+
+        with st.expander("View report generation log", expanded=False):
+            st.code(rr["cli_output"], language="bash")
+
+        if rr.get("corrected_csv"):
+            _download_file_button("📄 Download corrected CSV", Path(rr["corrected_csv"]))
+
+        if rr.get("out_path"):
+            _download_file_button(f"📥 Download {rr['out_filename']}", Path(rr["out_path"]))
+
+            with st.expander("📊 What's in the report?", expanded=False):
+                st.markdown("""
+                **Summary Tab:**
+                - Overall exam statistics (N students, mean, std dev, KR-20)
+                - Reliability interpretation with color coding
+                - Roster issues (if roster provided)
+
+                **Per-Version Tabs (Version A, Version B, etc.):**
+                - Student results with columns: LastName, FirstName, StudentID, **Issue**, correct, incorrect, blank, multi, percent, Version, Q1, Q2...
+                - **Issue column** flags: blank answers, multi-marked, ID mismatch, fuzzy match
+                - **Incorrect answers highlighted in light red**
+                - **KEY row** showing correct answers
+                - **% Correct** - Item difficulty
+                - **Point-Biserial** - Item discrimination (green ≥0.20, yellow 0.10-0.20, red <0.10)
+                - **Item Quality** - Visual summary (✓ Good / ⚠ Review / ✗ Problem)
+                """)
 
 # ===================== 1) ALIGN SCANS =====================
 elif page.startswith("1"):
@@ -1129,7 +1315,32 @@ elif page.startswith("2"):
         bublmap = None
 
         aligned = _tempfile_from_uploader("Aligned scans PDF", "score_pdf", types=("pdf",))
-        key_txt = _tempfile_from_uploader("Key TXT (optional)", "score_key", types=("txt",))
+
+        # Answer key upload - supports multiple formats
+        key_txt = _tempfile_from_uploader(
+            "Answer Key (TXT, CSV, XLSX) - optional",
+            "score_key",
+            types=("txt", "csv", "tsv", "xlsx")
+        )
+        if key_txt:
+            try:
+                from markshark.tools.score_tools import is_advanced_key_format
+                if is_advanced_key_format(str(key_txt)):
+                    st.caption("✓ Advanced key format (partial credit, OR, AND)")
+            except Exception:
+                pass
+
+        # Template download
+        with st.expander("📥 Download answer key template", expanded=False):
+            template_path = Path(__file__).parent / "assets" / "answer_key_template.xlsx"
+            if template_path.exists():
+                st.download_button(
+                    "Download Excel Template",
+                    data=template_path.read_bytes(),
+                    file_name="answer_key_template.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="score_template_download"
+                )
 
         st.markdown("Upload bubblemap below if not using a predefined template")
         # Custom upload option
@@ -1557,15 +1768,31 @@ elif page.startswith("4"):
 
     colA, colB = st.columns(2)
     with colA:
-        viz_pdf = _tempfile_from_uploader("PDF (template or aligned page)", "viz_pdf", types=("pdf",))
-        viz_bublmap = _tempfile_from_uploader("Bubblemap YAML", "viz_yaml", types=("yaml", "yml"))
+        # Template selection - use a pre-defined template
+        viz_template_choice = _template_selector_with_archive("mapviewer", "Select a pre-defined bubble sheet template")
+
+        viz_pdf = None
+        viz_bublmap = None
+
+        if viz_template_choice:
+            # Use template's PDF and bubblemap
+            viz_pdf = viz_template_choice.template_pdf_path
+            viz_bublmap = viz_template_choice.bubblemap_yaml_path
+            st.caption(f"Using: {viz_template_choice.template_pdf_path.name}")
+        else:
+            # Custom upload option
+            st.markdown("---")
+            st.markdown("**Or upload custom files:**")
+            viz_pdf = _tempfile_from_uploader("PDF (template or aligned page)", "viz_pdf", types=("pdf",))
+            viz_bublmap = _tempfile_from_uploader("Bubblemap YAML", "viz_yaml", types=("yaml", "yml"))
+
     with colB:
         out_image = st.text_input("Output image name", value="bubblemap_overlay.png")
         viz_dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=150, step=1, key="viz_dpi")
 
     if run_viz_clicked:
         if not viz_pdf or not viz_bublmap:
-            viz_status.error("Please upload PDF and bubblemap YAML.")
+            viz_status.error("Please select a template or upload PDF and bubblemap YAML.")
         else:
             base = WORKDIR or Path(os.getcwd())
 

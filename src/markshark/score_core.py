@@ -44,6 +44,10 @@ from .tools.score_tools import (
     centers_to_circle_rois,
     roi_fill_scores,
     calibrate_fixed_thresh_for_page,
+    # Advanced key support
+    load_advanced_key,
+    is_advanced_key_format,
+    score_with_advanced_key,
 )
 
 
@@ -738,19 +742,33 @@ def score_pdf(
     """
     bmap: Bubblemap = load_bublmap(bublmap_path)
     pages = IO.load_pages(input_path, dpi=dpi, renderer=pdf_renderer)
-    
-    # Try loading multi-version keys, fall back to single version
+
+    # Try loading keys - check for advanced format first
     keys_dict: Optional[Dict[str, List[str]]] = None
     single_key: Optional[List[str]] = None
-    
+    advanced_key_set = None  # AnswerKeySet for advanced scoring
+    use_advanced_scoring = False
+
     if key_txt:
-        try:
-            keys_dict = load_multi_version_keys(key_txt)
-        except Exception:
-            # Fall back to single-version key
-            single_key = load_key_txt(key_txt)
-            if single_key:
-                keys_dict = {"A": single_key}  # Default to version A
+        # Check if this is an advanced key format
+        if is_advanced_key_format(key_txt):
+            advanced_key_set = load_advanced_key(key_txt)
+            if advanced_key_set:
+                use_advanced_scoring = True
+                # Also create legacy keys_dict for backward compatibility (annotations, stats)
+                from .key_parser import to_legacy_keys_dict
+                keys_dict = to_legacy_keys_dict(advanced_key_set)
+                print(f"[info] Using advanced key format with {len(advanced_key_set.keys)} version(s)", file=sys.stderr)
+
+        # Fall back to legacy loading if advanced didn't work
+        if not use_advanced_scoring:
+            try:
+                keys_dict = load_multi_version_keys(key_txt)
+            except Exception:
+                # Fall back to single-version key
+                single_key = load_key_txt(key_txt)
+                if single_key:
+                    keys_dict = {"A": single_key}  # Default to version A
 
     # Calculate total questions across all pages, and per-page question counts
     questions_per_page = []
@@ -759,7 +777,11 @@ def score_pdf(
         questions_per_page.append(page_q)
     total_q = sum(questions_per_page)
 
-    if keys_dict:
+    if advanced_key_set:
+        # Use first version's question count
+        first_key = next(iter(advanced_key_set.keys.values()))
+        q_out = first_key.num_questions
+    elif keys_dict:
         # Use length of first version key
         first_version = sorted(keys_dict.keys())[0]
         q_out = len(keys_dict[first_version])
@@ -946,23 +968,45 @@ def score_pdf(
                 multi = sum(1 for a in answers_out if (isinstance(a, str) and "," in a))
                 correct = incorrect = 0
                 percent = 0.0
+                total_scored = q_out
                 version_used = student_version
                 key_out = None
-                
-                if keys_dict:
-                    # Multi-version scoring
+
+                if use_advanced_scoring and advanced_key_set:
+                    # Advanced scoring with partial credit, OR, AND, etc.
+                    student_code = student_info.get("test_id", "")
+                    points, max_pts, version_used, status_counts = score_with_advanced_key(
+                        answers_out,
+                        student_version,
+                        advanced_key_set,
+                        code=student_code,
+                    )
+                    correct = points  # Points earned (can be float for partial credit)
+                    total_scored = max_pts
+                    # Calculate incorrect from status counts
+                    incorrect = status_counts.get("incorrect", 0)
+                    blanks = status_counts.get("blank", 0)
+                    multi = status_counts.get("multi", 0) + status_counts.get("spam", 0)
+                    percent = (100.0 * points / max(1, max_pts))
+
+                    # Get the key for annotation (use legacy format)
+                    key_version = version_used.rstrip("*")
+                    key_out = keys_dict.get(key_version, [])[:q_out] if keys_dict else None
+
+                elif keys_dict:
+                    # Legacy multi-version scoring
                     correct, total_scored, version_used = score_against_multi_keys(
                         answers_out,
                         student_version,
                         keys_dict,
                     )
-                    
+
                     # Count incorrect
                     answered_single = sum(1 for a in answers_out if a and "," not in a)
                     incorrect = answered_single - correct
-                    
+
                     percent = (100.0 * correct / max(1, total_scored))
-                    
+
                     # Get the key for annotation
                     key_version = version_used.rstrip("*")
                     key_out = keys_dict.get(key_version, [])[:q_out]
@@ -977,11 +1021,13 @@ def score_pdf(
                     student_info.get("student_id", ""),
                 ]
                 
-                if keys_dict:
-                    row += [str(correct), str(incorrect), str(blanks), str(multi), f"{percent:.1f}"]
+                if keys_dict or use_advanced_scoring:
+                    # Format correct as int if whole number, else 1 decimal place
+                    correct_str = str(int(correct)) if correct == int(correct) else f"{correct:.1f}"
+                    row += [correct_str, str(incorrect), str(blanks), str(multi), f"{percent:.1f}"]
                 else:
                     row += [str(blanks)]
-                
+
                 row += answers_csv
 
                 # ==================== FLAGGING ====================
@@ -1000,13 +1046,13 @@ def score_pdf(
                 # Collect data for stats computation (with version for multi-version support)
                 all_student_data.append({
                     "answers": answers_out,
-                    "correct": correct if keys_dict else 0,
-                    "total": total_scored if keys_dict else q_out,
+                    "correct": correct if (keys_dict or use_advanced_scoring) else 0,
+                    "total": total_scored if (keys_dict or use_advanced_scoring) else q_out,
                     "version": version_used.rstrip("*") if version_used else "",
                     "csv_row": row,  # Store for grouped output
                 })
                 # ==========================================================
-                
+
                 # Annotate all pages for this student
                 if out_annotated_dir or out_pdf_path:
                     for page_num, img_bgr in enumerate(student_pages, start=1):
@@ -1151,33 +1197,55 @@ def score_pdf(
 
                 # Get detected version
                 student_version = info.get("version", "")
-                
+
                 # Metrics
                 blanks = sum(1 for a in answers_out if (a is None or a == ""))
                 multi = sum(1 for a in answers_out if (isinstance(a, str) and "," in a))
                 correct = incorrect = 0
                 percent = 0.0
+                total_scored = q_out
                 version_used = student_version
                 key_out = None
 
-                if keys_dict:
-                    # Multi-version scoring
+                if use_advanced_scoring and advanced_key_set:
+                    # Advanced scoring with partial credit, OR, AND, etc.
+                    student_code = info.get("test_id", "")
+                    points, max_pts, version_used, status_counts = score_with_advanced_key(
+                        answers_out,
+                        student_version,
+                        advanced_key_set,
+                        code=student_code,
+                    )
+                    correct = points  # Points earned (can be float for partial credit)
+                    total_scored = max_pts
+                    # Calculate incorrect from status counts
+                    incorrect = status_counts.get("incorrect", 0)
+                    blanks = status_counts.get("blank", 0)
+                    multi = status_counts.get("multi", 0) + status_counts.get("spam", 0)
+                    percent = (100.0 * points / max(1, max_pts))
+
+                    # Get the key for annotation (use legacy format)
+                    key_version = version_used.rstrip("*")
+                    key_out = keys_dict.get(key_version, [])[:q_out] if keys_dict else None
+
+                elif keys_dict:
+                    # Legacy multi-version scoring
                     correct, total_scored, version_used = score_against_multi_keys(
                         answers_out,
                         student_version,
                         keys_dict,
                     )
-                    
+
                     # Count incorrect (total scored - blanks - multi - correct)
                     answered_single = sum(1 for a in answers_out if a and "," not in a)
                     incorrect = answered_single - correct
-                    
+
                     percent = (100.0 * correct / max(1, total_scored))
-                    
+
                     # Get the key for annotation
                     key_version = version_used.rstrip("*")
                     key_out = keys_dict.get(key_version, [])[:q_out]
-                
+
                 # Compose CSV row
                 row = [
                     version_used,
@@ -1187,8 +1255,10 @@ def score_pdf(
                     info.get("student_id", ""),
                 ] 
 
-                if keys_dict:
-                    row += [str(correct), str(incorrect), str(blanks), str(multi), f"{percent:.1f}"]
+                if keys_dict or use_advanced_scoring:
+                    # Format correct as int if whole number, else 1 decimal place
+                    correct_str = str(int(correct)) if correct == int(correct) else f"{correct:.1f}"
+                    row += [correct_str, str(incorrect), str(blanks), str(multi), f"{percent:.1f}"]
                 else:
                     row += [str(blanks)]
 
@@ -1210,8 +1280,8 @@ def score_pdf(
                 # Collect data for stats computation (with version for multi-version support)
                 all_student_data.append({
                     "answers": answers_out,
-                    "correct": correct if keys_dict else 0,
-                    "total": total_scored if keys_dict else q_out,
+                    "correct": correct if (keys_dict or use_advanced_scoring) else 0,
+                    "total": total_scored if (keys_dict or use_advanced_scoring) else q_out,
                     "version": version_used.rstrip("*") if version_used else "",
                     "csv_row": row,  # Store for grouped output
                 })
