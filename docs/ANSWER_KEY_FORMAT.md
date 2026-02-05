@@ -309,13 +309,13 @@ The template includes:
 
 ## Scoring Summary Table
 
-| Format | Example | Student: A | Student: B | Student: A,B | Student: A,B,C |
-|--------|---------|------------|------------|--------------|----------------|
-| Single | `A` | ✓ Full | ✗ 0 | ✗ 0 (multi) | ✗ 0 (multi) |
-| OR | `A^B` | ✓ Full | ✓ Full | ✗ 0 (multi) | ✗ 0 (multi) |
-| AND | `A&B` | ✗ 0 | ✗ 0 | ✓ Full | ✗ 0 |
-| Partial@ | `A@B` | ½ | ½ | ✓ Full | ✗ 0 (spam) |
-| Partial~ | `A~B` | ½ | ½ | ✓ Full | ✗ 0 (spam) |
+| Format | Example | Student: A | Student: B | Student: A,B | Student: A,C | Student: A,B,C |
+|--------|---------|------------|------------|--------------|--------------|----------------|
+| Single | `A` | ✓ Full | ✗ 0 | ✗ 0 (multi) | ✗ 0 (multi) | ✗ 0 (multi) |
+| OR | `A^B` | ✓ Full | ✓ Full | ✗ 0 (multi) | ✗ 0 (multi) | ✗ 0 (multi) |
+| AND | `A&B` | ✗ 0 | ✗ 0 | ✓ Full | ✗ 0 | ✗ 0 |
+| Partial@ | `A@B` | ½ | ½ | ✓ Full | ½ | ✗ 0 (spam) |
+| Partial~ | `A~B` | ½ | ½ | ✓ Full | ✗ 0 | ✗ 0 (spam) |
 | Freebie | `*` | ✓ Full | ✓ Full | ✓ Full | ✓ Full |
 
 ---
