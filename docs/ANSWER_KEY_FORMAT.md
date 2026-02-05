@@ -7,14 +7,14 @@ MarkShark supports flexible answer key formats that go far beyond simple single-
 | Extension | Description |
 |-----------|-------------|
 | `.txt` | Plain text file (single or multi-version) |
-| `.csv` | Comma-separated values |
-| `.tsv` | Tab-separated values |
+| `.csv` | Comma-separated tables of values |
+| `.tsv` | Tab-separated tables of values |
 | `.xlsx` | Excel workbook (recommended for complex keys) |
 
 ## Quick Start
 
 ### Simple Text File (Legacy Format)
-For basic exams with single correct answers:
+For basic exams with a single version and single simple correct answers worth 1 point each:
 ```
 A
 B
@@ -25,6 +25,7 @@ D
 Each line is one question. This format assumes Version A and 1 point per question.
 
 ### Modern Text File Format
+For more complex scenarios like a test with multiple versions or different point values.
 ```
 # Chemistry Final Exam
 ver:A default:2
@@ -35,6 +36,17 @@ A@B
 *
 B
 ```
+In the example above:
+- the first row is a comment line and not read by MarkShark
+- The second line is the header...
+-   **ver:A** means that the answers are for version A
+-   **default:** indicates each question is worth 2 points unless specified otherwise
+- Lines following the header indicate the questions
+-   the answer to the first question is 'A' and worth the default 2 points
+-   the answer to the second question is 'B' and worth 4 points 
+-   for question 3 either 'C' OR 'D' are acceptable answers
+-   ...the whole range of options are explained more below
+
 
 ### Excel/CSV Format
 | Q# | ver:A default:2 | ver:B | code:101 |
@@ -297,14 +309,14 @@ The template includes:
 
 ## Scoring Summary Table
 
-| Format | Example | Student: A | Student: B | Student: A,B | Student: A,B,C |
-|--------|---------|------------|------------|--------------|----------------|
-| Single | `A` | ✓ Full | ✗ 0 | ✗ 0 (multi) | ✗ 0 (multi) |
-| OR | `A^B` | ✓ Full | ✓ Full | ✗ 0 (multi) | ✗ 0 (multi) |
-| AND | `A&B` | ✗ 0 | ✗ 0 | ✓ Full | ✗ 0 |
-| Partial@ | `A@B` | ½ | ½ | ✓ Full | ✗ 0 (spam) |
-| Partial~ | `A~B` | ½ | ½ | ✓ Full | ✗ 0 (spam) |
-| Freebie | `*` | ✓ Full | ✓ Full | ✓ Full | ✓ Full |
+| Format | Example | Student: A | Student: B | Student: A,B | Student: A,C | Student: A,B,C |
+|--------|---------|------------|------------|--------------|--------------|----------------|
+| Single | `A` | ✓ Full | ✗ 0 | ✗ 0 (multi) | ✗ 0 (multi) | ✗ 0 (multi) |
+| OR | `A^B` | ✓ Full | ✓ Full | ✗ 0 (multi) | ✗ 0 (multi) | ✗ 0 (multi) |
+| AND | `A&B` | ✗ 0 | ✗ 0 | ✓ Full | ✗ 0 | ✗ 0 |
+| Partial@ | `A@B` | ½ | ½ | ✓ Full | ½ | ✗ 0 (spam) |
+| Partial~ | `A~B` | ½ | ½ | ✓ Full | ✗ 0 | ✗ 0 (spam) |
+| Freebie | `*` | ✓ Full | ✓ Full | ✓ Full | ✓ Full | ✓ Full |
 
 ---
 
