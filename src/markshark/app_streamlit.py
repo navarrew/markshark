@@ -387,7 +387,7 @@ def _init_workdir() -> Path:
 st.set_page_config(page_title="MarkShark (GUI)", layout="wide")
 
 # --------------------- Utilities ---------------------
-def _tempfile_from_uploader(label: str, key: str, types=("pdf","yaml","yml","txt","csv","png","jpg","jpeg")) -> Optional[Path]:
+def _tempfile_from_uploader(label: str, key: str, types=("pdf","yaml","yml","txt","csv","tsv","png","jpg","jpeg")) -> Optional[Path]:
     up = st.file_uploader(label, type=list(types), key=key)
     if not up:
         return None
@@ -595,11 +595,11 @@ st.sidebar.image(str(ASSETS_DIR / "banner.png"), use_column_width=True)
 
 page = st.sidebar.radio("Select an option below", [
     "0) Quick grade",
-    "1) Align scans",
-    "2) Score",
-    "3) Report",
-    "4) Map viewer",
-    "5) Template manager",
+    "1) Template manager",
+    "2) Align scans",
+    "3) Score",
+    "4) Report",
+    "5) Map viewer",
     "6) Help"
 ])
 
@@ -621,7 +621,7 @@ if TemplateManager is not None:
 if page.startswith("0"):
     st.header("Quick Grade")
     st.markdown("""
-    Complete grading workflow in one page: upload your **scans**, **answer key**, and **roster**,
+    Complete grading workflow. Upload your **scans**, **answer key**, and **roster** *(optional)*,
     then align, score, apply corrections, and generate the final Excel report.
     """)
 
@@ -630,7 +630,7 @@ if page.startswith("0"):
     with top_col1:
         run_quick_grade = st.button("1. Align & Score", type="primary")
     with top_col2:
-        run_report = st.button("2. Generate Report", type="secondary")
+        run_report = st.button("2. Generate Report", type="primary")
     with top_col3:
         quick_status = st.empty()
 
@@ -651,7 +651,7 @@ if page.startswith("0"):
 
         # Answer key upload - supports multiple formats
         key_txt = _tempfile_from_uploader(
-            "Upload your answer key (TXT, CSV, XLSX)",
+            "Upload your answer key (TXT, CSV, TSV, XLSX)",
             "quick_key",
             types=("txt", "csv", "tsv", "xlsx")
         )
@@ -678,7 +678,7 @@ if page.startswith("0"):
                     help="Excel template with instructions for creating answer keys"
                 )
                 st.markdown("""
-                **Supported formats:**
+                **Answer formats:**
                 - `A` - Single answer
                 - `A^B` - A OR B accepted
                 - `A&B` - Must select both A AND B
@@ -690,27 +690,25 @@ if page.startswith("0"):
             else:
                 st.info("Template file not found. Run: python -m markshark.assets.answer_key_template")
 
-        roster_csv = _tempfile_from_uploader("Upload your class roster (CSV)", "quick_roster", types=("csv",))
+        roster_csv = _tempfile_from_uploader("Optional: Upload your class roster (CSV)", "quick_roster", types=("csv",))
         if roster_csv:
             st.caption("✓ Roster will be used for orphan detection during scoring and report generation")
 
-        # Custom upload option
-        if template_choice is None:
-            st.markdown("---")
-            st.markdown("**Upload custom template files below:**")
-            st.caption("*Only if you are not using a pre-defined template from the menu above*")
-
-            custom_template_pdf = _tempfile_from_uploader("Master template PDF", "quick_template_pdf", types=("pdf",))
-            custom_bublmap = _tempfile_from_uploader("Bubblemap YAML", "quick_bubblemap", types=("yaml", "yml"))
-            if custom_bublmap:
-                st.caption("✓ Bubble grid alignment fallback enabled")
-    
+#         # Custom upload option
+#         if template_choice is None:
+#             st.markdown("---")
+#             st.markdown("**Upload custom template files below:**")
+#             st.caption("*Only if you are not using a pre-defined template from the menu above*")
+# 
+#             custom_template_pdf = _tempfile_from_uploader("Master template PDF", "quick_template_pdf", types=("pdf",))
+#             custom_bublmap = _tempfile_from_uploader("Bubblemap YAML", "quick_bubblemap", types=("yaml", "yml"))
+#             if custom_bublmap:
+#                 st.caption("✓ Bubble grid alignment fallback enabled")
+#     
     with colB:
         st.subheader("Adjust parameters")
 
-        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1,
-                              help="150 DPI is usually sufficient for bubble sheets. Higher values are slower to align and produce much larger files.")
-        
+       
         with st.expander("Scoring options", expanded=False):
             annotate_all = st.checkbox("Annotate all bubbles", value=True)
             label_density = st.checkbox("Show % fill labels", value=True)
@@ -744,12 +742,15 @@ if page.startswith("0"):
             )
             min_markers = st.number_input("Min ArUco markers", min_value=0, max_value=32, value=int(_dflt(ALIGN_DEFAULTS, "min_aruco", 4)), step=1)
 
+        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1,
+                              help="150 DPI is usually sufficient for bubble sheets. Higher values are slower to align and produce much larger files.")
+ 
         # Corrections section (for report generation)
         st.markdown("---")
-        st.subheader("After Scoring: Corrections")
+        st.subheader("After Scoring: Add Corrections")
         st.caption("After reviewing flagged items, upload the filled corrections file")
         corrections_xlsx = _tempfile_from_uploader(
-            "Corrections XLSX (filled flagged.xlsx)",
+            "Corrections XLSX (filled flagged_for_review.xlsx)",
             "quick_corrections",
             types=("xlsx",),
         )
@@ -790,6 +791,8 @@ if page.startswith("0"):
                     (input_dir / "raw_scans.pdf").write_bytes(scans.read_bytes())
                 if key_txt:
                     (input_dir / "answer_key.txt").write_bytes(key_txt.read_bytes())
+                if roster_csv:
+                    (input_dir / "roster.csv").write_bytes(roster_csv.read_bytes())
                 if template_choice:
                     # Save template reference
                     (project_dir / "logs" / "template_used.txt").write_text(f"{template_choice.template_id}\n{template_choice.display_name}")
@@ -900,10 +903,10 @@ if page.startswith("0"):
                 review_pdf_path = None
                 flagged_xlsx_path = None
                 if generate_review_pdf:
-                    review_pdf_path = work_dir / "for_review.pdf"
+                    review_pdf_path = work_dir / "flagged_for_review.pdf"
                     score_args += ["--review-pdf", str(review_pdf_path)]
                 if generate_flagged_xlsx:
-                    flagged_xlsx_path = work_dir / "flagged.xlsx"
+                    flagged_xlsx_path = work_dir / "flagged_for_review.xlsx"
                     score_args += ["--flagged-xlsx", str(flagged_xlsx_path)]
                 if roster_csv:
                     score_args += ["--roster-csv", str(roster_csv)]
@@ -1101,758 +1104,8 @@ if page.startswith("0"):
                 - **Item Quality** - Visual summary (✓ Good / ⚠ Review / ✗ Problem)
                 """)
 
-# ===================== 1) ALIGN SCANS =====================
+# ===================== 1) TEMPLATE MANAGER =====================
 elif page.startswith("1"):
-    st.header("Align scans to your template.")
-    st.markdown("""
-    Use this page to align your raw scans to your master bubblesheet.
-    1. Choose your template from the dropdown or upload a pdf of your template.
-    2. Select an alignment method (auto, fast, slow, aruco)
-    3. Click the "Run Alignment" button below.
-    """)
-
-    # Top-of-page controls and status
-    top_col1, top_col2 = st.columns([1, 3])
-    with top_col1:
-        run_align_clicked = st.button("Run Alignment", type="primary")
-    with top_col2:
-        status = st.empty()  # all errors/updates will appear here
-
-    st.divider()
-
-    colA, colB = st.columns(2)
-    with colA:
-        st.subheader("Inputs")
-        # Template selection - either from library or custom upload
-        align_template_choice = _template_selector_with_archive("align", "Select a pre-defined bubblesheet template")
-        if align_template_choice:
-            st.caption("✓ Fast alignment mode available (bubblemap included)")
-
-        template = None
-        align_bublmap = None
-
-        scans = _tempfile_from_uploader("Upload your raw student scans (PDF)", "align_scans", types=("pdf",))
-        
-
-        st.markdown("---")
-        
-        # Custom upload option (shown if no template selected or no templates available)
-        if align_template_choice is None:
-            st.markdown("**Upload custom bubblesheet files:**")
-            st.caption("*Only if you are not using a pre-defined template from the menu above*")
-            template = _tempfile_from_uploader("Template bubble sheet (PDF)", "align_template", types=("pdf",))
-            
-            align_bublmap = _tempfile_from_uploader("Bubblemap YAML (optional)", "align_bubblemap", types=("yaml", "yml"))
-            st.caption("*A bubblemap enables 'fast' alignment mode*")
-            if align_bublmap:
-                st.success("✓ Fast alignment mode available")
-        
-
-    with colB:
-        st.subheader("Output file options")
-        out_pdf_name = st.text_input("Output aligned PDF name", value="aligned_scans.pdf")
-        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1)
-
-        st.markdown("---")
-        st.subheader("Alignment method")
-        method = st.selectbox(
-            "Alignment method",
-            ["auto", "fast", "slow", "aruco"],
-            index=0,
-            help="auto: fast if bubblemap provided, slow otherwise. "
-                 "fast: 72 DPI coarse + bubble grid (quick, needs bubblemap). "
-                 "slow: full-res ORB (thorough). "
-                 "aruco: ArUco markers only."
-        )
-        st.markdown("---")
-        st.subheader("Alignment parameters")
-        st.markdown("**ArUco mark alignment parameters**")
-        min_markers = st.number_input("Min ArUco markers to accept", min_value=0, max_value=32, value=int(_dflt(ALIGN_DEFAULTS, "min_aruco", 0)), step=1)
-        dict_name = st.text_input("ArUco dictionary (if aruco)", value=str(_dflt(ALIGN_DEFAULTS, "dict_name", "DICT_4X4_50")))
-
-        st.markdown("---")
-        st.markdown("**Non-ArUco align parameters**")
-        ransac = st.number_input("RANSAC reprojection threshold", min_value=0.1, max_value=20.0, value=float(_dflt(EST_DEFAULTS, "ransac_thresh", 2.0)), step=0.1)
-        orb_nfeatures = st.number_input("ORB nfeatures", min_value=200, max_value=20000, value=int(_dflt(FEAT_DEFAULTS, "orb_nfeatures", 3000)), step=100)
-        match_ratio = st.number_input("Match ratio (Lowe)", min_value=0.50, max_value=0.99, value=float(_dflt(MATCH_DEFAULTS, "ratio_test", 0.75)), step=0.01, format="%.2f")
-
-        with st.expander("Advanced (estimator and ECC)", expanded=False):
-            estimator_method = st.selectbox(
-                "Homography estimator method",
-                ["auto", "ransac", "usac"],
-                index=0,
-                help="Maps to --estimator-method in the CLI (auto|ransac|usac).",
-            )
-            use_ecc = st.checkbox(
-                "Enable ECC refinement",
-                value=bool(_dflt(EST_DEFAULTS, "use_ecc", True)),
-                help="Maps to --use-ecc/--no-use-ecc in the CLI.",
-            )
-            ecc_max_iters = st.number_input(
-                "ECC max iterations",
-                min_value=1,
-                max_value=5000,
-                value=int(_dflt(EST_DEFAULTS, "ecc_max_iters", 250)),
-                step=10,
-            )
-            ecc_eps = st.number_input(
-                "ECC epsilon",
-                min_value=1e-7,
-                max_value=1e-2,
-                value=float(_dflt(EST_DEFAULTS, "ecc_eps", 1e-5)),
-                step=1e-6,
-                format="%.7f",
-            )
-
-    if run_align_clicked:
-        # Determine template and bubblemap to use
-        if align_template_choice is not None:
-            actual_template = align_template_choice.template_pdf_path
-            actual_bublmap = align_template_choice.bubblemap_yaml_path
-        else:
-            actual_template = template
-            actual_bublmap = align_bublmap
-
-        if not scans:
-            status.error("Please upload scans PDF.")
-        elif actual_template is None:
-            status.error("Please select a template or upload a template PDF.")
-        else:
-            base = WORKDIR or Path(os.getcwd())
-
-            # Check if we're in project mode
-            project_name = st.session_state.get("project_name", "").strip()
-            use_project_mode = bool(project_name and sanitize_project_name and create_project_structure and create_run_directory)
-
-            if use_project_mode:
-                # Project mode: save aligned to project/input/ with timestamp
-                from datetime import datetime
-                sanitized_name = sanitize_project_name(project_name)
-                project_dir = create_project_structure(base, sanitized_name)
-                timestamp = datetime.now()
-                date_str = timestamp.strftime("%Y-%m-%d_%H%M")
-                input_dir = project_dir / "input"
-                out_pdf = input_dir / f"aligned_scan_{date_str}.pdf"
-
-                # Save raw input scans for reference
-                if scans:
-                    (input_dir / "raw_scans.pdf").write_bytes(scans.read_bytes())
-            else:
-                # Temporary mode
-                out_dir = Path(tempfile.mkdtemp(prefix="align_", dir=str(base)))
-                out_pdf = out_dir / out_pdf_name
-            args = [
-                "align",
-                str(scans),
-                "--template", str(actual_template),
-                "--out-pdf", str(out_pdf),
-                "--dpi", str(int(dpi)),
-                "--align-method", method,
-                "--estimator-method", estimator_method,
-                "--ransac", str(float(ransac)),
-                "--orb-nfeatures", str(int(orb_nfeatures)),
-                "--match-ratio", str(float(match_ratio)),
-                "--min-markers", str(int(min_markers)),
-            ]
-            if dict_name.strip():
-                args += ["--dict-name", dict_name.strip()]
-            
-            # Pass bubblemap for fast alignment mode
-            if actual_bublmap:
-                args += ["--bubblemap", str(actual_bublmap)]
-
-            try:
-                # Show progress during alignment
-                align_progress = st.progress(0, text="Starting alignment...")
-                align_status_text = st.empty()
-
-                try:
-                    out = _run_cli_with_progress(args, align_progress, align_status_text)
-                except Exception:
-                    # Fallback to regular CLI if progress version fails
-                    out = _run_cli(args)
-
-                align_progress.progress(1.0, text="✓ Alignment complete")
-                status.success("Alignment finished.")
-
-                # Store results in session state for persistent download buttons
-                st.session_state["align_results"] = {
-                    "out_pdf": str(out_pdf),
-                    "cli_output": out or "Done.",
-                }
-
-            except Exception as e:
-                status.error(f"Error during alignment: {e}")
-
-    # --- Persistent download buttons (survive reruns) ---
-    if "align_results" in st.session_state:
-        ar = st.session_state["align_results"]
-        st.code(ar["cli_output"], language="bash")
-        _download_file_button("Download aligned_scans.pdf", Path(ar["out_pdf"]))
-
-# ===================== 2) SCORE =====================
-elif page.startswith("2"):
-    st.header("Score aligned scans")
-    st.markdown("""
-    If you have already aligned your scans you can start at this step.
-    1. Choose your template from the dropdown or upload a bubblemap.yaml file.
-    2. Upload your aligned scans
-    3. Click the "Score" button below.
-    """)
-    # Top-of-page controls and status
-    top_col1, top_col2 = st.columns([1, 3])
-    with top_col1:
-        run_score_clicked = st.button("Score", type="primary")
-    with top_col2:
-        score_status = st.empty()  # all errors/updates will appear here
-
-    st.divider()
-
-    colA, colB = st.columns(2)
-    with colA:
-        st.subheader("Inputs")
-
-        # Template/Bubblemap selection
-        score_template_choice = _template_selector_with_archive("score", "Select template from dropdown menu")
-
-        bublmap = None
-
-        aligned = _tempfile_from_uploader("Aligned scans PDF", "score_pdf", types=("pdf",))
-
-        # Answer key upload - supports multiple formats
-        key_txt = _tempfile_from_uploader(
-            "Answer Key (TXT, CSV, XLSX) - optional",
-            "score_key",
-            types=("txt", "csv", "tsv", "xlsx")
-        )
-        if key_txt:
-            try:
-                from markshark.tools.score_tools import is_advanced_key_format
-                if is_advanced_key_format(str(key_txt)):
-                    st.caption("✓ Advanced key format (partial credit, OR, AND)")
-            except Exception:
-                pass
-
-        # Template download
-        with st.expander("📥 Download answer key template", expanded=False):
-            template_path = Path(__file__).parent / "assets" / "answer_key_template.xlsx"
-            if template_path.exists():
-                st.download_button(
-                    "Download Excel Template",
-                    data=template_path.read_bytes(),
-                    file_name="answer_key_template.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="score_template_download"
-                )
-
-        st.markdown("Upload bubblemap below if not using a predefined template")
-        # Custom upload option
-        if score_template_choice is None:
-            bublmap = _tempfile_from_uploader("Bubblemap (YAML)", "score_cfg", types=("yaml","yml"))
-
-        st.markdown("---")
-        st.subheader("Scoring Parameters")
-        st.caption("*Adjust these if scoring isn't working well*")
-        auto_thresh = st.checkbox("Auto-calibrate threshold", value=_dflt(SCORING_DEFAULTS, "auto_calibrate_thresh", True), key="score_auto_thresh")
-        verbose_thresh = st.checkbox("Verbose threshold calibration", value=True, key="score_verbose")
-
-        min_fill = st.text_input("Minimum fill score (0-100)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", 45)))
-        st.caption("*Matches the scores shown on annotated PDFs (e.g., 45 means 45% filled)*")
-
-        min_top2_diff = st.text_input("Minimum top2 difference", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_top2_diff", "")))
-        st.caption("*The minimum fill difference (in percentage points) between 1st and 2nd-most filled bubbles to not score as multi.*")
-
-        top2_ratio = st.text_input("Top2 ratio (0-100)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", 80)))
-        st.caption("*Second-best bubble must be <= this percentage of best to count as single answer.*")
-        st.markdown("---")
-        
-        
-        
-    with colB:
-        st.subheader("Output file options")
-        out_csv_name = st.text_input("Output results CSV", value="results.csv")
-        scored_pdf_name = st.text_input("Annotated scored PDF filename", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "out_pdf", "scored_scans.pdf")))
-        annotate_all = st.checkbox("Annotate all cells", value=True)
-        label_density = st.checkbox("Label density diagnostics", value=True)
-        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1, key="score_dpi")
-        
-        st.markdown("---")
-        st.markdown("**Flagging & Review**")
-        generate_review_pdf = st.checkbox("Generate review PDF (flagged pages only)", value=True,
-                                          help="Creates a separate PDF with only pages containing blank/multi answers for manual review")
-        generate_flagged_xlsx = st.checkbox("Generate flagged items XLSX", value=True,
-                                           help="Creates an Excel file listing flagged items with a column for corrections")
-        roster_csv = _tempfile_from_uploader("Class roster CSV (optional)", "score_roster", types=("csv",))
-        st.caption("*Upload a roster CSV to flag orphan scans (IDs not in roster) and track absent students. Must have StudentID column.*")
-        st.markdown("---")
-        st.markdown("**Statistics**")
-        include_stats = st.checkbox("Include basic statistics in CSV", value=True,
-                                    help="Appends exam stats (mean, std, KR-20) and item stats (% correct, point-biserial) to the CSV. Requires answer key.")
-        out_ann_dir = st.text_input("Annotated png directory (optional)", value="", placeholder="Enter a folder name here for png files")
-        st.caption("*You can save annotated output student scans as a set of images (png format) by entering a directory name here.*")
-        
-
-    if run_score_clicked:
-        # Determine bubblemap to use
-        if score_template_choice is not None:
-            actual_bublmap = score_template_choice.bubblemap_yaml_path
-        else:
-            actual_bublmap = bublmap
-
-        if not aligned:
-            score_status.error("Please upload aligned PDF.")
-        elif actual_bublmap is None:
-            score_status.error("Please select a template or upload a bubblemap YAML.")
-        else:
-            base = WORKDIR or Path(os.getcwd())
-
-            # Check if we're in project mode
-            project_name = st.session_state.get("project_name", "").strip()
-            use_project_mode = bool(project_name and sanitize_project_name and create_project_structure and create_run_directory)
-
-            if use_project_mode:
-                # Project mode: save to project/results/run_XXX/
-                sanitized_name = sanitize_project_name(project_name)
-                project_dir = create_project_structure(base, sanitized_name)
-                out_dir, run_label = create_run_directory(project_dir)
-                out_csv = out_dir / out_csv_name
-            else:
-                # Temporary mode
-                out_dir = Path(tempfile.mkdtemp(prefix="score_", dir=str(base)))
-                out_csv = out_dir / out_csv_name
-            args = [
-                "score",
-                str(aligned),
-                "--bublmap", str(actual_bublmap),
-                "--out-csv", str(out_csv),
-                "--dpi", str(int(dpi)),
-            ]
-            if key_txt:
-                args += ["--key-txt", str(key_txt)]
-            if scored_pdf_name.strip():
-                args += ["--out-pdf", scored_pdf_name.strip()]
-            if out_ann_dir.strip():
-                args += ["--out-annotated-dir", str(out_dir / out_ann_dir.strip())]
-            if annotate_all:
-                args += ["--annotate-all-cells"]
-            if label_density:
-                args += ["--label-density"]
-            if not auto_thresh:
-                args += ["--no-auto-thresh"]
-            if verbose_thresh:
-                args += ["--verbose-thresh"]
-            if min_fill.strip():
-                args += ["--min-fill", min_fill.strip()]
-            if top2_ratio.strip():
-                args += ["--top2-ratio", top2_ratio.strip()]
-            if min_top2_diff.strip():
-                args += ["--min-top2-diff", min_top2_diff.strip()]
-            
-            # Stats option
-            if include_stats:
-                args += ["--include-stats"]
-            else:
-                args += ["--no-include-stats"]
-            
-            # Review/flagging options
-            review_pdf_path = None
-            flagged_xlsx_path = None
-            if generate_review_pdf:
-                review_pdf_path = out_dir / "for_review.pdf"
-                args += ["--review-pdf", str(review_pdf_path)]
-            if generate_flagged_xlsx:
-                flagged_xlsx_path = out_dir / "flagged.xlsx"
-                args += ["--flagged-xlsx", str(flagged_xlsx_path)]
-            if roster_csv:
-                args += ["--roster-csv", str(roster_csv)]
-
-            try:
-                with st.spinner("Scoring via CLI..."):
-                    out = _run_cli(args)
-                score_status.success("Scoring finished.")
-
-                # Build scored PDF path if applicable
-                scored_pdf_path_str = None
-                if scored_pdf_name.strip():
-                    scored_pdf_path = out_dir / scored_pdf_name.strip()
-                    if scored_pdf_path.exists():
-                        scored_pdf_path_str = str(scored_pdf_path)
-
-                # Build annotated zip bytes if applicable
-                ann_zip_bytes = None
-                if out_ann_dir.strip():
-                    ann_path = out_dir / out_ann_dir.strip()
-                    if ann_path.exists() and ann_path.is_dir():
-                        ann_zip_bytes = _zip_dir_to_bytes(ann_path)
-
-                # Store results in session state for persistent download buttons
-                st.session_state["score_results"] = {
-                    "out_csv": str(out_csv),
-                    "scored_pdf": scored_pdf_path_str,
-                    "review_pdf": str(review_pdf_path) if review_pdf_path and review_pdf_path.exists() else None,
-                    "flagged_xlsx": str(flagged_xlsx_path) if flagged_xlsx_path and flagged_xlsx_path.exists() else None,
-                    "ann_zip_bytes": ann_zip_bytes,
-                    "include_stats": include_stats,
-                    "has_key": bool(key_txt),
-                    "cli_output": out or "Done.",
-                }
-
-            except Exception as e:
-                score_status.error(f"Error during scoring: {e}")
-
-    # --- Persistent download buttons (survive reruns) ---
-    if "score_results" in st.session_state:
-        sr = st.session_state["score_results"]
-        st.code(sr["cli_output"], language="bash")
-
-        _download_file_button("Download results.csv", Path(sr["out_csv"]))
-
-        if sr.get("include_stats") and sr.get("has_key"):
-            st.info("📊 Basic statistics appended to CSV (scroll to bottom)")
-
-        if sr.get("scored_pdf"):
-            _download_file_button("Download scored PDF", Path(sr["scored_pdf"]))
-
-        if sr.get("review_pdf"):
-            _download_file_button("📋 Download Review PDF (flagged pages)", Path(sr["review_pdf"]))
-
-        if sr.get("flagged_xlsx"):
-            _download_file_button("⚠️ Download Flagged Items XLSX", Path(sr["flagged_xlsx"]))
-
-        if sr.get("ann_zip_bytes"):
-            st.download_button("Download annotated PNGs (zip)", data=sr["ann_zip_bytes"], file_name="annotated.zip")
-
-# ===================== 3) REPORT =====================
-elif page.startswith("3"):
-    st.header("Generate Excel Report")
-    st.markdown("""
-    Create a comprehensive Excel report with:
-    - **Summary tab**: Overall exam statistics and reliability
-    - **Per-version tabs**: Student results with color-coded item analysis
-    - **Roster matching** (optional): Identify absent students and ID mismatches
-    - **Visual highlighting**: Incorrect answers in red, quality indicators in green/yellow/red
-    """)
-
-    top_col1, top_col2 = st.columns([1, 3])
-    with top_col1:
-        run_report_clicked = st.button("Generate Report", type="primary")
-    with top_col2:
-        report_status = st.empty()
-
-    st.divider()
-
-    # Check if we're in project mode
-    base = WORKDIR or Path(os.getcwd())
-    project_name = st.session_state.get("project_name", "").strip()
-    use_project_mode = bool(project_name and sanitize_project_name and find_scored_runs and get_report_path)
-
-    colA, colB = st.columns(2)
-
-    # Track selected scored run
-    selected_run = None
-    selected_csv_path = None
-
-    with colA:
-        st.subheader("Select Scored Results")
-
-        if use_project_mode:
-            sanitized_name = sanitize_project_name(project_name)
-            project_dir = base / sanitized_name
-
-            if project_dir.exists() and find_scored_runs:
-                scored_runs = find_scored_runs(project_dir)
-                runs_with_csv = [r for r in scored_runs if r["has_csv"]]
-
-                if runs_with_csv:
-                    # Build dropdown options (most recent first)
-                    run_options = []
-                    for run in runs_with_csv:
-                        ts = run["timestamp"]
-                        if ts:
-                            date_str = ts.strftime("%Y-%m-%d %H:%M")
-                        else:
-                            date_str = "Unknown date"
-                        run_options.append(f"{run['label']} ({date_str})")
-
-                    selected_idx = st.selectbox(
-                        "Choose a scoring run",
-                        range(len(run_options)),
-                        format_func=lambda i: run_options[i],
-                        key="report_run_select",
-                    )
-
-                    selected_run = runs_with_csv[selected_idx]
-                    selected_csv_path = selected_run.get("csv_path") or (selected_run["path"] / "results.csv")
-
-                    st.success(f"Using: `{selected_run['label']}`")
-                    st.caption(f"📁 {selected_csv_path}")
-                else:
-                    st.warning("No scored results found in this project. Run scoring first.")
-            else:
-                st.info("Project directory not found. Score some exams first, or upload a CSV below.")
-
-        # Always allow manual CSV upload as fallback
-        st.markdown("**Or upload a CSV manually:**")
-        uploaded_csv = _tempfile_from_uploader("Results CSV (from score)", "report_csv", types=("csv",))
-        if uploaded_csv:
-            selected_csv_path = uploaded_csv
-            selected_run = None  # Manual upload overrides project selection
-            st.info("Using uploaded CSV file")
-
-    with colB:
-        st.subheader("Optional Roster")
-        st.caption("Upload a class roster to check for absent students and ID mismatches")
-        roster_csv = _tempfile_from_uploader(
-            "Class Roster CSV (StudentID, LastName, FirstName)",
-            "roster_csv",
-            types=("csv",),
-        )
-        if roster_csv:
-            st.info("✓ Roster uploaded - will check for absent students and ID mismatches")
-
-        st.markdown("---")
-        st.subheader("Optional Corrections")
-        st.caption("Upload a filled flagged.xlsx to apply corrections to the scored CSV before generating the report")
-        corrections_xlsx = _tempfile_from_uploader(
-            "Corrections XLSX (filled flagged.xlsx)",
-            "corrections_xlsx",
-            types=("xlsx",),
-        )
-        if corrections_xlsx:
-            st.info("✓ Corrections uploaded - will create a corrected CSV and generate report from it")
-
-    st.divider()
-
-    with st.expander("ℹ️ Roster CSV Format", expanded=False):
-        st.markdown("""
-        Your roster CSV should have these columns (case-insensitive):
-
-        **Required:**
-        - `StudentID` / `ID` / `Student_ID` - student identifier
-        - `LastName` / `Last` / `Surname` - student last name
-
-        **Optional:**
-        - `FirstName` / `First` - student first name
-
-        **Example:**
-        ```csv
-        StudentID,LastName,FirstName
-        1001,SMITH,JOHN
-        1002,JONES,SARAH
-        1003,GARCIA,MARIA
-        ```
-
-        The report will:
-        - ✓ Flag students on exam but not on roster (orphan scans)
-        - ✓ List students on roster but no exam found (absent)
-        - ✓ Use fuzzy matching to suggest possible ID matches
-        """)
-
-    # Show where report will be saved
-    if use_project_mode and get_report_path:
-        st.caption(f"💡 Report will be saved to: `{project_name}/reports/report_DATE.xlsx`")
-
-    if run_report_clicked:
-        if not selected_csv_path:
-            report_status.error("Please select a scoring run or upload a results CSV.")
-        else:
-            # Determine output path
-            if use_project_mode and get_report_path:
-                sanitized_name = sanitize_project_name(project_name)
-                project_dir = create_project_structure(base, sanitized_name)
-                out_path = get_report_path(project_dir)
-                out_filename = out_path.name
-                run_label = selected_run["label"] if selected_run else None
-            else:
-                # Temporary mode
-                out_dir = Path(tempfile.mkdtemp(prefix="report_", dir=str(base)))
-                out_filename = "exam_report.xlsx"
-                out_path = out_dir / out_filename
-                run_label = None
-
-            report_status.info(f"📁 Saving report to: {out_path}")
-
-            # Apply corrections to CSV first (if provided)
-            csv_for_report = selected_csv_path
-            corrections_applied = 0
-            corrected_csv_path = None
-            if corrections_xlsx:
-                try:
-                    from markshark.tools.report_tools import apply_corrections_to_csv
-                    # Write corrected CSV next to the original
-                    corrected_csv_path = Path(str(selected_csv_path).replace('.csv', '_corrected.csv'))
-                    with st.spinner("Applying corrections to scored CSV..."):
-                        corrections_applied = apply_corrections_to_csv(
-                            input_csv=str(selected_csv_path),
-                            corrections_xlsx=str(corrections_xlsx),
-                            output_csv=str(corrected_csv_path),
-                            roster_csv=str(roster_csv) if roster_csv else None,
-                        )
-                    if corrections_applied > 0:
-                        st.success(f"Applied {corrections_applied} corrections to CSV")
-                        csv_for_report = corrected_csv_path
-                    else:
-                        st.warning("No corrections found in the uploaded XLSX")
-                        corrected_csv_path = None
-                except Exception as e:
-                    st.error(f"Error applying corrections: {e}")
-                    corrected_csv_path = None
-
-            args = [
-                "report",
-                str(csv_for_report),
-                "--out-xlsx", str(out_path),
-            ]
-
-            if roster_csv:
-                args.extend(["--roster", str(roster_csv)])
-
-            # Pass corrections XLSX so details appear on Summary tab
-            if corrections_xlsx and corrected_csv_path:
-                args.extend(["--corrections-xlsx", str(corrections_xlsx)])
-
-            # Add project metadata if in project mode
-            if use_project_mode:
-                args.extend(["--project-name", project_name])
-                if run_label:
-                    args.extend(["--run-label", run_label])
-
-            try:
-                with st.spinner("Generating Excel report..."):
-                    out = _run_cli(args)
-                report_status.success("✅ Report generated!")
-
-                # Store results in session state for persistent download buttons
-                st.session_state["report_results"] = {
-                    "out_path": str(out_path) if out_path.exists() else None,
-                    "out_filename": out_filename,
-                    "corrected_csv": str(corrected_csv_path) if corrected_csv_path else None,
-                    "cli_output": out or "Done.",
-                }
-
-            except Exception as e:
-                report_status.error(f"Error: {e}")
-
-    # --- Persistent download buttons (survive reruns) ---
-    if "report_results" in st.session_state:
-        rr = st.session_state["report_results"]
-        st.code(rr["cli_output"], language="bash")
-
-        if rr.get("corrected_csv"):
-            _download_file_button("📄 Download corrected CSV", Path(rr["corrected_csv"]))
-
-        if rr.get("out_path"):
-            _download_file_button(f"📥 Download {rr['out_filename']}", Path(rr["out_path"]))
-
-            with st.expander("📊 What's in the report?", expanded=True):
-                st.markdown("""
-                **Summary Tab:**
-                - Overall exam statistics (N students, mean, std dev, KR-20)
-                - Reliability interpretation with color coding
-                - Roster issues (if roster provided)
-
-                **Per-Version Tabs (Version A, Version B, etc.):**
-                - Student results with columns: LastName, FirstName, StudentID, **Issue**, correct, incorrect, blank, multi, percent, Version, Q1, Q2...
-                - **Issue column** flags: blank answers, multi-marked, ID mismatch, fuzzy match
-                - **Incorrect answers highlighted in light red**
-                - **KEY row** showing correct answers
-                - **% Correct** - Item difficulty
-                - **Point-Biserial** - Item discrimination (green ≥0.20, yellow 0.10-0.20, red <0.10)
-                - **Item Quality** - Visual summary (✓ Good / ⚠ Review / ✗ Problem)
-                """)
-
-# ===================== 4) MAP VIEWER =====================
-elif page.startswith("4"):
-    st.header("Map Viewer")
-    st.markdown("Overlay bubblemaps on a template or aligned PDF to verify placement.")
-
-    top_col1, top_col2 = st.columns([1, 3])
-    with top_col1:
-        run_viz_clicked = st.button("Visualize Bubblemap", type="primary")
-    with top_col2:
-        viz_status = st.empty()
-
-    st.divider()
-
-    colA, colB = st.columns(2)
-    with colA:
-        # Template selection - use a pre-defined template
-        viz_template_choice = _template_selector_with_archive("mapviewer", "Select a pre-defined bubble sheet template")
-
-        viz_pdf = None
-        viz_bublmap = None
-
-        if viz_template_choice:
-            # Use template's PDF and bubblemap
-            viz_pdf = viz_template_choice.template_pdf_path
-            viz_bublmap = viz_template_choice.bubblemap_yaml_path
-            st.caption(f"Using: {viz_template_choice.template_pdf_path.name}")
-        else:
-            # Custom upload option
-            st.markdown("---")
-            st.markdown("**Or upload custom files:**")
-            viz_pdf = _tempfile_from_uploader("PDF (template or aligned page)", "viz_pdf", types=("pdf",))
-            viz_bublmap = _tempfile_from_uploader("Bubblemap YAML", "viz_yaml", types=("yaml", "yml"))
-
-    with colB:
-        out_image = st.text_input("Output image name", value="bubblemap_overlay.png")
-        viz_dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=150, step=1, key="viz_dpi")
-
-    if run_viz_clicked:
-        if not viz_pdf or not viz_bublmap:
-            viz_status.error("Please select a template or upload PDF and bubblemap YAML.")
-        else:
-            base = WORKDIR or Path(os.getcwd())
-
-            # Check if we're in project mode
-            project_name = st.session_state.get("project_name", "").strip()
-            use_project_mode = bool(project_name and sanitize_project_name and create_project_structure and create_run_directory)
-
-            if use_project_mode:
-                # Project mode: save to project/logs/
-                sanitized_name = sanitize_project_name(project_name)
-                project_dir = create_project_structure(base, sanitized_name)
-                logs_dir = project_dir / "logs"
-                out_path = logs_dir / out_image
-            else:
-                # Temporary mode
-                out_dir = Path(tempfile.mkdtemp(prefix="viz_", dir=str(base)))
-                out_path = out_dir / out_image
-
-            args = [
-                "mapviewer",
-                str(viz_pdf),
-                "--bublmap", str(viz_bublmap),
-                "--out-image", str(out_path),
-                "--dpi", str(int(viz_dpi)),
-            ]
-
-            try:
-                with st.spinner("Generating overlay..."):
-                    out = _run_cli(args)
-                viz_status.success("Visualization complete.")
-
-                # Store results in session state for persistent download buttons
-                if out_path.exists():
-                    st.session_state["viz_results"] = {
-                        "out_path": str(out_path),
-                        "cli_output": out or "Done.",
-                    }
-
-            except Exception as e:
-                viz_status.error(f"Error: {e}")
-
-    # --- Persistent download buttons (survive reruns) ---
-    if "viz_results" in st.session_state:
-        vr = st.session_state["viz_results"]
-        st.code(vr["cli_output"], language="bash")
-        out_path = Path(vr["out_path"])
-        if out_path.exists():
-            st.image(str(out_path), caption="Bubblemap Overlay")
-            _download_file_button("Download overlay image", out_path)
-
-# ===================== 5) TEMPLATE MANAGER =====================
-elif page.startswith("5"):
     st.header("Template Manager")
     st.markdown("Manage your bubble sheet templates. Each template needs a PDF and a bubblemap YAML file.")
     
@@ -2242,6 +1495,764 @@ answer_rows:
                         st.info(f"Files saved to: `{Path(mr['scans']).parent}`")
             else:
                 st.warning("No templates available. Add a template first to generate mock data.")
+
+
+
+# ===================== 2) ALIGN SCANS =====================
+elif page.startswith("2"):
+    st.header("Align scans to your template.")
+    st.markdown("""
+    Use this page to align your raw scans to your master bubblesheet.
+    1. Choose your template from the dropdown or upload a pdf of your template.
+    2. Select an alignment method (auto, fast, slow, aruco)
+    3. Click the "Run Alignment" button below.
+    """)
+
+    # Top-of-page controls and status
+    top_col1, top_col2 = st.columns([1, 3])
+    with top_col1:
+        run_align_clicked = st.button("Run Alignment", type="primary")
+    with top_col2:
+        status = st.empty()  # all errors/updates will appear here
+
+    st.divider()
+
+    colA, colB = st.columns(2)
+    with colA:
+        st.subheader("Inputs")
+        # Template selection - either from library or custom upload
+        align_template_choice = _template_selector_with_archive("align", "Select a pre-defined bubblesheet template")
+        if align_template_choice:
+            st.caption("✓ Fast alignment mode available (bubblemap included)")
+
+        template = None
+        align_bublmap = None
+
+        scans = _tempfile_from_uploader("Upload your raw student scans (PDF)", "align_scans", types=("pdf",))
+        
+
+        st.markdown("---")
+        
+        # Custom upload option (shown if no template selected or no templates available)
+        if align_template_choice is None:
+            st.markdown("**Upload custom bubblesheet files:**")
+            st.caption("*Only if you are not using a pre-defined template from the menu above*")
+            template = _tempfile_from_uploader("Template bubble sheet (PDF)", "align_template", types=("pdf",))
+            
+            align_bublmap = _tempfile_from_uploader("Bubblemap YAML (optional)", "align_bubblemap", types=("yaml", "yml"))
+            st.caption("*A bubblemap enables 'fast' alignment mode*")
+            if align_bublmap:
+                st.success("✓ Fast alignment mode available")
+        
+
+    with colB:
+        st.subheader("Output file options")
+        out_pdf_name = st.text_input("Output aligned PDF name", value="aligned_scans.pdf")
+        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1)
+
+        st.markdown("---")
+        st.subheader("Alignment method")
+        method = st.selectbox(
+            "Alignment method",
+            ["auto", "fast", "slow", "aruco"],
+            index=0,
+            help="auto: fast if bubblemap provided, slow otherwise. "
+                 "fast: 72 DPI coarse + bubble grid (quick, needs bubblemap). "
+                 "slow: full-res ORB (thorough). "
+                 "aruco: ArUco markers only."
+        )
+        st.markdown("---")
+        st.subheader("Alignment parameters")
+        st.markdown("**ArUco mark alignment parameters**")
+        min_markers = st.number_input("Min ArUco markers to accept", min_value=0, max_value=32, value=int(_dflt(ALIGN_DEFAULTS, "min_aruco", 0)), step=1)
+        dict_name = st.text_input("ArUco dictionary (if aruco)", value=str(_dflt(ALIGN_DEFAULTS, "dict_name", "DICT_4X4_50")))
+
+        st.markdown("---")
+        st.markdown("**Non-ArUco align parameters**")
+        ransac = st.number_input("RANSAC reprojection threshold", min_value=0.1, max_value=20.0, value=float(_dflt(EST_DEFAULTS, "ransac_thresh", 2.0)), step=0.1)
+        orb_nfeatures = st.number_input("ORB nfeatures", min_value=200, max_value=20000, value=int(_dflt(FEAT_DEFAULTS, "orb_nfeatures", 3000)), step=100)
+        match_ratio = st.number_input("Match ratio (Lowe)", min_value=0.50, max_value=0.99, value=float(_dflt(MATCH_DEFAULTS, "ratio_test", 0.75)), step=0.01, format="%.2f")
+
+        with st.expander("Advanced (estimator and ECC)", expanded=False):
+            estimator_method = st.selectbox(
+                "Homography estimator method",
+                ["auto", "ransac", "usac"],
+                index=0,
+                help="Maps to --estimator-method in the CLI (auto|ransac|usac).",
+            )
+            use_ecc = st.checkbox(
+                "Enable ECC refinement",
+                value=bool(_dflt(EST_DEFAULTS, "use_ecc", True)),
+                help="Maps to --use-ecc/--no-use-ecc in the CLI.",
+            )
+            ecc_max_iters = st.number_input(
+                "ECC max iterations",
+                min_value=1,
+                max_value=5000,
+                value=int(_dflt(EST_DEFAULTS, "ecc_max_iters", 250)),
+                step=10,
+            )
+            ecc_eps = st.number_input(
+                "ECC epsilon",
+                min_value=1e-7,
+                max_value=1e-2,
+                value=float(_dflt(EST_DEFAULTS, "ecc_eps", 1e-5)),
+                step=1e-6,
+                format="%.7f",
+            )
+
+    if run_align_clicked:
+        # Determine template and bubblemap to use
+        if align_template_choice is not None:
+            actual_template = align_template_choice.template_pdf_path
+            actual_bublmap = align_template_choice.bubblemap_yaml_path
+        else:
+            actual_template = template
+            actual_bublmap = align_bublmap
+
+        if not scans:
+            status.error("Please upload scans PDF.")
+        elif actual_template is None:
+            status.error("Please select a template or upload a template PDF.")
+        else:
+            base = WORKDIR or Path(os.getcwd())
+
+            # Check if we're in project mode
+            project_name = st.session_state.get("project_name", "").strip()
+            use_project_mode = bool(project_name and sanitize_project_name and create_project_structure and create_run_directory)
+
+            if use_project_mode:
+                # Project mode: save aligned to project/input/ with timestamp
+                from datetime import datetime
+                sanitized_name = sanitize_project_name(project_name)
+                project_dir = create_project_structure(base, sanitized_name)
+                timestamp = datetime.now()
+                date_str = timestamp.strftime("%Y-%m-%d_%H%M")
+                input_dir = project_dir / "input"
+                out_pdf = input_dir / f"aligned_scan_{date_str}.pdf"
+
+                # Save raw input scans for reference
+                if scans:
+                    (input_dir / "raw_scans.pdf").write_bytes(scans.read_bytes())
+            else:
+                # Temporary mode
+                out_dir = Path(tempfile.mkdtemp(prefix="align_", dir=str(base)))
+                out_pdf = out_dir / out_pdf_name
+            args = [
+                "align",
+                str(scans),
+                "--template", str(actual_template),
+                "--out-pdf", str(out_pdf),
+                "--dpi", str(int(dpi)),
+                "--align-method", method,
+                "--estimator-method", estimator_method,
+                "--ransac", str(float(ransac)),
+                "--orb-nfeatures", str(int(orb_nfeatures)),
+                "--match-ratio", str(float(match_ratio)),
+                "--min-markers", str(int(min_markers)),
+            ]
+            if dict_name.strip():
+                args += ["--dict-name", dict_name.strip()]
+            
+            # Pass bubblemap for fast alignment mode
+            if actual_bublmap:
+                args += ["--bubblemap", str(actual_bublmap)]
+
+            try:
+                # Show progress during alignment
+                align_progress = st.progress(0, text="Starting alignment...")
+                align_status_text = st.empty()
+
+                try:
+                    out = _run_cli_with_progress(args, align_progress, align_status_text)
+                except Exception:
+                    # Fallback to regular CLI if progress version fails
+                    out = _run_cli(args)
+
+                align_progress.progress(1.0, text="✓ Alignment complete")
+                status.success("Alignment finished.")
+
+                # Store results in session state for persistent download buttons
+                st.session_state["align_results"] = {
+                    "out_pdf": str(out_pdf),
+                    "cli_output": out or "Done.",
+                }
+
+            except Exception as e:
+                status.error(f"Error during alignment: {e}")
+
+    # --- Persistent download buttons (survive reruns) ---
+    if "align_results" in st.session_state:
+        ar = st.session_state["align_results"]
+        st.code(ar["cli_output"], language="bash")
+        _download_file_button("Download aligned_scans.pdf", Path(ar["out_pdf"]))
+
+# ===================== 3) SCORE =====================
+elif page.startswith("3"):
+    st.header("Score aligned scans")
+    st.markdown("""
+    If you have already aligned your scans you can start at this step.
+    1. Choose your template from the dropdown or upload a bubblemap.yaml file.
+    2. Upload your aligned scans
+    3. Click the "Score" button below.
+    """)
+    # Top-of-page controls and status
+    top_col1, top_col2 = st.columns([1, 3])
+    with top_col1:
+        run_score_clicked = st.button("Score", type="primary")
+    with top_col2:
+        score_status = st.empty()  # all errors/updates will appear here
+
+    st.divider()
+
+    colA, colB = st.columns(2)
+    with colA:
+        st.subheader("Inputs")
+
+        # Template/Bubblemap selection
+        score_template_choice = _template_selector_with_archive("score", "Select template from dropdown menu")
+
+        bublmap = None
+
+        aligned = _tempfile_from_uploader("Aligned scans PDF", "score_pdf", types=("pdf",))
+
+        # Answer key upload - supports multiple formats
+        key_txt = _tempfile_from_uploader(
+            "Answer Key (TXT, CSV, XLSX) - optional",
+            "score_key",
+            types=("txt", "csv", "tsv", "xlsx")
+        )
+        if key_txt:
+            try:
+                from markshark.tools.score_tools import is_advanced_key_format
+                if is_advanced_key_format(str(key_txt)):
+                    st.caption("✓ Advanced key format (partial credit, OR, AND)")
+            except Exception:
+                pass
+
+        # Template download
+        with st.expander("📥 Download answer key template", expanded=False):
+            template_path = Path(__file__).parent / "assets" / "answer_key_template.xlsx"
+            if template_path.exists():
+                st.download_button(
+                    "Download Excel Template",
+                    data=template_path.read_bytes(),
+                    file_name="answer_key_template.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="score_template_download"
+                )
+
+        st.markdown("Upload bubblemap below if not using a predefined template")
+        # Custom upload option
+        if score_template_choice is None:
+            bublmap = _tempfile_from_uploader("Bubblemap (YAML)", "score_cfg", types=("yaml","yml"))
+
+        st.markdown("---")
+        st.subheader("Scoring Parameters")
+        st.caption("*Adjust these if scoring isn't working well*")
+        auto_thresh = st.checkbox("Auto-calibrate threshold", value=_dflt(SCORING_DEFAULTS, "auto_calibrate_thresh", True), key="score_auto_thresh")
+        verbose_thresh = st.checkbox("Verbose threshold calibration", value=True, key="score_verbose")
+
+        min_fill = st.text_input("Minimum fill score (0-100)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_fill", 45)))
+        st.caption("*Matches the scores shown on annotated PDFs (e.g., 45 means 45% filled)*")
+
+        min_top2_diff = st.text_input("Minimum top2 difference", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "min_top2_diff", "")))
+        st.caption("*The minimum fill difference (in percentage points) between 1st and 2nd-most filled bubbles to not score as multi.*")
+
+        top2_ratio = st.text_input("Top2 ratio (0-100)", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "top2_ratio", 80)))
+        st.caption("*Second-best bubble must be <= this percentage of best to count as single answer.*")
+        st.markdown("---")
+        
+        
+        
+    with colB:
+        st.subheader("Output file options")
+        out_csv_name = st.text_input("Output results CSV", value="results.csv")
+        scored_pdf_name = st.text_input("Annotated scored PDF filename", value="", placeholder=str(_dflt(SCORING_DEFAULTS, "out_pdf", "scored_scans.pdf")))
+        annotate_all = st.checkbox("Annotate all cells", value=True)
+        label_density = st.checkbox("Label density diagnostics", value=True)
+        dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=int(_dflt(RENDER_DEFAULTS, "dpi", 150)), step=1, key="score_dpi")
+        
+        st.markdown("---")
+        st.markdown("**Flagging & Review**")
+        generate_review_pdf = st.checkbox("Generate review PDF (flagged pages only)", value=True,
+                                          help="Creates a separate PDF with only pages containing blank/multi answers for manual review")
+        generate_flagged_xlsx = st.checkbox("Generate flagged items XLSX", value=True,
+                                           help="Creates an Excel file listing flagged items with a column for corrections")
+        roster_csv = _tempfile_from_uploader("Class roster CSV (optional)", "score_roster", types=("csv",))
+        st.caption("*Upload a roster CSV to flag orphan scans (IDs not in roster) and track absent students. Must have StudentID column.*")
+        st.markdown("---")
+        st.markdown("**Statistics**")
+        include_stats = st.checkbox("Include basic statistics in CSV", value=True,
+                                    help="Appends exam stats (mean, std, KR-20) and item stats (% correct, point-biserial) to the CSV. Requires answer key.")
+        out_ann_dir = st.text_input("Annotated png directory (optional)", value="", placeholder="Enter a folder name here for png files")
+        st.caption("*You can save annotated output student scans as a set of images (png format) by entering a directory name here.*")
+        
+
+    if run_score_clicked:
+        # Determine bubblemap to use
+        if score_template_choice is not None:
+            actual_bublmap = score_template_choice.bubblemap_yaml_path
+        else:
+            actual_bublmap = bublmap
+
+        if not aligned:
+            score_status.error("Please upload aligned PDF.")
+        elif actual_bublmap is None:
+            score_status.error("Please select a template or upload a bubblemap YAML.")
+        else:
+            base = WORKDIR or Path(os.getcwd())
+
+            # Check if we're in project mode
+            project_name = st.session_state.get("project_name", "").strip()
+            use_project_mode = bool(project_name and sanitize_project_name and create_project_structure and create_run_directory)
+
+            if use_project_mode:
+                # Project mode: save to project/results/run_XXX/
+                sanitized_name = sanitize_project_name(project_name)
+                project_dir = create_project_structure(base, sanitized_name)
+                out_dir, run_label = create_run_directory(project_dir)
+                out_csv = out_dir / out_csv_name
+                # Save input files to project/input/ for reference
+                input_dir = project_dir / "input"
+                if key_txt:
+                    (input_dir / "answer_key.txt").write_bytes(key_txt.read_bytes())
+                if roster_csv:
+                    (input_dir / "roster.csv").write_bytes(roster_csv.read_bytes())
+            else:
+                # Temporary mode
+                out_dir = Path(tempfile.mkdtemp(prefix="score_", dir=str(base)))
+                out_csv = out_dir / out_csv_name
+            args = [
+                "score",
+                str(aligned),
+                "--bublmap", str(actual_bublmap),
+                "--out-csv", str(out_csv),
+                "--dpi", str(int(dpi)),
+            ]
+            if key_txt:
+                args += ["--key-txt", str(key_txt)]
+            if scored_pdf_name.strip():
+                args += ["--out-pdf", scored_pdf_name.strip()]
+            if out_ann_dir.strip():
+                args += ["--out-annotated-dir", str(out_dir / out_ann_dir.strip())]
+            if annotate_all:
+                args += ["--annotate-all-cells"]
+            if label_density:
+                args += ["--label-density"]
+            if not auto_thresh:
+                args += ["--no-auto-thresh"]
+            if verbose_thresh:
+                args += ["--verbose-thresh"]
+            if min_fill.strip():
+                args += ["--min-fill", min_fill.strip()]
+            if top2_ratio.strip():
+                args += ["--top2-ratio", top2_ratio.strip()]
+            if min_top2_diff.strip():
+                args += ["--min-top2-diff", min_top2_diff.strip()]
+            
+            # Stats option
+            if include_stats:
+                args += ["--include-stats"]
+            else:
+                args += ["--no-include-stats"]
+            
+            # Review/flagging options
+            review_pdf_path = None
+            flagged_xlsx_path = None
+            if generate_review_pdf:
+                review_pdf_path = out_dir / "flagged_for_review.pdf"
+                args += ["--review-pdf", str(review_pdf_path)]
+            if generate_flagged_xlsx:
+                flagged_xlsx_path = out_dir / "flagged_for_review.xlsx"
+                args += ["--flagged-xlsx", str(flagged_xlsx_path)]
+            if roster_csv:
+                args += ["--roster-csv", str(roster_csv)]
+
+            try:
+                with st.spinner("Scoring via CLI..."):
+                    out = _run_cli(args)
+                score_status.success("Scoring finished.")
+
+                # Build scored PDF path if applicable
+                scored_pdf_path_str = None
+                if scored_pdf_name.strip():
+                    scored_pdf_path = out_dir / scored_pdf_name.strip()
+                    if scored_pdf_path.exists():
+                        scored_pdf_path_str = str(scored_pdf_path)
+
+                # Build annotated zip bytes if applicable
+                ann_zip_bytes = None
+                if out_ann_dir.strip():
+                    ann_path = out_dir / out_ann_dir.strip()
+                    if ann_path.exists() and ann_path.is_dir():
+                        ann_zip_bytes = _zip_dir_to_bytes(ann_path)
+
+                # Store results in session state for persistent download buttons
+                st.session_state["score_results"] = {
+                    "out_csv": str(out_csv),
+                    "scored_pdf": scored_pdf_path_str,
+                    "review_pdf": str(review_pdf_path) if review_pdf_path and review_pdf_path.exists() else None,
+                    "flagged_xlsx": str(flagged_xlsx_path) if flagged_xlsx_path and flagged_xlsx_path.exists() else None,
+                    "ann_zip_bytes": ann_zip_bytes,
+                    "include_stats": include_stats,
+                    "has_key": bool(key_txt),
+                    "cli_output": out or "Done.",
+                }
+
+            except Exception as e:
+                score_status.error(f"Error during scoring: {e}")
+
+    # --- Persistent download buttons (survive reruns) ---
+    if "score_results" in st.session_state:
+        sr = st.session_state["score_results"]
+        st.code(sr["cli_output"], language="bash")
+
+        _download_file_button("Download results.csv", Path(sr["out_csv"]))
+
+        if sr.get("include_stats") and sr.get("has_key"):
+            st.info("📊 Basic statistics appended to CSV (scroll to bottom)")
+
+        if sr.get("scored_pdf"):
+            _download_file_button("Download scored PDF", Path(sr["scored_pdf"]))
+
+        if sr.get("review_pdf"):
+            _download_file_button("📋 Download Review PDF (flagged pages)", Path(sr["review_pdf"]))
+
+        if sr.get("flagged_xlsx"):
+            _download_file_button("⚠️ Download Flagged Items XLSX", Path(sr["flagged_xlsx"]))
+
+        if sr.get("ann_zip_bytes"):
+            st.download_button("Download annotated PNGs (zip)", data=sr["ann_zip_bytes"], file_name="annotated.zip")
+
+# ===================== 4) REPORT =====================
+elif page.startswith("4"):
+    st.header("Generate Excel Report")
+    st.markdown("""
+    Create a comprehensive Excel report with:
+    - **Summary tab**: Overall exam statistics and reliability
+    - **Per-version tabs**: Student results with color-coded item analysis
+    - **Roster matching** (optional): Identify absent students and ID mismatches
+    - **Visual highlighting**: Incorrect answers in red, quality indicators in green/yellow/red
+    """)
+
+    top_col1, top_col2 = st.columns([1, 3])
+    with top_col1:
+        run_report_clicked = st.button("Generate Report", type="primary")
+    with top_col2:
+        report_status = st.empty()
+
+    st.divider()
+
+    # Check if we're in project mode
+    base = WORKDIR or Path(os.getcwd())
+    project_name = st.session_state.get("project_name", "").strip()
+    use_project_mode = bool(project_name and sanitize_project_name and find_scored_runs and get_report_path)
+
+    colA, colB = st.columns(2)
+
+    # Track selected scored run
+    selected_run = None
+    selected_csv_path = None
+
+    with colA:
+        st.subheader("Select Scored Results")
+
+        if use_project_mode:
+            sanitized_name = sanitize_project_name(project_name)
+            project_dir = base / sanitized_name
+
+            if project_dir.exists() and find_scored_runs:
+                scored_runs = find_scored_runs(project_dir)
+                runs_with_csv = [r for r in scored_runs if r["has_csv"]]
+
+                if runs_with_csv:
+                    # Build dropdown options (most recent first)
+                    run_options = []
+                    for run in runs_with_csv:
+                        ts = run["timestamp"]
+                        if ts:
+                            date_str = ts.strftime("%Y-%m-%d %H:%M")
+                        else:
+                            date_str = "Unknown date"
+                        run_options.append(f"{run['label']} ({date_str})")
+
+                    selected_idx = st.selectbox(
+                        "Choose a scoring run",
+                        range(len(run_options)),
+                        format_func=lambda i: run_options[i],
+                        key="report_run_select",
+                    )
+
+                    selected_run = runs_with_csv[selected_idx]
+                    selected_csv_path = selected_run.get("csv_path") or (selected_run["path"] / "results.csv")
+
+                    st.success(f"Using: `{selected_run['label']}`")
+                    st.caption(f"📁 {selected_csv_path}")
+                else:
+                    st.warning("No scored results found in this project. Run scoring first.")
+            else:
+                st.info("Project directory not found. Score some exams first, or upload a CSV below.")
+
+        # Always allow manual CSV upload as fallback
+        st.markdown("**Or upload a CSV manually:**")
+        uploaded_csv = _tempfile_from_uploader("Results CSV (from score)", "report_csv", types=("csv",))
+        if uploaded_csv:
+            selected_csv_path = uploaded_csv
+            selected_run = None  # Manual upload overrides project selection
+            st.info("Using uploaded CSV file")
+
+    with colB:
+        st.subheader("Optional Roster")
+        st.caption("Upload a class roster to check for absent students and ID mismatches")
+        roster_csv = _tempfile_from_uploader(
+            "Class Roster CSV (StudentID, LastName, FirstName)",
+            "roster_csv",
+            types=("csv",),
+        )
+        if roster_csv:
+            st.info("✓ Roster uploaded - will check for absent students and ID mismatches")
+
+        st.markdown("---")
+        st.subheader("Optional Corrections")
+        st.caption("Upload a filled flagged_for_review.xlsx to apply corrections to the scored CSV before generating the report")
+        corrections_xlsx = _tempfile_from_uploader(
+            "Corrections XLSX (filled flagged_for_review.xlsx)",
+            "corrections_xlsx",
+            types=("xlsx",),
+        )
+        if corrections_xlsx:
+            st.info("✓ Corrections uploaded - will create a corrected CSV and generate report from it")
+
+    st.divider()
+
+    with st.expander("ℹ️ Roster CSV Format", expanded=False):
+        st.markdown("""
+        Your roster CSV should have these columns (case-insensitive):
+
+        **Required:**
+        - `StudentID` / `ID` / `Student_ID` - student identifier
+        - `LastName` / `Last` / `Surname` - student last name
+
+        **Optional:**
+        - `FirstName` / `First` - student first name
+
+        **Example:**
+        ```csv
+        StudentID,LastName,FirstName
+        1001,SMITH,JOHN
+        1002,JONES,SARAH
+        1003,GARCIA,MARIA
+        ```
+
+        The report will:
+        - ✓ Flag students on exam but not on roster (orphan scans)
+        - ✓ List students on roster but no exam found (absent)
+        - ✓ Use fuzzy matching to suggest possible ID matches
+        """)
+
+    # Show where report will be saved
+    if use_project_mode and get_report_path:
+        st.caption(f"💡 Report will be saved to: `{project_name}/reports/report_DATE.xlsx`")
+
+    if run_report_clicked:
+        if not selected_csv_path:
+            report_status.error("Please select a scoring run or upload a results CSV.")
+        else:
+            # Determine output path
+            if use_project_mode and get_report_path:
+                sanitized_name = sanitize_project_name(project_name)
+                project_dir = create_project_structure(base, sanitized_name)
+                out_path = get_report_path(project_dir)
+                out_filename = out_path.name
+                run_label = selected_run["label"] if selected_run else None
+            else:
+                # Temporary mode
+                out_dir = Path(tempfile.mkdtemp(prefix="report_", dir=str(base)))
+                out_filename = "exam_report.xlsx"
+                out_path = out_dir / out_filename
+                run_label = None
+
+            report_status.info(f"📁 Saving report to: {out_path}")
+
+            # Apply corrections to CSV first (if provided)
+            csv_for_report = selected_csv_path
+            corrections_applied = 0
+            corrected_csv_path = None
+            if corrections_xlsx:
+                try:
+                    from markshark.tools.report_tools import apply_corrections_to_csv
+                    # Write corrected CSV next to the original
+                    corrected_csv_path = Path(str(selected_csv_path).replace('.csv', '_corrected.csv'))
+                    with st.spinner("Applying corrections to scored CSV..."):
+                        corrections_applied = apply_corrections_to_csv(
+                            input_csv=str(selected_csv_path),
+                            corrections_xlsx=str(corrections_xlsx),
+                            output_csv=str(corrected_csv_path),
+                            roster_csv=str(roster_csv) if roster_csv else None,
+                        )
+                    if corrections_applied > 0:
+                        st.success(f"Applied {corrections_applied} corrections to CSV")
+                        csv_for_report = corrected_csv_path
+                    else:
+                        st.warning("No corrections found in the uploaded XLSX")
+                        corrected_csv_path = None
+                except Exception as e:
+                    st.error(f"Error applying corrections: {e}")
+                    corrected_csv_path = None
+
+            args = [
+                "report",
+                str(csv_for_report),
+                "--out-xlsx", str(out_path),
+            ]
+
+            if roster_csv:
+                args.extend(["--roster", str(roster_csv)])
+
+            # Pass corrections XLSX so details appear on Summary tab
+            if corrections_xlsx and corrected_csv_path:
+                args.extend(["--corrections-xlsx", str(corrections_xlsx)])
+
+            # Add project metadata if in project mode
+            if use_project_mode:
+                args.extend(["--project-name", project_name])
+                if run_label:
+                    args.extend(["--run-label", run_label])
+
+            try:
+                with st.spinner("Generating Excel report..."):
+                    out = _run_cli(args)
+                report_status.success("✅ Report generated!")
+
+                # Store results in session state for persistent download buttons
+                st.session_state["report_results"] = {
+                    "out_path": str(out_path) if out_path.exists() else None,
+                    "out_filename": out_filename,
+                    "corrected_csv": str(corrected_csv_path) if corrected_csv_path else None,
+                    "cli_output": out or "Done.",
+                }
+
+            except Exception as e:
+                report_status.error(f"Error: {e}")
+
+    # --- Persistent download buttons (survive reruns) ---
+    if "report_results" in st.session_state:
+        rr = st.session_state["report_results"]
+        st.code(rr["cli_output"], language="bash")
+
+        if rr.get("corrected_csv"):
+            _download_file_button("📄 Download corrected CSV", Path(rr["corrected_csv"]))
+
+        if rr.get("out_path"):
+            _download_file_button(f"📥 Download {rr['out_filename']}", Path(rr["out_path"]))
+
+            with st.expander("📊 What's in the report?", expanded=True):
+                st.markdown("""
+                **Summary Tab:**
+                - Overall exam statistics (N students, mean, std dev, KR-20)
+                - Reliability interpretation with color coding
+                - Roster issues (if roster provided)
+
+                **Per-Version Tabs (Version A, Version B, etc.):**
+                - Student results with columns: LastName, FirstName, StudentID, **Issue**, correct, incorrect, blank, multi, percent, Version, Q1, Q2...
+                - **Issue column** flags: blank answers, multi-marked, ID mismatch, fuzzy match
+                - **Incorrect answers highlighted in light red**
+                - **KEY row** showing correct answers
+                - **% Correct** - Item difficulty
+                - **Point-Biserial** - Item discrimination (green ≥0.20, yellow 0.10-0.20, red <0.10)
+                - **Item Quality** - Visual summary (✓ Good / ⚠ Review / ✗ Problem)
+                """)
+
+# ===================== 5) MAP VIEWER =====================
+elif page.startswith("5"):
+    st.header("Map Viewer")
+    st.markdown("Overlay bubblemaps on a template or aligned PDF to verify placement.")
+
+    top_col1, top_col2 = st.columns([1, 3])
+    with top_col1:
+        run_viz_clicked = st.button("Visualize Bubblemap", type="primary")
+    with top_col2:
+        viz_status = st.empty()
+
+    st.divider()
+
+    colA, colB = st.columns(2)
+    with colA:
+        # Template selection - use a pre-defined template
+        viz_template_choice = _template_selector_with_archive("mapviewer", "Select a pre-defined bubble sheet template")
+
+        viz_pdf = None
+        viz_bublmap = None
+
+        if viz_template_choice:
+            # Use template's PDF and bubblemap
+            viz_pdf = viz_template_choice.template_pdf_path
+            viz_bublmap = viz_template_choice.bubblemap_yaml_path
+            st.caption(f"Using: {viz_template_choice.template_pdf_path.name}")
+        else:
+            # Custom upload option
+            st.markdown("---")
+            st.markdown("**Or upload custom files:**")
+            viz_pdf = _tempfile_from_uploader("PDF (template or aligned page)", "viz_pdf", types=("pdf",))
+            viz_bublmap = _tempfile_from_uploader("Bubblemap YAML", "viz_yaml", types=("yaml", "yml"))
+
+    with colB:
+        out_image = st.text_input("Output image name", value="bubblemap_overlay.png")
+        viz_dpi = st.number_input("Render DPI", min_value=72, max_value=600, value=150, step=1, key="viz_dpi")
+
+    if run_viz_clicked:
+        if not viz_pdf or not viz_bublmap:
+            viz_status.error("Please select a template or upload PDF and bubblemap YAML.")
+        else:
+            base = WORKDIR or Path(os.getcwd())
+
+            # Check if we're in project mode
+            project_name = st.session_state.get("project_name", "").strip()
+            use_project_mode = bool(project_name and sanitize_project_name and create_project_structure and create_run_directory)
+
+            if use_project_mode:
+                # Project mode: save to project/logs/
+                sanitized_name = sanitize_project_name(project_name)
+                project_dir = create_project_structure(base, sanitized_name)
+                logs_dir = project_dir / "logs"
+                out_path = logs_dir / out_image
+            else:
+                # Temporary mode
+                out_dir = Path(tempfile.mkdtemp(prefix="viz_", dir=str(base)))
+                out_path = out_dir / out_image
+
+            args = [
+                "mapviewer",
+                str(viz_pdf),
+                "--bublmap", str(viz_bublmap),
+                "--out-image", str(out_path),
+                "--dpi", str(int(viz_dpi)),
+            ]
+
+            try:
+                with st.spinner("Generating overlay..."):
+                    out = _run_cli(args)
+                viz_status.success("Visualization complete.")
+
+                # Store results in session state for persistent download buttons
+                if out_path.exists():
+                    st.session_state["viz_results"] = {
+                        "out_path": str(out_path),
+                        "cli_output": out or "Done.",
+                    }
+
+            except Exception as e:
+                viz_status.error(f"Error: {e}")
+
+    # --- Persistent download buttons (survive reruns) ---
+    if "viz_results" in st.session_state:
+        vr = st.session_state["viz_results"]
+        st.code(vr["cli_output"], language="bash")
+        out_path = Path(vr["out_path"])
+        if out_path.exists():
+            st.image(str(out_path), caption="Bubblemap Overlay")
+            _download_file_button("Download overlay image", out_path)
 
 
 # ===================== 6) HELP =====================

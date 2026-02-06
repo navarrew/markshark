@@ -62,6 +62,23 @@ def _find_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     return None
 
 
+def _clean_id_string(val) -> str:
+    """
+    Clean an ID value that may have been read as a number by Excel/pandas.
+
+    Handles: 1234567890.0 -> "1234567890", NaN -> "", etc.
+    """
+    if pd.isna(val):
+        return ''
+    s = str(val).strip()
+    # Remove .0 suffix from floats that were integers
+    if s.endswith('.0') and s[:-2].isdigit():
+        s = s[:-2]
+    if s.lower() in ('nan', 'none', ''):
+        return ''
+    return s
+
+
 def load_corrections(corrections_xlsx: str) -> pd.DataFrame:
     """
     Load corrections from a filled-in flagged.xlsx file.
@@ -103,9 +120,13 @@ def load_corrections(corrections_xlsx: str) -> pd.DataFrame:
         print("[corrections] Warning: No 'corrected_answer' column found!", file=sys.stderr)
         return pd.DataFrame(columns=['student_id', 'question', 'corrected_answer'])
 
-    # Convert to string, then filter out empties and NaN placeholders
-    df['corrected_answer'] = df['corrected_answer'].astype(str).str.strip()
-    mask = (df['corrected_answer'] != '') & (df['corrected_answer'].str.lower() != 'nan') & (df['corrected_answer'].str.lower() != 'none')
+    # Clean student_id and corrected_answer columns (handle Excel numeric conversion)
+    if 'student_id' in df.columns:
+        df['student_id'] = df['student_id'].apply(_clean_id_string)
+    df['corrected_answer'] = df['corrected_answer'].apply(_clean_id_string)
+
+    # Filter out rows without corrections
+    mask = df['corrected_answer'] != ''
     corrections = df[mask]
 
     print(f"[corrections] Found {len(corrections)} rows with corrections", file=sys.stderr)
@@ -1112,7 +1133,9 @@ def create_summary_tab(
             row += 1
 
             for student in absent_students:
-                ws[f'A{row}'] = student['StudentID']
+                cell = ws[f'A{row}']
+                cell.value = student['StudentID']
+                cell.number_format = '@'  # Format as text
                 ws[f'B{row}'] = student['LastName']
                 ws[f'C{row}'] = student['FirstName']
                 row += 1
@@ -1153,7 +1176,13 @@ def create_summary_tab(
                     # Clean up NaN display
                     if pd.isna(val):
                         val = ''
-                    ws.cell(row=row, column=col_idx, value=val)
+                    cell = ws.cell(row=row, column=col_idx, value=val)
+                    # Format ID-related columns as text
+                    col_lower = col_name.lower().replace(' ', '_')
+                    if 'student' in col_lower and 'id' in col_lower:
+                        cell.number_format = '@'
+                    if 'corrected' in col_lower:
+                        cell.number_format = '@'
                 row += 1
 
     auto_size_columns(ws)
@@ -1310,7 +1339,10 @@ def create_version_tab(
                                 cell.fill = PatternFill(start_color="FFD7D7", end_color="FFD7D7", fill_type="solid")
                 else:
                     # Non-question columns - just write the value
-                    ws.cell(row=row_num, column=col_idx, value=value)
+                    cell = ws.cell(row=row_num, column=col_idx, value=value)
+                    # Format StudentID column as text to prevent Excel treating it as a number
+                    if col_name.lower() in ('studentid', 'student_id', 'id'):
+                        cell.number_format = '@'
 
         row_num += 1
 
@@ -1434,8 +1466,9 @@ def create_class_scores_tab(wb, df_full, item_cols, k):
         # First Name
         ws.cell(row=row_num, column=2, value=row.get(firstname_col, '') if firstname_col else '')
 
-        # Student ID
-        ws.cell(row=row_num, column=3, value=row.get(studentid_col, '') if studentid_col else '')
+        # Student ID - format as text to prevent Excel treating it as a number
+        cell = ws.cell(row=row_num, column=3, value=row.get(studentid_col, '') if studentid_col else '')
+        cell.number_format = '@'
 
         # Raw Score (correct answers)
         raw_score = row.get(correct_col, '') if correct_col else ''

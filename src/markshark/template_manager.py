@@ -151,58 +151,70 @@ class TemplateManager:
     @staticmethod
     def _find_answer_layouts_in_yaml(yaml_data: dict) -> Tuple[bool, Optional[int], Optional[int]]:
         """
-        Find answer_layouts in YAML data, supporting both legacy and multi-page formats.
-        
+        Find answer_layouts/answer_zones in YAML data, supporting all formats:
+        - Schema v3+: answer_zones in page_1 section
+        - Multi-page: answer_layouts in page_X sections
+        - Legacy flat: answer_layouts at top level
+        - Very old: answer_rows at top level
+
         Returns:
             Tuple of (found, num_questions, num_choices)
         """
         if not isinstance(yaml_data, dict):
             return False, None, None
-        
+
         num_questions = None
         num_choices = None
-        
+
+        # Helper to extract question/choice info from a list of layouts/zones
+        def count_from_layouts(layouts_list):
+            total = 0
+            choices = None
+            if isinstance(layouts_list, list):
+                for layout in layouts_list:
+                    if isinstance(layout, dict):
+                        # Count questions (numrows for row-selection layouts)
+                        total += layout.get('numrows', 0)
+                        # Get num_choices from numcols (or labels length)
+                        if choices is None:
+                            choices = layout.get('numcols')
+                            if choices is None and 'labels' in layout:
+                                labels = layout['labels']
+                                if isinstance(labels, str):
+                                    choices = len(labels)
+                                elif isinstance(labels, list):
+                                    choices = len(labels)
+            return total, choices
+
         # Check for multi-page format (page_1, page_2, etc.)
         page_keys = [k for k in yaml_data.keys() if k.startswith('page_')]
-        
+
         if page_keys:
-            # Multi-page format
+            # Multi-page format - check each page for answer_zones or answer_layouts
             total_questions = 0
             for page_key in sorted(page_keys):
                 page_data = yaml_data.get(page_key, {})
                 if isinstance(page_data, dict):
-                    answer_layouts = page_data.get('answer_layouts', [])
-                    if answer_layouts:
-                        for layout in answer_layouts:
-                            if isinstance(layout, dict):
-                                # Count questions (numrows for row-selection layouts)
-                                total_questions += layout.get('numrows', 0)
-                                # Get num_choices from numcols (or labels length)
-                                if num_choices is None:
-                                    num_choices = layout.get('numcols')
-                                    if num_choices is None and 'labels' in layout:
-                                        num_choices = len(layout['labels'])
-            
+                    # Try answer_zones first (schema v3+), then answer_layouts (older)
+                    layouts = page_data.get('answer_zones') or page_data.get('answer_layouts', [])
+                    if layouts:
+                        count, choices = count_from_layouts(layouts)
+                        total_questions += count
+                        if num_choices is None and choices:
+                            num_choices = choices
+
             if total_questions > 0:
                 num_questions = total_questions
                 return True, num_questions, num_choices
-        
-        # Check for legacy flat format (answer_layouts at top level)
-        if 'answer_layouts' in yaml_data:
-            answer_layouts = yaml_data['answer_layouts']
-            if isinstance(answer_layouts, list):
-                total_questions = 0
-                for layout in answer_layouts:
-                    if isinstance(layout, dict):
-                        total_questions += layout.get('numrows', 0)
-                        if num_choices is None:
-                            num_choices = layout.get('numcols')
-                            if num_choices is None and 'labels' in layout:
-                                num_choices = len(layout['labels'])
-                if total_questions > 0:
-                    num_questions = total_questions
+
+        # Check for flat format - answer_zones (schema v3+) or answer_layouts (older) at top level
+        layouts = yaml_data.get('answer_zones') or yaml_data.get('answer_layouts')
+        if layouts:
+            total_questions, num_choices = count_from_layouts(layouts)
+            if total_questions > 0:
+                num_questions = total_questions
                 return True, num_questions, num_choices
-        
+
         # Check for old answer_rows format (legacy)
         if 'answer_rows' in yaml_data:
             answer_rows = yaml_data['answer_rows']
@@ -212,7 +224,7 @@ class TemplateManager:
                     choices = answer_rows[0].get('choices', [])
                     num_choices = len(choices) if choices else None
                 return True, num_questions, num_choices
-        
+
         return False, None, None
     
     def _scan_templates_in_dir(self, directory: Path) -> List[BubbleSheetTemplate]:
@@ -531,13 +543,13 @@ class TemplateManager:
                 if not isinstance(yaml_data, dict):
                     errors.append("Bubblemap YAML must contain a dictionary/mapping")
                 else:
-                    # Check for answer layouts using the helper that supports all formats
+                    # Check for answer layouts/zones using the helper that supports all formats
                     found, _, _ = self._find_answer_layouts_in_yaml(yaml_data)
                     if not found:
                         errors.append(
-                            "Bubblemap YAML missing answer layouts. "
-                            "Expected 'answer_layouts' in page_X sections (multi-page format) "
-                            "or at top level (legacy format)"
+                            "Bubblemap YAML missing answer zones. "
+                            "Expected 'answer_zones' (schema v3+) or 'answer_layouts' (legacy) "
+                            "in page_X sections or at top level"
                         )
                     
             except yaml.YAMLError as e:
