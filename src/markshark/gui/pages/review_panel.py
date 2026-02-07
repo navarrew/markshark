@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QGroupBox,
 )
 
+from ..widgets import PageHeader
+
 
 class ReviewPanelPage(QWidget):
     """
@@ -39,16 +41,12 @@ class ReviewPanelPage(QWidget):
         """Build the page UI."""
         layout = QVBoxLayout(self)
 
-        # Header
-        header = QLabel("Review & Correct")
-        header.setStyleSheet("font-size: 18px; font-weight: bold;")
-        layout.addWidget(header)
-
-        desc = QLabel(
+        # Header with icon
+        header = PageHeader(
+            "Review & Correct",
             "Review flagged items (blank, ambiguous, low confidence) and enter corrections."
         )
-        desc.setWordWrap(True)
-        layout.addWidget(desc)
+        layout.addWidget(header)
 
         # Placeholder content
         placeholder = QFrame()

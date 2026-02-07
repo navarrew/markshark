@@ -1,5 +1,5 @@
 """
-Quick Grade page - the main grading workflow.
+Grader page - the main grading workflow.
 
 Mirrors the Streamlit "Quick Grade" functionality:
 1. Select template
@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
     QFrame,
 )
 
-from ..widgets import FileSelector, LogViewer
+from ..widgets import FileSelector, LogViewer, ProjectSelector, PageHeader
 from ..workers import CLIRunner
 
 
@@ -90,16 +90,16 @@ class QuickGradePage(QWidget):
         """Build the page UI."""
         layout = QVBoxLayout(self)
 
-        # Header
-        header = QLabel("Quick Grade")
-        header.setStyleSheet("font-size: 18px; font-weight: bold;")
-        layout.addWidget(header)
-
-        desc = QLabel(
+        # Header with icon
+        header = PageHeader(
+            "Quick Grade",
             "Upload scans, answer key, and roster (optional), then align, score, and generate reports."
         )
-        desc.setWordWrap(True)
-        layout.addWidget(desc)
+        layout.addWidget(header)
+
+        # Project/directory selector bar
+        self.project_selector = ProjectSelector()
+        layout.addWidget(self.project_selector)
 
         # Action buttons
         btn_layout = QHBoxLayout()
@@ -133,9 +133,9 @@ class QuickGradePage(QWidget):
 
         # Tabs for inputs
         tabs = QTabWidget()
-        tabs.addTab(self._create_inputs_tab(), "Inputs")
+        tabs.addTab(self._create_inputs_tab(), "Input Files")
+        tabs.addTab(self._create_after_tab(), "Upload Corrections")
         tabs.addTab(self._create_options_tab(), "Options")
-        tabs.addTab(self._create_after_tab(), "After Scoring")
         splitter.addWidget(tabs)
 
         # Log viewer
@@ -171,7 +171,7 @@ class QuickGradePage(QWidget):
         layout = QVBoxLayout(widget)
 
         # Template selection
-        template_group = QGroupBox("Template")
+        template_group = QGroupBox("Choose your template bubblesheet")
         template_layout = QHBoxLayout(template_group)
         template_layout.addWidget(QLabel("Select template:"))
         self.template_combo = QComboBox()
@@ -205,18 +205,6 @@ class QuickGradePage(QWidget):
         files_layout.addWidget(self.roster_selector)
 
         layout.addWidget(files_group)
-
-        # Output directory
-        output_group = QGroupBox("Output")
-        output_layout = QVBoxLayout(output_group)
-        self.output_selector = FileSelector(
-            "Output directory:",
-            "",
-            "Select output folder...",
-            directory_mode=True,
-        )
-        output_layout.addWidget(self.output_selector)
-        layout.addWidget(output_group)
 
         layout.addStretch()
         return widget
@@ -350,15 +338,15 @@ class QuickGradePage(QWidget):
         if not self._validate_inputs():
             return
 
-        # Setup work directory
-        output_dir = self.output_selector.path()
-        if output_dir:
-            self.work_dir = Path(output_dir)
-        else:
-            self.work_dir = Path(tempfile.mkdtemp(prefix="quickgrade_"))
-            self.output_selector.set_path(str(self.work_dir))
-
+        # Setup work directory from project selector
+        self.work_dir = self.project_selector.output_dir()
         self.work_dir.mkdir(parents=True, exist_ok=True)
+
+        # Update status with project info
+        project_name = self.project_selector.project_name()
+        if project_name:
+            self.log.append_line(f"Project: {project_name}")
+        self.log.append_line(f"Output directory: {self.work_dir}\n")
 
         # Get template
         template = self.template_combo.currentData()

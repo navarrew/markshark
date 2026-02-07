@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
-from ..widgets import FileSelector
+from ..widgets import FileSelector, PageHeader
 
 
 class SettingsPage(QWidget):
@@ -34,9 +34,8 @@ class SettingsPage(QWidget):
         """Build the page UI."""
         layout = QVBoxLayout(self)
 
-        # Header
-        header = QLabel("Settings")
-        header.setStyleSheet("font-size: 18px; font-weight: bold;")
+        # Header with icon
+        header = PageHeader("Settings", "Configure application preferences.")
         layout.addWidget(header)
 
         # Default paths

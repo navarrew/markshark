@@ -56,7 +56,7 @@ class AboutDialog(QDialog):
 
         # Links / info
         info = QLabel(
-            '<a href="https://github.com/yourusername/markshark">GitHub Repository</a>'
+            '<a href="https://github.com/navarrew/markshark">GitHub Repository</a>'
         )
         info.setOpenExternalLinks(True)
         info.setAlignment(Qt.AlignmentFlag.AlignCenter)

@@ -1,4 +1,5 @@
 """
+MarkShark
 Main application window with navigation sidebar and stacked pages.
 """
 
@@ -30,7 +31,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("MarkShark")
+        self.setWindowTitle("MarkShark - easy bubblesheet scoring")
         self.setMinimumSize(1000, 700)
 
         self._setup_menu_bar()
@@ -86,7 +87,7 @@ class MainWindow(QMainWindow):
 
         # Add navigation items
         nav_items = [
-            ("Quick Grade", "quick_grade"),
+            ("Grader", "quick_grade"),
             ("Review & Correct", "review"),
             ("Settings", "settings"),
         ]
@@ -137,7 +138,7 @@ class MainWindow(QMainWindow):
         """
         Navigate to the Review panel, optionally with data.
 
-        Called from Quick Grade after scoring completes.
+        Called from Grader after scoring completes.
         """
         if results_data:
             self.review_page.load_results(results_data)
