@@ -556,7 +556,7 @@ def mock_dataset(
         raise typer.Exit(code=2)
 
 
-# ------------------------------- GUI ---------------------------------
+# ------------------------------- STREAMLIT ---------------------------------
 def _find_available_port(start_port: int = 8501, max_attempts: int = 10) -> int:
     """Find an available port starting from start_port."""
     import socket
@@ -572,12 +572,14 @@ def _find_available_port(start_port: int = 8501, max_attempts: int = 10) -> int:
 
 
 @app.command()
-def gui(
-    port: int = typer.Option(None, "--port", help="Port to serve Streamlit GUI (auto-finds available port if not specified)"),
+def streamlit(
+    port: int = typer.Option(None, "--port", help="Port to serve Streamlit web interface (auto-finds available port if not specified)"),
     headless: bool = typer.Option(False, "--headless", help="Run without opening a browser (for remote servers)"),
 ):
     """
-    Launch the Streamlit GUI.
+    Launch the Streamlit web interface.
+
+    For the native desktop GUI, use: python -m markshark.gui
     """
     # Resolve the path to the app module
     app_py = (Path(__file__).resolve().parent / "app_streamlit.py")

@@ -2264,7 +2264,7 @@ elif page.startswith("6"):
 
     st.markdown("---")
     st.subheader("Command Line Help")
-    topic = st.selectbox("Help topic", ["markshark", "quick-grade", "align", "score", "report", "templates", "mapviewer", "mock-dataset", "gui"], index=0)
+    topic = st.selectbox("Help topic", ["markshark", "quick-grade", "align", "score", "report", "templates", "mapviewer", "mock-dataset", "streamlit"], index=0)
     help_args = {
         "markshark": ["--help"],
         "quick-grade": ["quick-grade", "--help"],
@@ -2274,7 +2274,7 @@ elif page.startswith("6"):
         "mapviewer": ["mapviewer", "--help"],
         "templates": ["templates", "--help"],
         "mock-dataset": ["mock-dataset", "--help"],
-        "gui": ["gui", "--help"],
+        "streamlit": ["streamlit", "--help"],
     }
 
     @st.cache_data(show_spinner=False)

@@ -45,8 +45,8 @@ Repository = "https://github.com/navarrew/markshark"
 Issues = "https://github.com/navarrew/markshark/issues"
 
 [project.scripts]
-markshark     = "markshark.cli:app_main"
-markshark-gui = "markshark.gui_launcher:main"
+markshark          = "markshark.cli:app_main"
+markshark-streamlit = "markshark.streamlit_launcher:main"
 
 # Use VCS (git tags) as the version source
 [tool.hatch.version]

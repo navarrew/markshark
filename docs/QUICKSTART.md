@@ -94,9 +94,13 @@ markshark report results.csv --out-xlsx exam_report.xlsx
 ## Launch the GUI
 
 ```bash
-markshark gui --port 8501
+# Streamlit web interface
+markshark streamlit --port 8501
 # or
-markshark-gui
+markshark-streamlit
+
+# Native desktop GUI (requires PySide6)
+python -m markshark.gui
 ```
 
 ## Full CLI reference
