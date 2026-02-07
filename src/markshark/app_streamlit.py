@@ -591,7 +591,7 @@ def _template_selector_with_archive(key_prefix: str, label: str = "Select a pre-
     return template_choice
 
 # --------------------- Sidebar ---------------------
-st.sidebar.image(str(ASSETS_DIR / "banner.png"), use_column_width=True)
+st.sidebar.image(str(ASSETS_DIR / "banner.png"), width="stretch")
 
 page = st.sidebar.radio("Select an option below", [
     "0) Quick grade",
