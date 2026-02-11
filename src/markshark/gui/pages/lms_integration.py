@@ -740,6 +740,49 @@ class LmsIntegrationPage(QWidget):
 
         self.scores_status.setText(f"Filter \"{name}\" applied.")
 
+    @staticmethod
+    def _count_orphans_in_report(xlsx_path: str) -> int:
+        """Count rows with orphan IDs in an exam report.
+
+        Checks the 'Class Scores' sheet for a FlagDetails column containing
+        'ID:orphan'.  Returns 0 if no such column exists.
+        """
+        try:
+            wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
+            sheet_name = None
+            for name in wb.sheetnames:
+                if name.lower().replace(" ", "") == "classscores":
+                    sheet_name = name
+                    break
+            if sheet_name is None:
+                wb.close()
+                return 0
+
+            ws = wb[sheet_name]
+            rows = list(ws.iter_rows(values_only=True))
+            wb.close()
+
+            if len(rows) < 2:
+                return 0
+
+            headers = [str(h).strip().lower() if h else "" for h in rows[0]]
+            fd_idx = -1
+            for i, h in enumerate(headers):
+                if h in ("flagdetails", "flag_details", "flag details"):
+                    fd_idx = i
+                    break
+            if fd_idx < 0:
+                return 0
+
+            count = 0
+            for row in rows[1:]:
+                if fd_idx < len(row) and row[fd_idx]:
+                    if "ID:orphan" in str(row[fd_idx]):
+                        count += 1
+            return count
+        except Exception:
+            return 0
+
     def _run_write_scores(self):
         """Write MarkShark scores into the LMS gradebook."""
         lms_path = self.scores_lms_file.path()
@@ -770,6 +813,23 @@ class LmsIntegrationPage(QWidget):
             return
 
         value_type = self.scores_value_combo.currentText()
+
+        # Warn about unresolved orphan IDs
+        orphan_count = self._count_orphans_in_report(results_path)
+        if orphan_count > 0:
+            reply = QMessageBox.warning(
+                self,
+                "Orphan Students Detected",
+                f"{orphan_count} orphan student(s) found in the exam report.\n\n"
+                "Their scores won't match any LMS gradebook entry and will be "
+                "skipped during write-back.\n\n"
+                "Consider correcting orphan IDs in Review & Correct first.\n\n"
+                "Continue anyway?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
 
         # Parse MarkShark exam report
         try:

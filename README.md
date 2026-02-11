@@ -23,7 +23,7 @@ If you can print an exam and scan it, you should be able to grade it quickly and
 
 ## Prerequisites
 
-- **Python 3.9–3.12**
+- **Python 3.10–3.13**
 
 ---
 
@@ -33,29 +33,38 @@ If you can print an exam and scan it, you should be able to grade it quickly and
 pip install markshark
 ```
 
-## Dependencies (installs automatically with pip)
+### Launch the desktop GUI
+```bash
+markshark-gui
+```
+
+### Or use the command-line interface
+```bash
+markshark --help
+```
+
+## Dependencies (installed automatically with pip)
+- PySide6>=6.6
 - typer>=0.12
 - rich>=13.7
 - opencv-contrib-python>=4.9
-- numpy>=1.26,<2.0
+- numpy>=1.26
 - pymupdf>=1.24
 - pdf2image>=1.17
-- pandas>=2.1,<2.3
+- pandas>=2.1
 - matplotlib>=3.8
-- streamlit>=1.35
 - pyyaml
 - openpyxl>=3.0
 - rapidfuzz>=3.0
-- streamlit-antd-components>=0.3.2
 
 
 ---
 
 # About MarkShark
 
-MarkShark is in development.  It currently works well after being tested in a real-world scenario of a class of 270 students with two midterms and a final (a total of over 700 scans).  You can go from 500 scanned student bubblesheets to a final report in less than five minutes. 
+MarkShark is in active development.  It currently works well after being tested in a real-world scenario of a class of 270 students with two midterms and a final (a total of over 700 scans).  You can go from 500 scanned student bubblesheets to a final report in less than five minutes.
 
-We provide a manual as a pdf in the main github directory.  Help is also available from the command line.  For the time being documentation is being kept current in the pdf manual and not on this markdown page. 
+MarkShark includes a full **desktop GUI** (built with PySide6) and a **command-line interface** for scripting and automation.  All settings are stored in `~/.markshark/` for easy backup and clean uninstall. 
 
 MarkShark works with a variety of bubblesheet formats (you can easily generate your own custom bubblesheets) and it rapidly generates reports about student performance and the quality of the test questions.  We provide template bubblesheets and necessary mapping files for each that you can customize for your own use. 
 

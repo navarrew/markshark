@@ -100,6 +100,20 @@ class QuickGradePage(QWidget):
         # Seed browse dirs from whatever the ProjectSelector restored from settings
         self._update_browse_dirs()
 
+    # ------------------------------------------------------------------
+    # Re-scan for project files every time the page becomes visible
+    # ------------------------------------------------------------------
+
+    def showEvent(self, event):
+        """Re-populate file selectors when the page becomes visible.
+
+        Files created by other pages (e.g. corrections from Review & Correct,
+        results from a previous run) need to appear in the Report tab selectors.
+        """
+        super().showEvent(event)
+        self._auto_populate_input_files()
+        self._auto_populate_report_files()
+
     def _setup_ui(self):
         """Build the page UI."""
         layout = QVBoxLayout(self)

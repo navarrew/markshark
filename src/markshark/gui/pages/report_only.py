@@ -218,6 +218,11 @@ class ReportOnlyPage(QWidget):
     # -----------------------------------------------------------------
     # Helpers
     # -----------------------------------------------------------------
+    def showEvent(self, event):
+        """Re-populate file selectors when the page becomes visible."""
+        super().showEvent(event)
+        self._auto_populate_from_project()
+
     def _update_browse_dirs(self, _name: str = ""):
         project_dir = self.project_selector.project_dir()
         working_dir = self.project_selector.working_dir()
@@ -227,6 +232,30 @@ class ReportOnlyPage(QWidget):
         self.results_selector.set_start_dir(start)
         self.roster_selector.set_start_dir(start)
         self.corrections_selector.set_start_dir(start)
+        self._auto_populate_from_project()
+
+    def _auto_populate_from_project(self):
+        """Auto-fill selectors from project's flat structure if files exist."""
+        project_dir = self.project_selector.project_dir()
+        if not project_dir:
+            return
+
+        # Results
+        results_csv = project_dir / "score_data" / "results.csv"
+        if results_csv.exists() and not self.results_selector.exists():
+            self.results_selector.set_path(str(results_csv))
+
+        # Corrections
+        corrections_csv = project_dir / "score_data" / "corrections.csv"
+        if corrections_csv.exists() and not self.corrections_selector.exists():
+            self.corrections_selector.set_path(str(corrections_csv))
+
+        # Roster
+        input_files = project_dir / "input_files"
+        if input_files.exists() and not self.roster_selector.exists():
+            roster_matches = sorted(input_files.glob("roster.*"))
+            if roster_matches:
+                self.roster_selector.set_path(str(roster_matches[0]))
 
     def _load_most_recent_results(self):
         """Find and load the results.csv from the project's score_data/ folder."""
