@@ -646,27 +646,39 @@ def match_students_to_roster(
     roster_df: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, List[Dict], List[Dict]]:
     """
-    Match scanned students to roster.
+    Match scanned students to roster using **exact ID matching only**.
+
+    Fuzzy matching is used solely to populate hint columns (RosterID,
+    MatchConfidence, MatchType) that feed the orphan-suggestions UI in the
+    Review panel.  It never affects the matched / orphan / absent
+    classification — only an exact StudentID match counts.
+
+    The teacher must explicitly accept a correction in the Review panel
+    before an orphan is treated as matched.
 
     Returns:
         (students_df_with_matches, orphan_scans, absent_students)
 
         students_df_with_matches: Original DataFrame with added columns:
-            - RosterID: Matched roster ID (or None)
+            - RosterID: Fuzzy-matched roster ID hint (or None)
             - MatchConfidence: 0-100
             - MatchType: exact/high_confidence/probable/no_match
 
-        orphan_scans: List of dicts for students who couldn't be matched confidently
-        absent_students: List of dicts for roster students not found in scans
+        orphan_scans: List of dicts for students whose ID is not in roster
+        absent_students: List of dicts for roster students with no exact scan match
     """
-    # Add matching columns
+    # Add hint columns (informational only — do not drive matching logic)
     students_df['RosterID'] = None
     students_df['MatchConfidence'] = 0.0
     students_df['MatchType'] = 'no_match'
 
+    # Build a set of normalised roster IDs for O(1) exact-match lookup
+    roster_id_set = {_normalize_id(row['StudentID']) for _, row in roster_df.iterrows()}
+
+    # IDs with an exact match — used to determine absent students
     matched_roster_ids = set()
 
-    # Resolve column names (scored CSV may use lowercase 'studentid', 'lastname', etc.)
+    # Resolve column names (scored CSV may use lowercase 'studentid', etc.)
     _sid_col = _find_col(students_df, ['StudentID', 'studentid', 'Student_ID', 'student_id', 'ID', 'id'])
     _last_col = _find_col(students_df, ['LastName', 'lastname', 'Last', 'last', 'Surname', 'last_name'])
     _first_col = _find_col(students_df, ['FirstName', 'firstname', 'First', 'first', 'first_name'])
@@ -676,24 +688,31 @@ def match_students_to_roster(
         scanned_last = str(row.get(_last_col, '')).strip() if _last_col else ''
         scanned_first = str(row.get(_first_col, '')).strip() if _first_col else ''
 
-        if not scanned_id and not scanned_last:
-            # Can't match without any identifying info
+        # Exact match — the only thing that counts
+        if scanned_id and scanned_id in roster_id_set:
+            students_df.at[idx, 'RosterID'] = scanned_id
+            students_df.at[idx, 'MatchConfidence'] = 100.0
+            students_df.at[idx, 'MatchType'] = 'exact'
+            matched_roster_ids.add(scanned_id)
             continue
 
-        matched_id, confidence, match_type = fuzzy_match_student(
-            scanned_id, scanned_last, scanned_first, roster_df
-        )
+        # No exact match → orphan.  Run fuzzy match for hint info only.
+        if scanned_id or scanned_last:
+            matched_id, confidence, match_type = fuzzy_match_student(
+                scanned_id, scanned_last, scanned_first, roster_df
+            )
+            if matched_id:
+                students_df.at[idx, 'RosterID'] = matched_id
+                students_df.at[idx, 'MatchConfidence'] = confidence
+                # Override type — regardless of fuzzy confidence this is
+                # still an orphan; the hint is stored but does not promote
+                # the scan to "matched".
+                students_df.at[idx, 'MatchType'] = 'probable'
 
-        if matched_id:
-            students_df.at[idx, 'RosterID'] = matched_id
-            students_df.at[idx, 'MatchConfidence'] = confidence
-            students_df.at[idx, 'MatchType'] = match_type
-            matched_roster_ids.add(matched_id)
-
-    # Find orphan scans (low confidence or no match)
+    # Orphan scans — every non-exact match
     orphan_scans = []
     for idx, row in students_df.iterrows():
-        if row['MatchType'] in ('no_match', 'probable'):
+        if row['MatchType'] != 'exact':
             orphan_scans.append({
                 'ScannedID': _normalize_id(row.get(_sid_col, '')) if _sid_col else '',
                 'LastName': str(row.get(_last_col, '')).strip() if _last_col else '',
@@ -703,7 +722,7 @@ def match_students_to_roster(
                 'Confidence': row['MatchConfidence'],
             })
 
-    # Find absent students (matched_roster_ids contains normalized strings)
+    # Absent students — roster entries with no exact scan match
     absent_students = []
     for _, row in roster_df.iterrows():
         roster_id = _normalize_id(row['StudentID'])
