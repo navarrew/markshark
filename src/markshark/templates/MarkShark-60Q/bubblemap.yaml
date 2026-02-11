@@ -41,7 +41,6 @@ styles:
     font_size: 12
     text_color: gray
 
-
     
   standard_bubbles:
     bubble_shape: circle
@@ -64,14 +63,14 @@ styles:
     extends: standard_bubbles
     bubble_shape: circle
     bubble_diameter_mm: 4
-    number_font_weight: bold
-    number_font_size: 10
-    number_color: black
-    number_format: "{n}."
-    number_font_weight: bold
-    number_align: right
+    question_number_font_size: 10
+    question_number_color: black
+    question_number_format: "{n}."
+    question_number_font_weight: bold
+    question_number_align: right
     show_header_boxes: false
     alternating_shade_axis: row
+    alternating_shade_extend_left_mm: 8.5
 
 page_1:
 
@@ -186,7 +185,7 @@ page_1:
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 18
+    x_mm: 20
     y_mm: 170
     width_mm: 30
     height_mm: 90
@@ -195,7 +194,7 @@ page_1:
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 69
+    x_mm: 71
     y_mm: 170
     width_mm: 30
     height_mm: 90
@@ -204,7 +203,7 @@ page_1:
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 120
+    x_mm: 122
     y_mm: 170
     width_mm: 30
     height_mm: 90
@@ -213,7 +212,7 @@ page_1:
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 171
+    x_mm: 173
     y_mm: 170
     width_mm: 30
     height_mm: 90

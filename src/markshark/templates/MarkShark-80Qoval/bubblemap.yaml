@@ -41,15 +41,9 @@ styles:
     font_size: 12
     text_color: gray
 
-
-  # Style with inheritance
-  subsection_label:
-    extends: section_label
-    font_size: 8
-    font_weight: bold
     
   standard_bubbles:
-    bubble_shape: oval
+    bubble_shape: circle
     bubble_diameter_mm: 3.8
     bubble_stroke_width_mm: 0.25
     bubble_stroke_color: dark_gray
@@ -67,16 +61,77 @@ styles:
     
   answer_bubbles:
     extends: standard_bubbles
-    number_font_weight: bold
-    number_font_size: 10
-    number_color: black
-    number_format: "{n}."
-    number_font_weight: bold
-    number_align: right
+    bubble_shape: oval
+    bubble_diameter_mm: 3.5
+    question_number_font_size: 10
+    question_number_color: black
+    question_number_format: "{n}."
+    question_number_font_weight: bold
+    question_number_align: right
     show_header_boxes: false
     alternating_shade_axis: row
+    alternating_shade_extend_left_mm: 8.5
 
 page_1:
+
+  text_zones:
+  - content: "- please fill bubbles completely -"
+    font_family: Poppins
+    font_size_pt: 8
+    font_weight: semibold
+    font_style: italic
+    text_align: center
+    x_mm: 108.0
+    y_mm: 272.0
+
+  textbox_zones:
+    - x_mm: 10
+      y_mm: 18.5
+      width_mm: 63
+      padding_mm: 2
+      border_style: none
+      line_spacing_mm: 4
+      items:
+        - type: spacer
+          height_mm: 1
+  
+        - type: labeled_line
+          label: "Name:"
+          font_size_pt: 9
+          font_family: Poppins
+          font_weight: semibold
+  
+        - type: labeled_line
+          label: "Signature:"
+          font_size_pt: 9
+          font_family: Poppins
+          font_weight: semibold
+
+        - type: labeled_line
+          label: "Date:"
+          font_size_pt: 9
+          font_family: Poppins
+          font_weight: semibold
+
+        - type: text
+          content: "DIRECTIONS"
+          font_family: Poppins
+          font_size_pt: 9
+          text_align: left
+          font_weight: bold
+          spacing_mm: 0.5
+  
+        - type: text
+          content: |
+            • Read each question carefully before answering
+            • Use a #2 pencil only
+            • Fill bubbles completely
+            • Erase changes thoroughly
+            • Do not fold or crease this form
+          font_size_pt: 7
+          font_family: Poppins
+          text_align: left
+
 
   last_name_zone:
     style: standard_bubbles
@@ -112,8 +167,8 @@ page_1:
     height_mm: 43
 
 
-  version_zones:
-  - style: standard_bubbles
+  version_zone:
+    style: standard_bubbles
     display_label: "TEST VERSION"
     numrows: 1
     numcols: 10
@@ -213,25 +268,4 @@ page_1:
       y2_mm: 263
       stroke_color: black
       stroke_width_mm: 0.2
-      
-  empty_zones:
-  - name: signature_box
-    x_mm: 12
-    y_mm: 70
-    width_mm: 61
-    height_mm: 14
-    style: thick_border
-    display_label: "Signature:"
-    label_inside: top_left
-    label_padding_mm: 1
-
-  text_zones:
-  - content: "Please fill bubbles completely."
-    font_family: Lexend
-    font_size_pt: 8
-    font_weight: bold
-#    text_decoration: underline      # none | underline | strikethrough
-    text_align: center
-    x_mm: 108.0                 # Reference point X
-    y_mm: 271.0                 # Reference point Y
 

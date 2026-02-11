@@ -13,6 +13,7 @@ Features:
 
 from __future__ import annotations
 from typing import Optional, List, Dict, Tuple
+import os
 
 import pandas as pd
 import numpy as np
@@ -79,9 +80,92 @@ def _clean_id_string(val) -> str:
     return s
 
 
-def load_corrections(corrections_xlsx: str) -> pd.DataFrame:
+def _load_corrections_csv(corrections_path: str) -> pd.DataFrame:
     """
-    Load corrections from a filled-in flagged.xlsx file.
+    Load corrections from the new append-only CSV format.
+
+    Expected format::
+
+        # applies to: /path/to/results.csv
+        timestamp,type,student_id,field,original,corrected,reason
+
+    Only *effective* corrections are returned (REVERTs cancel earlier entries).
+
+    Returns:
+        DataFrame with columns: student_id, question, corrected_answer, original_answer
+    """
+    import sys
+
+    rows: list[dict] = []
+    with open(corrections_path, "r", newline="", encoding="utf-8") as f:
+        first_line = f.readline()
+        # Skip the "# applies to:" header comment
+        if not (first_line.startswith("# applies to: ")
+                or first_line.startswith("# applies_to: ")):
+            f.seek(0)
+
+        import csv as csv_mod
+        reader = csv_mod.DictReader(f)
+        if reader.fieldnames is None:
+            return pd.DataFrame(columns=['student_id', 'question', 'corrected_answer', 'original_answer'])
+        for row in reader:
+            rows.append(row)
+
+    if not rows:
+        return pd.DataFrame(columns=['student_id', 'question', 'corrected_answer', 'original_answer'])
+
+    # Compute effective corrections: apply entries in order, REVERTs remove.
+    # Store both corrected AND original values.
+    effective: dict[str, dict[str, dict[str, str]]] = {}  # student_id -> {field: {corrected, original}}
+    for row in rows:
+        sid = _clean_id_string(row.get('student_id', ''))
+        ctype = (row.get('type', '') or '').strip().upper()
+        field = (row.get('field', '') or '').strip()
+        corrected = (row.get('corrected', '') or '').strip()
+        original = (row.get('original', '') or '').strip()
+
+        if not sid or not field:
+            continue
+
+        if sid not in effective:
+            effective[sid] = {}
+
+        if ctype == 'REVERT':
+            effective[sid].pop(field, None)
+        else:
+            effective[sid][field] = {'corrected': corrected, 'original': original}
+
+    # Flatten to rows the rest of the pipeline expects
+    result_rows = []
+    for sid, fields in effective.items():
+        for field, vals in fields.items():
+            corrected = vals['corrected']
+            original = vals['original']
+            if not corrected:
+                continue
+            # Map field names to what merge_corrections expects
+            if field == 'student_id':
+                question = 'ID'
+            else:
+                question = field  # e.g. "Q15", "LastName", etc.
+            result_rows.append({
+                'student_id': sid,
+                'question': question,
+                'corrected_answer': corrected,
+                'original_answer': original,
+            })
+
+    if not result_rows:
+        return pd.DataFrame(columns=['student_id', 'question', 'corrected_answer', 'original_answer'])
+
+    df = pd.DataFrame(result_rows)
+    print(f"[corrections] Loaded CSV with {len(df)} effective corrections", file=sys.stderr)
+    return df
+
+
+def _load_corrections_xlsx(corrections_xlsx: str) -> pd.DataFrame:
+    """
+    Load corrections from a filled-in flagged.xlsx file (legacy format).
 
     The file should have columns:
     - Student ID
@@ -136,7 +220,33 @@ def load_corrections(corrections_xlsx: str) -> pd.DataFrame:
     if corrections.empty:
         return pd.DataFrame(columns=['student_id', 'question', 'corrected_answer'])
 
-    return corrections[['student_id', 'question', 'corrected_answer']].copy()
+    result = corrections[['student_id', 'question', 'corrected_answer']].copy()
+    # Legacy XLSX format doesn't store original values — add empty column
+    if 'original_answer' not in result.columns:
+        result['original_answer'] = ''
+    return result
+
+
+def load_corrections(corrections_path: str) -> pd.DataFrame:
+    """
+    Load corrections from either CSV (new format) or XLSX (legacy format).
+
+    Dispatches based on file extension:
+    - ``.csv`` — new append-only format with ``# applies to:`` header
+    - ``.xlsx`` — legacy flagged-items Excel format
+
+    Returns:
+        DataFrame with columns: student_id, question, corrected_answer
+    """
+    import sys
+
+    path_lower = str(corrections_path).lower()
+    if path_lower.endswith('.csv'):
+        print(f"[corrections] Loading CSV corrections: {corrections_path}", file=sys.stderr)
+        return _load_corrections_csv(corrections_path)
+    else:
+        print(f"[corrections] Loading XLSX corrections: {corrections_path}", file=sys.stderr)
+        return _load_corrections_xlsx(corrections_path)
 
 
 def _question_to_col(question_val, item_cols: List[str]) -> Optional[str]:
@@ -324,7 +434,10 @@ def _recalculate_student_scores(
     percent = (correct / total * 100) if total > 0 else 0
 
     # Update the score columns (handle all case variants from CSV normalization)
-    for name, value in [('correct', correct), ('incorrect', incorrect),
+    # NOTE: This simple recalc treats every question as 1 point (score == correct).
+    # For advanced scoring with weighted points, score would need recalculating
+    # using the key's point values, but corrections are rare in that context.
+    for name, value in [('score', correct), ('correct', correct), ('incorrect', incorrect),
                         ('blank', blank), ('multi', multi), ('percent', round(percent, 2))]:
         col = _find_col(df, [name, name.capitalize(), name.upper()])
         if col is not None:
@@ -340,16 +453,13 @@ def apply_corrections_to_csv(
     """
     Apply teacher corrections to a scored CSV and write a new corrected CSV.
 
-    Reads the scored CSV, loads corrections from the filled flagged.xlsx,
-    updates the answer columns, recalculates scores, and writes a new CSV.
-
-    Special handling for ID corrections (Question="ID" in flagged XLSX):
-    - Updates StudentID column to the corrected value
-    - If roster provided, also updates name columns from roster
+    Reads the scored CSV, loads corrections from a corrections file
+    (.csv or .xlsx), updates the answer columns, recalculates scores,
+    and writes a new CSV.
 
     Args:
         input_csv: Path to original scored CSV
-        corrections_xlsx: Path to filled flagged.xlsx with corrections
+        corrections_xlsx: Path to corrections file (.csv or .xlsx)
         output_csv: Path to write the corrected CSV
         roster_csv: Optional roster CSV for ID corrections (to look up names)
 
@@ -749,7 +859,7 @@ def _load_score_csv_robust(input_csv: str) -> pd.DataFrame:
     for col in df.columns:
         col_lower = col.lower().strip()
         # Map common variations to standard names
-        if col_lower in ('correct', 'incorrect', 'blank', 'multi', 'percent',
+        if col_lower in ('score', 'correct', 'incorrect', 'blank', 'multi', 'percent',
                          'version', 'studentid', 'lastname', 'firstname',
                          'page', 'page_index'):
             column_mapping[col] = col_lower
@@ -763,7 +873,7 @@ def _load_score_csv_robust(input_csv: str) -> pd.DataFrame:
 
     # Convert score columns from strings to proper numeric types so Excel
     # formats them as numbers instead of left-aligned text.
-    for col in ('correct', 'incorrect', 'blank', 'multi'):
+    for col in ('score', 'correct', 'incorrect', 'blank', 'multi'):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
     if 'percent' in df.columns:
@@ -783,6 +893,7 @@ def generate_report(
     run_label: Optional[str] = None,
     corrections_applied: int = 0,
     corrections_xlsx: Optional[str] = None,
+    scoring_params: Optional[Dict] = None,
 ):
     r"""
     Generate comprehensive Excel report from scored CSV.
@@ -793,10 +904,21 @@ def generate_report(
         roster_csv: Optional path to class roster CSV
         item_pattern: Regex pattern for item columns (default: Q\d+)
         project_name: Optional project name for report header
-        run_label: Optional run label (e.g., "run_001_2025-01-21_1430")
+        run_label: Optional run label (e.g., "2025-01-21_final")
         corrections_applied: Number of corrections applied (for display on Summary tab)
         corrections_xlsx: Optional path to the corrections XLSX (for listing details on Summary tab)
     """
+    # Auto-load scoring parameters from companion JSON if not explicitly given
+    if scoring_params is None:
+        import json as _json
+        params_path = os.path.splitext(input_csv)[0] + "_params.json"
+        if os.path.isfile(params_path):
+            try:
+                with open(params_path, "r", encoding="utf-8") as pf:
+                    scoring_params = _json.load(pf)
+            except Exception:
+                scoring_params = None
+
     # Load scored results - handle messy CSV from score with include_stats
     df = _load_score_csv_robust(input_csv)
 
@@ -809,6 +931,22 @@ def generate_report(
         )
 
     k = len(item_cols)
+
+    # Apply corrections to the data BEFORE computing stats / building tabs
+    if corrections_xlsx:
+        corrections_df = load_corrections(corrections_xlsx)
+        if not corrections_df.empty:
+            key_row_idx = detect_key_row_index(df, item_cols, key_label="KEY")
+            # roster_df isn't loaded yet; load a lightweight copy for ID corrections
+            roster_for_merge = None
+            if roster_csv:
+                try:
+                    roster_for_merge = load_roster(roster_csv)
+                except Exception:
+                    pass
+            df, corrections_applied = merge_corrections(
+                df, corrections_df, item_cols, key_row_idx, roster=roster_for_merge,
+            )
 
     # Load roster if provided
     roster_df = None
@@ -915,14 +1053,44 @@ def generate_report(
     kr20_val = kr20(pooled_items, pooled_totals)
     kr21_val = kr21(pooled_items, pooled_totals)
 
-    # Load full flagged xlsx for display on summary tab (all rows, all columns)
+    # Load corrections detail for display on summary tab
     corrections_detail = None
     if corrections_xlsx:
         try:
-            try:
-                corrections_detail = pd.read_excel(corrections_xlsx, sheet_name="Flagged Items")
-            except ValueError:
-                corrections_detail = pd.read_excel(corrections_xlsx, sheet_name=0)
+            if str(corrections_xlsx).lower().endswith('.csv'):
+                # New CSV format — load effective corrections for display
+                corrections_detail = load_corrections(corrections_xlsx)
+                # Rename columns for display
+                corrections_detail = corrections_detail.rename(columns={
+                    'student_id': 'Student ID',
+                    'question': 'Question',
+                    'corrected_answer': 'Corrected Answer',
+                    'original_answer': 'Original Answer',
+                })
+                # Add student names from the results DataFrame
+                id_col = _find_col(df, ['studentid', 'StudentID', 'Student_ID', 'student_id', 'ID', 'id'])
+                last_col = _find_col(df, ['lastname', 'LastName', 'Last_Name', 'last_name', 'Last'])
+                first_col = _find_col(df, ['firstname', 'FirstName', 'First_Name', 'first_name', 'First'])
+                if id_col and (last_col or first_col):
+                    names = []
+                    for _, crow in corrections_detail.iterrows():
+                        sid = _normalize_id(crow.get('Student ID', ''))
+                        mask = df[id_col].apply(_normalize_id) == sid
+                        matched = df[mask]
+                        if not matched.empty:
+                            row_data = matched.iloc[0]
+                            last_name = str(row_data.get(last_col, '')).strip() if last_col else ''
+                            first_name = str(row_data.get(first_col, '')).strip() if first_col else ''
+                            name = f"{last_name}, {first_name}".strip(', ')
+                            names.append(name)
+                        else:
+                            names.append('')
+                    corrections_detail.insert(1, 'Student Name', names)
+            else:
+                try:
+                    corrections_detail = pd.read_excel(corrections_xlsx, sheet_name="Flagged Items")
+                except ValueError:
+                    corrections_detail = pd.read_excel(corrections_xlsx, sheet_name=0)
         except Exception:
             corrections_detail = None
 
@@ -935,7 +1103,9 @@ def generate_report(
         wb, k, total_n_students, mean_total, std_total, kr20_val, kr21_val,
         versions, version_stats,
         orphan_scans, absent_students, project_name, run_label,
-        corrections_applied, corrections_detail
+        corrections_applied, corrections_detail,
+        df=df, item_cols=item_cols, input_csv_path=input_csv,
+        scoring_params=scoring_params,
     )
 
     # ========== PER-VERSION TABS ==========
@@ -950,6 +1120,9 @@ def generate_report(
     # ========== CLASS SCORES TAB ==========
     create_class_scores_tab(wb, df, item_cols, k)
 
+    # ========== ANSWER KEY TAB ==========
+    create_answer_key_tab(wb, item_cols, versions, version_stats)
+
     # Save workbook
     wb.save(out_xlsx)
     print(f"Excel report generated: {out_xlsx}")
@@ -959,56 +1132,70 @@ def create_summary_tab(
     wb, k, n_students, mean_total, std_total, kr20_val, kr21_val,
     versions, version_stats,
     orphan_scans, absent_students, project_name=None, run_label=None,
-    corrections_applied=0, corrections_detail=None
+    corrections_applied=0, corrections_detail=None,
+    df=None, item_cols=None, input_csv_path=None,
+    scoring_params=None,
 ):
-    """Create summary tab with per-version and amalgamated exam statistics."""
+    """Create summary tab with statistics, flagged items, and scoring parameters.
+
+    Layout order:
+        1. Title
+        2. Project / Scores file / Generated
+        3. Per-version & amalgamated statistics + reliability
+        4. Flagged items (blanks, multis, orphans, corrections)
+        5. Scoring parameters (for reproducibility)
+    """
     from datetime import datetime
+    import os
 
     ws = wb.create_sheet("Summary", 0)
     n_versions = len(versions)
     is_multi_version = n_versions > 1
 
-    # Title
+    # ------------------------------------------------------------------ #
+    # 1. Title
+    # ------------------------------------------------------------------ #
     ws['A1'] = "MarkShark Exam Report"
     ws['A1'].font = Font(size=16, bold=True)
 
-    # Project metadata (if provided)
-    row = 2
+    # ------------------------------------------------------------------ #
+    # 2. Project metadata
+    # ------------------------------------------------------------------ #
+    row = 3
     if project_name:
         ws[f'A{row}'] = "Project:"
         ws[f'A{row}'].font = FONT_BOLD
         ws[f'B{row}'] = project_name
         row += 1
 
-    if run_label:
-        ws[f'A{row}'] = "Run:"
+    if input_csv_path:
+        ws[f'A{row}'] = "Scores File:"
         ws[f'A{row}'].font = FONT_BOLD
-        ws[f'B{row}'] = run_label
+        ws[f'B{row}'] = str(input_csv_path)
         row += 1
 
-    # Always show generation timestamp
     ws[f'A{row}'] = "Generated:"
     ws[f'A{row}'].font = FONT_BOLD
     ws[f'B{row}'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     row += 1
 
-    # Show corrections applied (if any)
     if corrections_applied > 0:
         ws[f'A{row}'] = "Corrections Applied:"
         ws[f'A{row}'].font = FONT_BOLD
         ws[f'B{row}'] = f"{corrections_applied} manual corrections from review"
-        ws[f'B{row}'].font = Font(color="0000FF", italic=True)  # Blue text
+        ws[f'B{row}'].font = Font(color="0000FF", italic=True)
         row += 1
 
-    row += 1  # Extra space before stats
+    row += 1  # spacer
 
-    # ---- Per-version stats (shown first so teachers can spot version-level issues) ----
+    # ------------------------------------------------------------------ #
+    # 3. Per-version & amalgamated statistics + reliability
+    # ------------------------------------------------------------------ #
     if is_multi_version:
         ws[f'A{row}'] = "Per-Version Statistics"
         ws[f'A{row}'].font = Font(size=13, bold=True)
         row += 1
 
-        # Table header
         ver_headers = ["", "N Students", "Mean Score", "Mean %", "Std Dev",
                         "KR-20", "KR-21"]
         for col_idx, hdr in enumerate(ver_headers, start=1):
@@ -1032,15 +1219,13 @@ def create_summary_tab(
             ws.cell(row=row, column=6, value=f"{ver_kr20:.3f}" if not np.isnan(ver_kr20) else "N/A")
             ws.cell(row=row, column=7, value=f"{ver_kr21:.3f}" if not np.isnan(ver_kr21) else "N/A")
 
-            # Apply border to data cells
             for col_idx in range(1, len(ver_headers) + 1):
                 ws.cell(row=row, column=col_idx).border = BORDER_THIN
-
             row += 1
 
-        row += 1  # Space before amalgamated stats
+        row += 1  # spacer
 
-    # ---- Amalgamated (overall) stats ----
+    # ---- Amalgamated / overall stats ----
     if is_multi_version:
         ws[f'A{row}'] = "Amalgamated Exam Statistics (All Versions)"
     else:
@@ -1058,7 +1243,6 @@ def create_summary_tab(
         ("KR-20 Reliability", f"{kr20_val:.3f}" if not np.isnan(kr20_val) else "N/A"),
         ("KR-21 Reliability", f"{kr21_val:.3f}" if not np.isnan(kr21_val) else "N/A"),
     ]
-
     for stat_name, stat_value in stats:
         ws[f'A{row}'] = stat_name
         ws[f'B{row}'] = stat_value
@@ -1069,10 +1253,9 @@ def create_summary_tab(
     ws[f'A{row}'] = "Reliability Interpretation"
     ws[f'A{row}'].font = FONT_BOLD
     row += 1
-
     if not np.isnan(kr20_val):
         if kr20_val >= 0.80:
-            ws[f'A{row}'] = "Excellent reliability (≥0.80)"
+            ws[f'A{row}'] = "Excellent reliability (\u22650.80)"
             ws[f'A{row}'].fill = COLOR_GOOD
         elif kr20_val >= 0.70:
             ws[f'A{row}'] = "Good reliability (0.70-0.80)"
@@ -1084,108 +1267,273 @@ def create_summary_tab(
             ws[f'A{row}'] = "Poor reliability (<0.60) - exam needs work"
             ws[f'A{row}'].fill = COLOR_PROBLEM
 
-    # Roster issues
-    if orphan_scans or absent_students:
-        row += 2
-        ws[f'A{row}'] = "Roster Issues"
-        ws[f'A{row}'].font = Font(size=14, bold=True, color="FF0000")
+    # ------------------------------------------------------------------ #
+    # 4. Absent Students & Flagged Items
+    # ------------------------------------------------------------------ #
+    row += 2
+    ws[f'A{row}'] = "Absent Students & Flagged Items"
+    ws[f'A{row}'].font = Font(size=13, bold=True)
+    row += 1
+
+    row = _write_flagged_items_section(
+        ws, row, df, item_cols,
+        orphan_scans, absent_students,
+        corrections_detail, corrections_applied,
+    )
+
+    # ------------------------------------------------------------------ #
+    # 5. Scoring Parameters (for reproducibility)
+    # ------------------------------------------------------------------ #
+    if scoring_params:
+        row += 1
+        ws[f'A{row}'] = "Scoring Parameters"
+        ws[f'A{row}'].font = Font(size=13, bold=True)
+        row += 1
+        ws[f'A{row}'] = "(Recorded so results can be replicated if needed.)"
+        ws[f'A{row}'].font = Font(italic=True, color="888888")
         row += 1
 
-        if orphan_scans:
-            ws[f'A{row}'] = f"⚠ {len(orphan_scans)} orphan scan(s)"
-            ws[f'A{row}'].fill = COLOR_ORPHAN
+        param_headers = ["Parameter", "Value"]
+        for col_idx, hdr in enumerate(param_headers, start=1):
+            ws.cell(row=row, column=col_idx, value=hdr)
+        format_header_row(ws, row)
+        row += 1
+
+        # Display-friendly names for common scoring params
+        _labels = {
+            'min_fill': 'Min Fill %',
+            'top2_ratio': 'Top-2 Ratio %',
+            'min_top2_diff': 'Min Top-2 Diff',
+            'fixed_thresh': 'Fixed Threshold',
+            'auto_calibrate_thresh': 'Auto Calibrate Threshold',
+            'calibrate_background': 'Background Calibration',
+            'background_percentile': 'Background Percentile',
+            'adaptive_rescoring': 'Adaptive Rescoring',
+            'adaptive_max_adjustment': 'Adaptive Max Adjustment',
+            'adaptive_min_above_floor': 'Adaptive Min Above Floor',
+            'dpi': 'Render DPI',
+        }
+        for param_key, param_val in scoring_params.items():
+            label = _labels.get(param_key, param_key)
+            ws.cell(row=row, column=1, value=label)
+            ws.cell(row=row, column=2, value=str(param_val))
+            for c in (1, 2):
+                ws.cell(row=row, column=c).border = BORDER_THIN
             row += 1
-
-            # List orphan scans
-            ws[f'A{row}'] = "Orphan Scans (ID mismatch or fuzzy match):"
-            ws[f'A{row}'].font = FONT_BOLD
-            row += 1
-            ws[f'A{row}'] = "Scanned ID"
-            ws[f'B{row}'] = "Last Name"
-            ws[f'C{row}'] = "First Name"
-            ws[f'D{row}'] = "Match Type"
-            ws[f'E{row}'] = "Possible Match"
-            format_header_row(ws, row)
-            row += 1
-
-            for orphan in orphan_scans:
-                ws[f'A{row}'] = orphan.get('ScannedID', '')
-                ws[f'B{row}'] = orphan.get('LastName', '')
-                ws[f'C{row}'] = orphan.get('FirstName', '')
-                ws[f'D{row}'] = orphan.get('MatchType', 'no_match')
-                ws[f'E{row}'] = orphan.get('PossibleMatch', '')
-                row += 1
-            row += 1
-
-        if absent_students:
-            ws[f'A{row}'] = f"⚠ {len(absent_students)} absent student(s)"
-            ws[f'A{row}'].fill = COLOR_WARNING
-            row += 1
-
-            # List absent students
-            ws[f'A{row}'] = "Absent Students:"
-            ws[f'A{row}'].font = FONT_BOLD
-            row += 1
-            ws[f'A{row}'] = "Student ID"
-            ws[f'B{row}'] = "Last Name"
-            ws[f'C{row}'] = "First Name"
-            format_header_row(ws, row)
-            row += 1
-
-            for student in absent_students:
-                cell = ws[f'A{row}']
-                cell.value = student['StudentID']
-                cell.number_format = '@'  # Format as text
-                ws[f'B{row}'] = student['LastName']
-                ws[f'C{row}'] = student['FirstName']
-                row += 1
-
-    # Corrections detail (only rows with actual corrections from flagged XLSX)
-    if corrections_detail is not None and not corrections_detail.empty:
-        # Find the "Corrected Answer" column (case-insensitive)
-        corrected_col = None
-        for col in corrections_detail.columns:
-            if 'corrected' in col.lower() and 'answer' in col.lower():
-                corrected_col = col
-                break
-
-        # Filter to only rows with non-empty corrections
-        if corrected_col:
-            corrections_detail = corrections_detail[
-                corrections_detail[corrected_col].notna() &
-                (corrections_detail[corrected_col].astype(str).str.strip() != '') &
-                (corrections_detail[corrected_col].astype(str).str.lower() != 'nan')
-            ]
-
-        if not corrections_detail.empty:
-            row += 2
-            ws[f'A{row}'] = "Corrections Applied"
-            ws[f'A{row}'].font = Font(size=14, bold=True, color="FF0000")
-            row += 1
-
-            # Write all columns from the flagged xlsx as-is
-            flagged_cols = list(corrections_detail.columns)
-            for col_idx, col_name in enumerate(flagged_cols, start=1):
-                ws.cell(row=row, column=col_idx, value=str(col_name))
-            format_header_row(ws, row)
-            row += 1
-
-            for _, corr_row in corrections_detail.iterrows():
-                for col_idx, col_name in enumerate(flagged_cols, start=1):
-                    val = corr_row.get(col_name, '')
-                    # Clean up NaN display
-                    if pd.isna(val):
-                        val = ''
-                    cell = ws.cell(row=row, column=col_idx, value=val)
-                    # Format ID-related columns as text
-                    col_lower = col_name.lower().replace(' ', '_')
-                    if 'student' in col_lower and 'id' in col_lower:
-                        cell.number_format = '@'
-                    if 'corrected' in col_lower:
-                        cell.number_format = '@'
-                row += 1
 
     auto_size_columns(ws)
+
+
+def _write_flagged_items_section(
+    ws, start_row, df, item_cols,
+    orphan_scans, absent_students,
+    corrections_detail, corrections_applied,
+):
+    """Write the inline flagged-items section on the Summary tab.
+
+    Includes: blanks, multis, orphan scans, absent students, corrections.
+    Returns the next available row number.
+    """
+    if df is None or item_cols is None:
+        return start_row
+
+    row = start_row
+
+    # ---- Resolve column names ----
+    id_col = _find_col(df, ['studentid', 'StudentID', 'Student_ID', 'student_id', 'ID', 'id'])
+    last_col = _find_col(df, ['lastname', 'LastName', 'Last_Name', 'last_name', 'Last'])
+    first_col = _find_col(df, ['firstname', 'FirstName', 'First_Name', 'first_name', 'First'])
+    blank_col = _find_col(df, ['blank', 'Blank'])
+    multi_col = _find_col(df, ['multi', 'Multi'])
+    version_col = _find_col(df, ['version', 'Version'])
+    flagdetails_col = _find_col(df, ['flagdetails', 'FlagDetails', 'flag_details'])
+
+    # ---- Build corrections lookup ----
+    corr_lookup: Dict[str, List[str]] = {}
+    if corrections_detail is not None and not corrections_detail.empty:
+        sid_cname = 'Student ID' if 'Student ID' in corrections_detail.columns else _find_col(
+            corrections_detail, ['student_id', 'Student ID', 'StudentID']
+        )
+        q_cname = 'Question' if 'Question' in corrections_detail.columns else _find_col(
+            corrections_detail, ['question', 'Question']
+        )
+        ans_cname = 'Corrected Answer' if 'Corrected Answer' in corrections_detail.columns else _find_col(
+            corrections_detail, ['corrected_answer', 'Corrected Answer']
+        )
+        orig_cname = 'Original Answer' if 'Original Answer' in corrections_detail.columns else _find_col(
+            corrections_detail, ['original_answer', 'Original Answer']
+        )
+        if sid_cname and q_cname and ans_cname:
+            for _, crow in corrections_detail.iterrows():
+                sid = _normalize_id(crow.get(sid_cname, ''))
+                q = str(crow.get(q_cname, '')).strip()
+                a = str(crow.get(ans_cname, '')).strip()
+                orig = str(crow.get(orig_cname, '')).strip() if orig_cname else ''
+                if orig.lower() in ('', 'nan', 'none'):
+                    orig = ''
+                if sid and q:
+                    if q.upper() == 'ID':
+                        # ID correction: show oldID → newID
+                        # Key by the NEW id (corrected answer) since merge_corrections
+                        # already updated the DataFrame's ID column.
+                        new_id = _normalize_id(a)
+                        label = f"ID: {sid}\u2192{a}"
+                        corr_lookup.setdefault(new_id, []).append(label)
+                    elif orig:
+                        # Answer correction with original: Q15: A→C
+                        corr_lookup.setdefault(sid, []).append(f"{q}: {orig}\u2192{a}")
+                    else:
+                        # Answer correction without original (legacy): Q15→C
+                        corr_lookup.setdefault(sid, []).append(f"{q}\u2192{a}")
+
+    # ---- Build orphan lookup (by scanned ID) for fast access ----
+    orphan_lookup: Dict[str, dict] = {}
+    if orphan_scans:
+        for o in orphan_scans:
+            oid = _normalize_id(o.get('ScannedID', ''))
+            if oid:
+                orphan_lookup[oid] = o
+
+    # ---- Filter to student rows only ----
+    key_mask = df.apply(
+        lambda r: any(str(cell).strip().upper() == 'KEY' for cell in r), axis=1
+    )
+    students = df[~key_mask].copy()
+
+    # ---- Collect flagged rows ----
+    flagged_rows = []
+    for idx, srow in students.iterrows():
+        issues = []
+        blank_n = multi_n = 0
+
+        if blank_col:
+            try:
+                blank_n = int(srow.get(blank_col, 0))
+            except (ValueError, TypeError):
+                blank_n = 0
+        if multi_col:
+            try:
+                multi_n = int(srow.get(multi_col, 0))
+            except (ValueError, TypeError):
+                multi_n = 0
+
+        if blank_n > 0:
+            issues.append(f"{blank_n} blank")
+        if multi_n > 0:
+            issues.append(f"{multi_n} multi")
+
+        sid = _normalize_id(srow.get(id_col, '')) if id_col else ''
+
+        # Check orphan status — from orphan_scans list OR FlagDetails column
+        is_orphan = sid in orphan_lookup
+        if not is_orphan and flagdetails_col:
+            fd = str(srow.get(flagdetails_col, '')).strip()
+            if 'orphan' in fd.lower():
+                is_orphan = True
+        orphan_info = orphan_lookup.get(sid) if is_orphan else None
+        if is_orphan:
+            match_type = orphan_info.get('MatchType', 'no_match') if orphan_info else 'no_match'
+            possible = orphan_info.get('PossibleMatch', '') if orphan_info else ''
+            if possible:
+                issues.append(f"orphan (possible: {possible})")
+            else:
+                issues.append("orphan")
+
+        # Corrections
+        corr_list = corr_lookup.get(sid, [])
+        if corr_list:
+            issues.append(f"{len(corr_list)} correction(s)")
+
+        if not issues:
+            continue
+
+        # Identify problem questions
+        problem_qs = []
+        for col in item_cols:
+            answer = str(srow.get(col, '')).strip().upper() if pd.notna(srow.get(col)) else ''
+            if not answer or answer in ('', 'NAN', 'BLANK', 'NONE', '?', '-'):
+                problem_qs.append(f"{col}=BLANK")
+            elif ',' in answer or answer == 'MULTI' or (len(answer) > 1 and answer not in ('BLANK', 'NONE', 'MULTI', 'NAN')):
+                problem_qs.append(f"{col}={answer}")
+
+        flagged_rows.append({
+            'student_id': sid,
+            'last_name': str(srow.get(last_col, '')).strip() if last_col else '',
+            'first_name': str(srow.get(first_col, '')).strip() if first_col else '',
+            'version': str(srow.get(version_col, '')).strip() if version_col else '',
+            'issues': "; ".join(issues),
+            'problem_questions': ", ".join(problem_qs[:10]) + ("..." if len(problem_qs) > 10 else ""),
+            'corrections_applied': "; ".join(corr_list) if corr_list else "",
+            'is_orphan': is_orphan,
+        })
+
+    # ---- Absent students (on roster but no scan) ----
+    if absent_students:
+        ws.cell(row=row, column=1, value=f"\u26a0 {len(absent_students)} absent student(s)")
+        ws.cell(row=row, column=1).fill = COLOR_WARNING
+        ws.cell(row=row, column=1).font = FONT_BOLD
+        row += 1
+
+        abs_headers = ["Student ID", "Last Name", "First Name"]
+        for col_idx, hdr in enumerate(abs_headers, start=1):
+            ws.cell(row=row, column=col_idx, value=hdr)
+        format_header_row(ws, row)
+        row += 1
+
+        for student in absent_students:
+            cell = ws.cell(row=row, column=1, value=student['StudentID'])
+            cell.number_format = '@'
+            ws.cell(row=row, column=2, value=student['LastName'])
+            ws.cell(row=row, column=3, value=student['FirstName'])
+            row += 1
+
+        row += 1  # spacer after absent students
+
+    # ---- Write flagged items table ----
+    headers = ['Student ID', 'Last Name', 'First Name', 'Version', 'Issues',
+               'Problem Questions', 'Corrections Applied']
+    for col_idx, hdr in enumerate(headers, start=1):
+        ws.cell(row=row, column=col_idx, value=hdr)
+    format_header_row(ws, row)
+    row += 1
+
+    if not flagged_rows:
+        ws.cell(row=row, column=1, value="No flagged items.")
+        ws.cell(row=row, column=1).font = Font(italic=True, color="666666")
+        row += 1
+    else:
+        for item in flagged_rows:
+            cell = ws.cell(row=row, column=1, value=item['student_id'])
+            cell.number_format = '@'
+            ws.cell(row=row, column=2, value=item['last_name'])
+            ws.cell(row=row, column=3, value=item['first_name'])
+            ws.cell(row=row, column=4, value=item['version'])
+            ws.cell(row=row, column=5, value=item['issues'])
+            ws.cell(row=row, column=6, value=item['problem_questions'])
+            corr_cell = ws.cell(row=row, column=7, value=item['corrections_applied'])
+            if item['corrections_applied']:
+                corr_cell.font = Font(color="0000FF", italic=True)
+
+            # Color-code by severity
+            if item.get('is_orphan'):
+                ws.cell(row=row, column=5).fill = COLOR_ORPHAN
+            elif 'correction' in item['issues']:
+                for c in range(1, len(headers) + 1):
+                    ws.cell(row=row, column=c).border = BORDER_THIN
+            elif 'multi' in item['issues']:
+                ws.cell(row=row, column=5).fill = COLOR_MULTI
+            elif 'blank' in item['issues']:
+                ws.cell(row=row, column=5).fill = COLOR_BLANK
+
+            row += 1
+
+        # Flagged summary line
+        row += 1
+        ws.cell(row=row, column=1, value=f"Total flagged: {len(flagged_rows)}")
+        ws.cell(row=row, column=1).font = FONT_BOLD
+        row += 1
+
+    return row
 
 
 def create_version_tab(
@@ -1229,7 +1577,7 @@ def create_version_tab(
     display_cols.append('Issue')
 
     # Score columns (check both cases)
-    for col in ['correct', 'incorrect', 'blank', 'multi', 'percent']:
+    for col in ['score', 'correct', 'incorrect', 'blank', 'multi', 'percent']:
         if col in df_version.columns:
             display_cols.append(col)
         elif col.capitalize() in df_version.columns:
@@ -1402,6 +1750,116 @@ def create_version_tab(
                     fill = COLOR_PROBLEM
                 cell = ws.cell(row=row_num, column=col_idx, value=quality)
                 cell.fill = fill
+    row_num += 1
+
+    # ---- Per-version Response Summary ----
+    row_num += 2
+    ws.cell(row=row_num, column=1, value="Response Distribution")
+    ws.cell(row=row_num, column=1).font = Font(size=13, bold=True)
+    row_num += 1
+
+    n_ver_students = len(student_rows)
+
+    # Collect all answer options seen for this version's students
+    all_options = set()
+    for col in item_cols:
+        vals = student_rows[col].dropna().astype(str).str.strip().str.upper()
+        for v in vals:
+            if v and v not in ('', 'NAN', 'NONE', 'BLANK', '?', '-', 'MULTI'):
+                if ',' not in v and len(v) <= 2:
+                    all_options.add(v)
+    sorted_options = sorted(all_options)
+
+    # Build correct answers from this version's key
+    correct_answers = {}
+    if key_series is not None:
+        for col in item_cols:
+            if col in key_series.index:
+                key_val = str(key_series[col]).strip().upper()
+                if key_val and key_val not in ('', 'NAN', 'NONE'):
+                    correct_answers[col] = key_val
+
+    # Response summary header
+    resp_headers = ['Question', 'Correct', '# Students', '% Correct']
+    resp_headers += sorted_options
+    resp_headers += ['Blank', 'Multi']
+    for col_idx, hdr in enumerate(resp_headers, start=1):
+        ws.cell(row=row_num, column=col_idx, value=hdr)
+    format_header_row(ws, row_num)
+    row_num += 1
+
+    # Per-question response data
+    for col_name in item_cols:
+        answers = student_rows[col_name].fillna('').astype(str).str.strip().str.upper()
+
+        counts = {}
+        blank_count = 0
+        multi_count = 0
+        correct_count = 0
+        correct_answer = correct_answers.get(col_name, '')
+
+        for answer in answers:
+            if not answer or answer in ('', 'NAN', 'NONE', 'BLANK', '?', '-'):
+                blank_count += 1
+            elif ',' in answer or answer == 'MULTI' or (len(answer) > 1 and answer not in sorted_options):
+                multi_count += 1
+            else:
+                counts[answer] = counts.get(answer, 0) + 1
+                if answer == correct_answer:
+                    correct_count += 1
+
+        pct_correct = (correct_count / n_ver_students * 100) if n_ver_students > 0 else 0
+
+        ws.cell(row=row_num, column=1, value=col_name)
+        ws.cell(row=row_num, column=1).font = FONT_BOLD
+        ws.cell(row=row_num, column=2, value=correct_answer)
+        ws.cell(row=row_num, column=3, value=n_ver_students)
+
+        pct_cell = ws.cell(row=row_num, column=4, value=f"{pct_correct:.1f}%")
+        if pct_correct >= 80:
+            pct_cell.fill = COLOR_GOOD
+        elif pct_correct >= 50:
+            pct_cell.fill = COLOR_WARNING
+        else:
+            pct_cell.fill = COLOR_PROBLEM
+
+        # Write counts for each option
+        for opt_idx, option in enumerate(sorted_options):
+            col_offset = 5 + opt_idx
+            count = counts.get(option, 0)
+            cell = ws.cell(row=row_num, column=col_offset, value=count)
+            if option == correct_answer:
+                cell.font = Font(bold=True, color="006600")
+            elif count > 0 and n_ver_students > 0 and (count / n_ver_students) > 0.25:
+                cell.fill = COLOR_WARNING
+
+        # Blank and Multi columns
+        blank_offset = 5 + len(sorted_options)
+        multi_offset = blank_offset + 1
+        blank_cell = ws.cell(row=row_num, column=blank_offset, value=blank_count)
+        if blank_count > 0:
+            blank_cell.fill = COLOR_BLANK
+        multi_cell = ws.cell(row=row_num, column=multi_offset, value=multi_count)
+        if multi_count > 0:
+            multi_cell.fill = COLOR_MULTI
+
+        row_num += 1
+
+    # Legend
+    row_num += 1
+    ws.cell(row=row_num, column=1, value="Legend:")
+    ws.cell(row=row_num, column=1).font = FONT_BOLD
+    row_num += 1
+    ws.cell(row=row_num, column=1, value="Green = ≥80% correct (easy)")
+    ws.cell(row=row_num, column=1).fill = COLOR_GOOD
+    row_num += 1
+    ws.cell(row=row_num, column=1, value="Yellow = 50-80% correct (moderate)")
+    ws.cell(row=row_num, column=1).fill = COLOR_WARNING
+    row_num += 1
+    ws.cell(row=row_num, column=1, value="Red = <50% correct (difficult)")
+    ws.cell(row=row_num, column=1).fill = COLOR_PROBLEM
+    row_num += 1
+    ws.cell(row=row_num, column=1, value="Yellow count = popular wrong answer (>25% chose it)")
 
     auto_size_columns(ws)
 
@@ -1411,7 +1869,7 @@ def create_class_scores_tab(wb, df_full, item_cols, k):
     Create a "Class Scores" tab with all students sorted alphabetically.
 
     This provides a simple roster view suitable for pasting into gradebooks:
-    - LastName, FirstName, StudentID, RawScore, Percent, Version
+    - LastName, FirstName, StudentID, Score, Correct, Percent, Version
     - Sorted by LastName first, then FirstName
     """
     ws = wb.create_sheet("Class Scores")
@@ -1420,6 +1878,7 @@ def create_class_scores_tab(wb, df_full, item_cols, k):
     lastname_col = 'lastname' if 'lastname' in df_full.columns else 'LastName' if 'LastName' in df_full.columns else None
     firstname_col = 'firstname' if 'firstname' in df_full.columns else 'FirstName' if 'FirstName' in df_full.columns else None
     studentid_col = 'studentid' if 'studentid' in df_full.columns else 'StudentID' if 'StudentID' in df_full.columns else None
+    score_col = 'score' if 'score' in df_full.columns else 'Score' if 'Score' in df_full.columns else None
     correct_col = 'correct' if 'correct' in df_full.columns else 'Correct' if 'Correct' in df_full.columns else None
     percent_col = 'percent' if 'percent' in df_full.columns else 'Percent' if 'Percent' in df_full.columns else None
     version_col = 'version' if 'version' in df_full.columns else 'Version' if 'Version' in df_full.columns else None
@@ -1452,7 +1911,7 @@ def create_class_scores_tab(wb, df_full, item_cols, k):
         df_students = df_students.drop(columns=[c for c in sort_cols if c in df_students.columns])
 
     # Write header
-    headers = ['Last Name', 'First Name', 'Student ID', 'Raw Score', 'Percent', 'Version']
+    headers = ['Last Name', 'First Name', 'Student ID', 'Score', 'Correct', 'Percent', 'Version']
     for col_idx, header in enumerate(headers, start=1):
         ws.cell(row=1, column=col_idx, value=header)
     format_header_row(ws, 1)
@@ -1470,23 +1929,27 @@ def create_class_scores_tab(wb, df_full, item_cols, k):
         cell = ws.cell(row=row_num, column=3, value=row.get(studentid_col, '') if studentid_col else '')
         cell.number_format = '@'
 
-        # Raw Score (correct answers)
-        raw_score = row.get(correct_col, '') if correct_col else ''
-        ws.cell(row=row_num, column=4, value=raw_score)
+        # Score (points earned — may differ from correct count when questions have different point values)
+        score_val = row.get(score_col, '') if score_col else ''
+        ws.cell(row=row_num, column=4, value=score_val)
+
+        # Correct (number of correctly answered questions)
+        correct_val = row.get(correct_col, '') if correct_col else ''
+        ws.cell(row=row_num, column=5, value=correct_val)
 
         # Percent
         percent = row.get(percent_col, '') if percent_col else ''
         if percent and str(percent).strip():
             try:
                 pct_val = float(percent)
-                ws.cell(row=row_num, column=5, value=f"{pct_val:.1f}%")
+                ws.cell(row=row_num, column=6, value=f"{pct_val:.1f}%")
             except (ValueError, TypeError):
-                ws.cell(row=row_num, column=5, value=percent)
+                ws.cell(row=row_num, column=6, value=percent)
         else:
-            ws.cell(row=row_num, column=5, value='')
+            ws.cell(row=row_num, column=6, value='')
 
         # Version
-        ws.cell(row=row_num, column=6, value=row.get(version_col, '') if version_col else '')
+        ws.cell(row=row_num, column=7, value=row.get(version_col, '') if version_col else '')
 
         row_num += 1
 
@@ -1497,3 +1960,194 @@ def create_class_scores_tab(wb, df_full, item_cols, k):
     ws.cell(row=row_num, column=2, value=len(df_students))
 
     auto_size_columns(ws)
+
+
+def create_answer_key_tab(wb, item_cols, versions, version_stats):
+    """
+    Create an "Answer Key" tab showing the correct answer for each question
+    across all versions.
+
+    Layout:
+        Question | Version A | Version B | ...
+        Q1       | C         | A         | ...
+        Q2       | B         | D         | ...
+        ...
+    """
+    ws = wb.create_sheet("Answer Key")
+
+    # Header row
+    headers = ["Question"] + [f"Version {v}" for v in versions]
+    for col_idx, hdr in enumerate(headers, start=1):
+        ws.cell(row=1, column=col_idx, value=hdr)
+    format_header_row(ws, 1)
+
+    # One row per question
+    for q_idx, q_col in enumerate(item_cols):
+        row_num = q_idx + 2
+        ws.cell(row=row_num, column=1, value=q_col)
+        ws.cell(row=row_num, column=1).font = FONT_BOLD
+
+        for v_idx, ver in enumerate(versions):
+            ks = version_stats[ver].get('key_series')
+            if ks is not None and q_col in ks.index:
+                answer = str(ks[q_col]).strip().upper()
+                if answer and answer not in ('NAN', 'NONE', ''):
+                    ws.cell(row=row_num, column=v_idx + 2, value=answer)
+
+        # Apply thin borders to all cells in the row
+        for c in range(1, len(headers) + 1):
+            ws.cell(row=row_num, column=c).border = BORDER_THIN
+
+    # Summary
+    row_num = len(item_cols) + 3
+    ws.cell(row=row_num, column=1, value=f"Total Questions: {len(item_cols)}")
+    ws.cell(row=row_num, column=1).font = FONT_BOLD
+
+    auto_size_columns(ws)
+
+
+def create_flagged_items_tab(
+    wb, df: pd.DataFrame, item_cols: List[str],
+    corrections_detail: Optional[pd.DataFrame] = None,
+):
+    """
+    Create a Flagged Items tab listing all students with issues.
+
+    A student is flagged if they have blank answers, multi-answers, or
+    a correction has been applied. This gives teachers a single view
+    of everything that needs attention.
+
+    The tab is inserted at position 0 (first tab in the workbook).
+    """
+    ws = wb.create_sheet("Flagged Items", 0)
+
+    # Resolve column names
+    id_col = _find_col(df, ['studentid', 'StudentID', 'Student_ID', 'student_id', 'ID', 'id'])
+    last_col = _find_col(df, ['lastname', 'LastName', 'Last_Name', 'last_name', 'Last'])
+    first_col = _find_col(df, ['firstname', 'FirstName', 'First_Name', 'first_name', 'First'])
+    blank_col = _find_col(df, ['blank', 'Blank'])
+    multi_col = _find_col(df, ['multi', 'Multi'])
+    version_col = _find_col(df, ['version', 'Version'])
+
+    # Build corrections lookup: student_id -> list of {question, corrected_answer}
+    corr_lookup: Dict[str, List[str]] = {}
+    if corrections_detail is not None and not corrections_detail.empty:
+        sid_cname = 'Student ID' if 'Student ID' in corrections_detail.columns else _find_col(
+            corrections_detail, ['student_id', 'Student ID', 'StudentID']
+        )
+        q_cname = 'Question' if 'Question' in corrections_detail.columns else _find_col(
+            corrections_detail, ['question', 'Question']
+        )
+        ans_cname = 'Corrected Answer' if 'Corrected Answer' in corrections_detail.columns else _find_col(
+            corrections_detail, ['corrected_answer', 'Corrected Answer']
+        )
+        if sid_cname and q_cname and ans_cname:
+            for _, crow in corrections_detail.iterrows():
+                sid = _normalize_id(crow.get(sid_cname, ''))
+                q = str(crow.get(q_cname, '')).strip()
+                a = str(crow.get(ans_cname, '')).strip()
+                if sid and q:
+                    corr_lookup.setdefault(sid, []).append(f"{q}→{a}")
+
+    # Filter to KEY-excluded rows
+    key_mask = df.apply(
+        lambda row: any(str(cell).strip().upper() == 'KEY' for cell in row), axis=1
+    )
+    students = df[~key_mask].copy()
+
+    # Determine which students are flagged
+    flagged_rows = []
+    for idx, row in students.iterrows():
+        issues = []
+        blank_n = 0
+        multi_n = 0
+
+        if blank_col:
+            try:
+                blank_n = int(row.get(blank_col, 0))
+            except (ValueError, TypeError):
+                blank_n = 0
+        if multi_col:
+            try:
+                multi_n = int(row.get(multi_col, 0))
+            except (ValueError, TypeError):
+                multi_n = 0
+
+        if blank_n > 0:
+            issues.append(f"{blank_n} blank")
+        if multi_n > 0:
+            issues.append(f"{multi_n} multi")
+
+        sid = _normalize_id(row.get(id_col, '')) if id_col else ''
+        corr_list = corr_lookup.get(sid, [])
+        if corr_list:
+            issues.append(f"{len(corr_list)} correction(s)")
+
+        if not issues:
+            continue  # Not flagged
+
+        # Identify problematic questions
+        problem_qs = []
+        for col in item_cols:
+            answer = str(row.get(col, '')).strip().upper() if pd.notna(row.get(col)) else ''
+            if not answer or answer in ('', 'NAN', 'BLANK', 'NONE', '?', '-'):
+                problem_qs.append(f"{col}=BLANK")
+            elif ',' in answer or answer == 'MULTI' or (len(answer) > 1 and answer not in ('BLANK', 'NONE', 'MULTI', 'NAN')):
+                problem_qs.append(f"{col}={answer}")
+
+        flagged_rows.append({
+            'student_id': sid,
+            'last_name': str(row.get(last_col, '')).strip() if last_col else '',
+            'first_name': str(row.get(first_col, '')).strip() if first_col else '',
+            'version': str(row.get(version_col, '')).strip() if version_col else '',
+            'issues': "; ".join(issues),
+            'problem_questions': ", ".join(problem_qs[:10]) + ("..." if len(problem_qs) > 10 else ""),
+            'corrections_applied': "; ".join(corr_list) if corr_list else "",
+        })
+
+    # Write header
+    headers = ['Student ID', 'Last Name', 'First Name', 'Version', 'Issues',
+               'Problem Questions', 'Corrections Applied']
+    for col_idx, hdr in enumerate(headers, start=1):
+        ws.cell(row=1, column=col_idx, value=hdr)
+    format_header_row(ws, 1)
+
+    if not flagged_rows:
+        ws.cell(row=2, column=1, value="No flagged items found.")
+        ws.cell(row=2, column=1).font = Font(italic=True, color="666666")
+        auto_size_columns(ws)
+        return
+
+    # Write data
+    row_num = 2
+    for item in flagged_rows:
+        cell = ws.cell(row=row_num, column=1, value=item['student_id'])
+        cell.number_format = '@'
+        ws.cell(row=row_num, column=2, value=item['last_name'])
+        ws.cell(row=row_num, column=3, value=item['first_name'])
+        ws.cell(row=row_num, column=4, value=item['version'])
+        ws.cell(row=row_num, column=5, value=item['issues'])
+        ws.cell(row=row_num, column=6, value=item['problem_questions'])
+        corr_cell = ws.cell(row=row_num, column=7, value=item['corrections_applied'])
+        if item['corrections_applied']:
+            corr_cell.font = Font(color="0000FF", italic=True)
+
+        # Highlight row based on severity
+        if 'correction' in item['issues']:
+            for c in range(1, len(headers) + 1):
+                ws.cell(row=row_num, column=c).border = BORDER_THIN
+        elif 'multi' in item['issues']:
+            ws.cell(row=row_num, column=5).fill = COLOR_MULTI
+        elif 'blank' in item['issues']:
+            ws.cell(row=row_num, column=5).fill = COLOR_BLANK
+
+        row_num += 1
+
+    # Summary
+    row_num += 1
+    ws.cell(row=row_num, column=1, value=f"Total flagged: {len(flagged_rows)}")
+    ws.cell(row=row_num, column=1).font = FONT_BOLD
+
+    auto_size_columns(ws)
+
+

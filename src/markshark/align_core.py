@@ -31,7 +31,6 @@ def align_pdf_scans(
     dpi: int = RENDER_DEFAULTS.dpi,
     pdf_quality: int = RENDER_DEFAULTS.pdf_quality,
     pdf_renderer: str = "auto",
-    template_page: int = 1,  # Deprecated for multi-page, kept for backward compat
     estimator_method: str = EST_DEFAULTS.estimator_method,
     align_method: str = "auto",
     dict_name: str = ALIGN_DEFAULTS.dict_name,
@@ -282,9 +281,7 @@ def align_raw_bgr_scans_multipage(
                 # NOW: Pass bubblemap for bubble grid fallback
                 # Determine align_mode: "fast" uses coarse-to-fine, "slow" uses full-res ORB
                 align_mode = getattr(args, 'align_method', 'auto')
-                if align_mode == 'feature':
-                    align_mode = 'slow'  # "feature" is legacy name for slow mode
-                elif align_mode not in ('fast', 'slow', 'auto'):
+                if align_mode not in ('fast', 'slow', 'auto'):
                     align_mode = 'auto'
                 
                 try:

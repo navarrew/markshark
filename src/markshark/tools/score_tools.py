@@ -32,46 +32,27 @@ from ..defaults import SCORING_DEFAULTS
 # Geometry
 # ------------------------------------------------------------------------------
 
-def grid_centers_axis_mode(*args, **kwargs) -> List[Tuple[float, float]]:
-    """Return normalized (x, y) centers for a rows×cols grid.
+def grid_centers_axis_mode(
+    x0_pct: float,
+    y0_pct: float,
+    x1_pct: float,
+    y1_pct: float,
+    numrows: int,
+    numcols: int,
+    *,
+    w: int = 0,      # accepted for caller convenience, not used
+    h: int = 0,      # accepted for caller convenience, not used
+    axis: str = "",   # accepted for caller convenience, not used
+) -> List[Tuple[float, float]]:
+    """Return normalized (x, y) centers for a numrows × numcols grid.
 
-    Supports two call styles for backward compatibility:
-
-    Positional (legacy):
-        grid_centers_axis_mode(x0, y0, x1, y1, rows, cols)
-
-    Keyword (preferred):
-        grid_centers_axis_mode(
-            w=<int>, h=<int>,                 # accepted but not used
-            x0_pct=<float>, y0_pct=<float>,
-            x1_pct=<float>, y1_pct=<float>,
-            numrows=<int>, numcols=<int>,
-            axis=<str>,                       # accepted but not used for geometry
-        )
-
-    The returned centers are always normalized fractions (0..1), suitable for
-    `centers_to_circle_rois(..., img_w, img_h, ...)`.
+    Linearly interpolates between top-left (x0_pct, y0_pct)
+    and bottom-right (x1_pct, y1_pct).  The returned centres are
+    normalized fractions (0..1), suitable for
+    ``centers_to_circle_rois(..., img_w, img_h, ...)``.
     """
-    if args and not kwargs:
-        if len(args) != 6:
-            raise TypeError("grid_centers_axis_mode expects 6 positional args: x0, y0, x1, y1, rows, cols")
-        x0, y0, x1, y1, rows, cols = args
-    else:
-        # Accept and ignore w/h/axis, they are part of the public API in callers.
-        x0 = kwargs.get("x0_pct", kwargs.get("x_tl", kwargs.get("x_topleft")))
-        y0 = kwargs.get("y0_pct", kwargs.get("y_tl", kwargs.get("y_topleft")))
-        x1 = kwargs.get("x1_pct", kwargs.get("x_br", kwargs.get("x_bottomright")))
-        y1 = kwargs.get("y1_pct", kwargs.get("y_br", kwargs.get("y_bottomright")))
-        rows = kwargs.get("numrows", kwargs.get("rows", kwargs.get("questions")))
-        cols = kwargs.get("numcols", kwargs.get("cols", kwargs.get("choices")))
-        if x0 is None or y0 is None or x1 is None or y1 is None or rows is None or cols is None:
-            raise TypeError(
-                "grid_centers_axis_mode missing required args. Provide either 6 positional args or keyword args: "
-                "x0_pct,y0_pct,x1_pct,y1_pct,numrows,numcols."
-            )
-
-    rows_i = int(rows)
-    cols_i = int(cols)
+    rows_i = int(numrows)
+    cols_i = int(numcols)
     if rows_i <= 0 or cols_i <= 0:
         return []
 
@@ -81,10 +62,10 @@ def grid_centers_axis_mode(*args, **kwargs) -> List[Tuple[float, float]]:
 
     for r in range(rows_i):
         v = r / r_den
-        y = float(y0) + (float(y1) - float(y0)) * v
+        y = float(y0_pct) + (float(y1_pct) - float(y0_pct)) * v
         for c in range(cols_i):
             u = c / c_den
-            x = float(x0) + (float(x1) - float(x0)) * u
+            x = float(x0_pct) + (float(x1_pct) - float(x0_pct)) * u
             centers.append((x, y))
     return centers
 
@@ -241,6 +222,7 @@ def calibrate_fixed_thresh_for_page(
     min_rows: int = 10,
     max_rows: Optional[int] = None,
     verbose: bool = False,
+    page_label: str = "",
 ) -> Tuple[int, Dict[str, float]]:
     """
     Choose a per-page fixed_thresh value that maximizes separation between
@@ -295,20 +277,14 @@ def calibrate_fixed_thresh_for_page(
     row_groups: List[Tuple[int, int]] = []  # (start_index, numcols)
 
     def _layout_rois(layout: GridLayout) -> List[Tuple[int, int, int, int]]:
-        x0 = getattr(layout, "x0_pct", getattr(layout, "x_topleft"))
-        y0 = getattr(layout, "y0_pct", getattr(layout, "y_topleft"))
-        x1 = getattr(layout, "x1_pct", getattr(layout, "x_bottomright"))
-        y1 = getattr(layout, "y1_pct", getattr(layout, "y_bottomright"))
         centers = grid_centers_axis_mode(
-            w=W, h=H,
-            x0_pct=float(x0), y0_pct=float(y0),
-            x1_pct=float(x1), y1_pct=float(y1),
-            numrows=int(layout.numrows), numcols=int(layout.numcols),
-            axis=str(layout.selection_axis),
+            layout.x_topleft, layout.y_topleft,
+            layout.x_bottomright, layout.y_bottomright,
+            layout.numrows, layout.numcols,
         )
         return centers_to_circle_rois(centers, W, H, float(layout.radius_pct))
 
-    for layout in (bmap.answer_layouts or []):
+    for layout in (bmap.answer_zones or []):
         if str(getattr(layout, "selection_axis", "row")).lower() != "row":
             continue
         base = len(rois_all)
@@ -321,7 +297,8 @@ def calibrate_fixed_thresh_for_page(
     # Limit to only the rows that correspond to actual questions (skip unused rows)
     if max_rows is not None and max_rows > 0 and len(row_groups) > max_rows:
         if verbose:
-            print(f"[CALIBRATE] limiting calibration to {max_rows}/{len(row_groups)} answer rows (key length)", file=sys.stderr)
+            _pg = f" (page {page_label})" if page_label else ""
+            print(f"[CALIBRATE]{_pg} limiting calibration to {max_rows}/{len(row_groups)} answer rows (key length)", file=sys.stderr)
         row_groups = row_groups[:max_rows]
 
     stats_default: Dict[str, float] = {
@@ -333,7 +310,8 @@ def calibrate_fixed_thresh_for_page(
 
     if not rois_all or not row_groups:
         if verbose:
-            print("[CALIBRATE] no usable answer layouts for calibration, using center fixed_thresh", file=sys.stderr)
+            _pg = f" (page {page_label})" if page_label else ""
+            print(f"[CALIBRATE]{_pg} no usable answer layouts for calibration, using center fixed_thresh", file=sys.stderr)
         return int(fixed_thresh_center), stats_default
 
     best_thresh = int(fixed_thresh_center)
@@ -394,10 +372,12 @@ def calibrate_fixed_thresh_for_page(
 
     if verbose:
         if best_q <= -1e8:
-            print(f"[CALIBRATE] insufficient confident rows, using center fixed_thresh={fixed_thresh_center}", file=sys.stderr)
+            _pg = f" (page {page_label})" if page_label else ""
+            print(f"[CALIBRATE]{_pg} insufficient confident rows, using center fixed_thresh={fixed_thresh_center}", file=sys.stderr)
         else:
+            _pg = f" (page {page_label})" if page_label else ""
             print(
-                f"[CALIBRATE] fixed_thresh={best_thresh} q={best_stats['q']:.4f} rows_used={int(best_stats['rows_used'])} "
+                f"[CALIBRATE]{_pg} fixed_thresh={best_thresh} q={best_stats['q']:.4f} rows_used={int(best_stats['rows_used'])} "
                 f"winners_p10={best_stats['winners_p10']:.3f} nonwinners_p90={best_stats['nonwinners_p90']:.3f}",
                 file=sys.stderr,
             )
@@ -438,6 +418,7 @@ def adaptive_rescore_page(
     adaptive_max_adjustment: int = 30,
     max_questions: Optional[int] = None,
     verbose: bool = False,
+    page_label: str = "",
 ) -> Tuple[List[Optional[str]], int, bool]:
     """
     Attempt adaptive rescoring for pages with blank answers.
@@ -468,7 +449,8 @@ def adaptive_rescore_page(
         return initial_answers, initial_threshold, False
 
     if verbose:
-        print(f"  Adaptive rescoring: detected {initial_blanks} blanks, trying higher thresholds (more permissive)...")
+        _pg = f" (page {page_label})" if page_label else ""
+        print(f"  Adaptive rescoring{_pg}: detected {initial_blanks} blanks, trying higher thresholds (more permissive)...")
 
     # Track results for each threshold
     results = []
@@ -507,7 +489,8 @@ def adaptive_rescore_page(
         })
 
         if verbose:
-            print(f"    Threshold {new_threshold} (-{adjustment}): {blanks} blanks, {multis} multis")
+            _pg = f" (page {page_label})" if page_label else ""
+            print(f"    Threshold{_pg} {new_threshold} (-{adjustment}): {blanks} blanks, {multis} multis")
 
     # Find the best threshold: minimize blanks, but don't increase multis
     best_result = results[0]  # Start with original
@@ -526,8 +509,9 @@ def adaptive_rescore_page(
     adapted = best_result['threshold'] != initial_threshold
 
     if adapted and verbose:
+        _pg = f" (page {page_label})" if page_label else ""
         adjustment = best_result['threshold'] - initial_threshold
-        print(f"  ✓ Adaptive rescoring: increased threshold by {adjustment} ({initial_threshold}→{best_result['threshold']})")
+        print(f"  ✓ Adaptive rescoring{_pg}: increased threshold by {adjustment} ({initial_threshold}→{best_result['threshold']})")
         print(f"    Resolved {initial_blanks - best_result['blanks']} blanks, multis: {initial_multis}→{best_result['multis']}")
 
     return best_result['answers'], best_result['threshold'], adapted
@@ -802,21 +786,10 @@ def decode_layout(
     """
     h, w = gray.shape[:2]
 
-    x0 = getattr(layout, "x0_pct", getattr(layout, "x_topleft"))
-    y0 = getattr(layout, "y0_pct", getattr(layout, "y_topleft"))
-    x1 = getattr(layout, "x1_pct", getattr(layout, "x_bottomright"))
-    y1 = getattr(layout, "y1_pct", getattr(layout, "y_bottomright"))
-
     centers = grid_centers_axis_mode(
-        w=w,
-        h=h,
-        x0_pct=x0,
-        y0_pct=y0,
-        x1_pct=x1,
-        y1_pct=y1,
-        numrows=layout.numrows,
-        numcols=layout.numcols,
-        axis=layout.selection_axis,
+        layout.x_topleft, layout.y_topleft,
+        layout.x_bottomright, layout.y_bottomright,
+        layout.numrows, layout.numcols,
     )
 
     rois = centers_to_circle_rois(centers, w, h, layout.radius_pct)
@@ -958,7 +931,7 @@ def detect_version_from_bubble(
     fixed_thresh: Optional[int] = None,
 ) -> Tuple[str, bool]:
     """
-    Detect the exam version from the version_layout bubbles.
+    Detect the exam version from the version_zone bubbles.
     
     Returns:
         (version_string, is_confident)
@@ -966,24 +939,24 @@ def detect_version_from_bubble(
         - version_string: "A", "B", "C", etc. or "" if unclear
         - is_confident: True if version was clearly marked, False if ambiguous
     """
-    if not bmap.version_layout:
+    if not bmap.version_zone:
         return "", False
     
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     
     picked, _, scores = decode_layout(
         gray,
-        bmap.version_layout,
+        bmap.version_zone,
         min_fill=min_fill,
         top2_ratio=top2_ratio,
         min_top2_diff=min_top2_diff,
         fixed_thresh=fixed_thresh,
     )
     
-    labels = list(bmap.version_layout.labels or "ABCD")
+    labels = list(bmap.version_zone.labels or "ABCD")
     
     # For row-based version selection (typical)
-    if bmap.version_layout.selection_axis == "row":
+    if bmap.version_zone.selection_axis == "row":
         if not picked or picked[0] is None:
             return "", False
         idx = picked[0]
@@ -992,7 +965,7 @@ def detect_version_from_bubble(
         return "", False
     
     # For column-based (unusual but supported)
-    version_str = indices_to_text_col(picked, bmap.version_layout.labels or "ABCD").strip()
+    version_str = indices_to_text_col(picked, bmap.version_zone.labels or "ABCD").strip()
     return version_str, bool(version_str)
 
 
@@ -1211,6 +1184,7 @@ def process_page_all(
     background_percentile: float = SCORING_DEFAULTS.background_percentile,
     adaptive_min_above_floor: float = SCORING_DEFAULTS.adaptive_min_above_floor,
     verbose_calibration: bool = False,
+    page_label: str = "",
 ) -> Tuple[dict, List[Optional[str]], Optional[List[float]]]:
     """
     Decode names/ID/version and all answers from an aligned page.
@@ -1225,44 +1199,44 @@ def process_page_all(
 
     info = {"last_name": "", "first_name": "", "student_id": "", "version": ""}
 
-    if bmap.last_name_layout:
+    if bmap.last_name_zone:
         picked, _, _ = decode_layout(
             gray,
-            bmap.last_name_layout,
+            bmap.last_name_zone,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["last_name"] = indices_to_text_col(
-            picked, bmap.last_name_layout.labels or " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            picked, bmap.last_name_zone.labels or " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         ).strip()
 
-    if bmap.first_name_layout:
+    if bmap.first_name_zone:
         picked, _, _ = decode_layout(
             gray,
-            bmap.first_name_layout,
+            bmap.first_name_zone,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["first_name"] = indices_to_text_col(
-            picked, bmap.first_name_layout.labels or " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            picked, bmap.first_name_zone.labels or " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         ).strip()
 
-    if bmap.id_layout:
+    if bmap.id_zone:
         picked, _, _ = decode_layout(
             gray,
-            bmap.id_layout,
+            bmap.id_zone,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
-        info["student_id"] = indices_to_text_col(picked, bmap.id_layout.labels or "0123456789").strip()
+        info["student_id"] = indices_to_text_col(picked, bmap.id_zone.labels or "0123456789").strip()
 
-    if bmap.version_layout:
+    if bmap.version_zone:
         version_str, confident = detect_version_from_bubble(
             img_bgr, bmap,
             min_fill=min_fill,
@@ -1276,7 +1250,7 @@ def process_page_all(
     answers: List[Optional[str]] = []
     all_backgrounds: List[List[float]] = []  # Collect backgrounds from all answer layouts
 
-    for layout in bmap.answer_layouts:
+    for layout in bmap.answer_zones:
         picked, _, scores = decode_layout(
             gray,
             layout,
@@ -1294,8 +1268,9 @@ def process_page_all(
 
                 if verbose_calibration:
                     # Format backgrounds for logging
+                    _pg = f" (page {page_label})" if page_label else ""
                     bg_str = ", ".join(f"{bg:.3f}" for bg in backgrounds)
-                    print(f"  Background calibration: [{bg_str}]")
+                    print(f"  Background calibration{_pg}: [{bg_str}]")
 
             answers.extend(
                 scores_to_labels_row(

@@ -56,7 +56,7 @@ page_2:
   answer_zones:
     - { ... }
 
-Note: For backward compatibility, *_layout keys are still accepted (e.g., last_name_layout).
+Note: YAML files use *_zone keys (e.g., last_name_zone, answer_zones).
 """
 
 from __future__ import annotations
@@ -142,36 +142,6 @@ class PageLayout:
     test_id_zone: GridLayout | None = None  # Numerical test ID (distinct from version)
     version_zone: GridLayout | None = None  # Test version (A, B, C, D, etc.)
 
-    # Backward compatibility aliases
-    @property
-    def answer_layouts(self) -> List[GridLayout]:
-        """Alias for answer_zones (backward compatibility)."""
-        return self.answer_zones
-
-    @property
-    def last_name_layout(self) -> GridLayout | None:
-        """Alias for last_name_zone (backward compatibility)."""
-        return self.last_name_zone
-
-    @property
-    def first_name_layout(self) -> GridLayout | None:
-        """Alias for first_name_zone (backward compatibility)."""
-        return self.first_name_zone
-
-    @property
-    def id_layout(self) -> GridLayout | None:
-        """Alias for id_zone (backward compatibility)."""
-        return self.id_zone
-
-    @property
-    def version_layout(self) -> GridLayout | None:
-        """Alias for version_zone (backward compatibility)."""
-        return self.version_zone
-
-    @property
-    def version_zones(self) -> List[GridLayout]:
-        """Backward compatibility: return version_zone as a list."""
-        return [self.version_zone] if self.version_zone else []
 
 
 @dataclass
@@ -271,38 +241,7 @@ class Bubblemap:
             return self.pages[0].version_zone
         return None
 
-    @property
-    def version_zones(self) -> List[GridLayout]:
-        """Get version_zone as list from page 1 (backward compatibility)."""
-        if self.pages:
-            return self.pages[0].version_zones
-        return []
 
-    # Backward compatibility properties for single-page sheets
-    @property
-    def answer_layouts(self) -> List[GridLayout]:
-        """Get answer zones from page 1 (backward compatibility alias)."""
-        return self.answer_zones
-
-    @property
-    def last_name_layout(self) -> GridLayout | None:
-        """Get last_name_zone from page 1 (backward compatibility alias)."""
-        return self.last_name_zone
-
-    @property
-    def first_name_layout(self) -> GridLayout | None:
-        """Get first_name_zone from page 1 (backward compatibility alias)."""
-        return self.first_name_zone
-
-    @property
-    def id_layout(self) -> GridLayout | None:
-        """Get id_zone from page 1 (backward compatibility alias)."""
-        return self.id_zone
-
-    @property
-    def version_layout(self) -> GridLayout | None:
-        """Get version_zone from page 1 (backward compatibility alias)."""
-        return self.version_zone
 
 
 # ---------------------------------------------------------------------------
@@ -396,12 +335,9 @@ def _parse_layout(name: str, section: Dict[str, Any], page_size_mm: tuple = (215
 
 def _parse_page_layouts(page_num: int, page_data: Dict[str, Any],
                         page_size_mm: tuple = (215.9, 279.4)) -> PageLayout:
-    """Parse layouts for a single page.
-
-    Accepts both *_zone (preferred) and *_layout (backward compatibility) keys.
-    """
-    # Parse answer zones (accept both answer_zones and answer_layouts)
-    answer_zones_data = page_data.get("answer_zones") or page_data.get("answer_layouts", [])
+    """Parse layouts for a single page."""
+    # Parse answer zones
+    answer_zones_data = page_data.get("answer_zones", [])
     answer_zones: List[GridLayout] = []
     for i, block in enumerate(answer_zones_data):
         # Default labels for answers if omitted
@@ -412,32 +348,12 @@ def _parse_page_layouts(page_num: int, page_data: Dict[str, Any],
             block["selection_axis"] = "row"
         answer_zones.append(_parse_layout(f"page{page_num}_answers_{i+1}", block, page_size_mm))
 
-    # Parse version zone (accept version_zone, version_zones list, or version_layout)
+    # Parse version zone
     version_zone: GridLayout | None = None
     version_zone_data = page_data.get("version_zone")
-    version_zones_data = page_data.get("version_zones")  # Legacy: list format
-    version_layout_data = page_data.get("version_layout")  # Legacy: old naming
 
     if version_zone_data:
-        # Preferred format: single version_zone dict
         layout_dict = dict(version_zone_data)
-        layout_dict.setdefault("selection_axis", "row")
-        if "labels" not in layout_dict and "numcols" in layout_dict:
-            ch = int(layout_dict["numcols"])
-            layout_dict["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
-        version_zone = _parse_layout(f"page{page_num}_version", layout_dict, page_size_mm)
-    elif version_zones_data:
-        # Legacy format: list of version zones (use first one)
-        if version_zones_data:
-            layout_dict = dict(version_zones_data[0])
-            layout_dict.setdefault("selection_axis", "row")
-            if "labels" not in layout_dict and "numcols" in layout_dict:
-                ch = int(layout_dict["numcols"])
-                layout_dict["labels"] = "".join(chr(ord("A") + k) for k in range(ch))
-            version_zone = _parse_layout(f"page{page_num}_version", layout_dict, page_size_mm)
-    elif version_layout_data:
-        # Backward compatibility: single version layout (old naming)
-        layout_dict = dict(version_layout_data)
         layout_dict.setdefault("selection_axis", "row")
         if "labels" not in layout_dict and "numcols" in layout_dict:
             ch = int(layout_dict["numcols"])
@@ -450,19 +366,11 @@ def _parse_page_layouts(page_num: int, page_data: Dict[str, Any],
         version_zone=version_zone
     )
 
-    # Optional other zones (accept both *_zone and *_layout for backward compatibility)
-    zone_mappings = [
-        ("last_name_zone", "last_name_layout"),
-        ("first_name_zone", "first_name_layout"),
-        ("id_zone", "id_layout"),
-        ("test_id_zone", None),  # New zone type, no legacy name
-    ]
+    # Optional other zones
+    zone_names = ["last_name_zone", "first_name_zone", "id_zone", "test_id_zone"]
 
-    for zone_name, layout_name in zone_mappings:
-        # Prefer *_zone, fall back to *_layout if available
+    for zone_name in zone_names:
         zone_data = page_data.get(zone_name)
-        if not zone_data and layout_name:
-            zone_data = page_data.get(layout_name)
         if zone_data:
             layout_dict = dict(zone_data)  # Shallow copy
             # Sensible defaults if omitted

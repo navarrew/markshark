@@ -64,14 +64,14 @@ styles:
     extends: standard_bubbles
     bubble_shape: circle
     bubble_diameter_mm: 4
-    number_font_weight: bold
-    number_font_size: 10
-    number_color: black
-    number_format: "{n}."
-    number_font_weight: bold
-    number_align: right
+    question_number_font_size: 10
+    question_number_color: black
+    question_number_format: "{n}."
+    question_number_font_weight: bold
+    question_number_align: right
     show_header_boxes: false
     alternating_shade_axis: row
+    alternating_shade_extend_left_mm: 8.5
 
 page_1:
 
@@ -186,7 +186,7 @@ page_1:
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 18
+    x_mm: 20
     y_mm: 170
     width_mm: 30
     height_mm: 90
@@ -195,7 +195,7 @@ page_1:
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 69
+    x_mm: 71
     y_mm: 170
     width_mm: 30
     height_mm: 90
@@ -204,7 +204,7 @@ page_1:
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 120
+    x_mm: 122
     y_mm: 170
     width_mm: 30
     height_mm: 90
@@ -213,7 +213,7 @@ page_1:
     numcols: 5
     selection_axis: row
     labels: ABCDE
-    x_mm: 171
+    x_mm: 173
     y_mm: 170
     width_mm: 30
     height_mm: 90
@@ -227,23 +227,23 @@ page_1:
     stroke_color: black
     stroke_width_mm: 0.5
   - name: divider2
-    x1_mm: 56
+    x1_mm: 55.5
     y1_mm: 166
-    x2_mm: 56
+    x2_mm: 55.5
     y2_mm: 263
     stroke_color: black
     stroke_width_mm: 0.2
   - name: divider3
-    x1_mm: 107
+    x1_mm: 106.5
     y1_mm: 166
-    x2_mm: 107
+    x2_mm: 106.5
     y2_mm: 263
     stroke_color: black
     stroke_width_mm: 0.2
   - name: divider4
-    x1_mm: 158
+    x1_mm: 157.5
     y1_mm: 166
-    x2_mm: 158
+    x2_mm: 157.5
     y2_mm: 263
     stroke_color: black
     stroke_width_mm: 0.2
@@ -269,6 +269,8 @@ page_2:
     y_mm: 20
     width_mm: 30
     height_mm: 240
+    alternating_shade_extend_left_mm: 10
+
   - style: answer_bubbles
     numrows: 35
     numcols: 5
@@ -278,6 +280,8 @@ page_2:
     y_mm: 20
     width_mm: 30
     height_mm: 240
+    alternating_shade_extend_left_mm: 10
+
   - style: answer_bubbles
     numrows: 35
     numcols: 5
@@ -287,26 +291,27 @@ page_2:
     y_mm: 20
     width_mm: 30
     height_mm: 240
+    alternating_shade_extend_left_mm: 10
 
   line_zones:
   - name: divider5
-    x1_mm: 57
+    x1_mm: 55.5
     y1_mm: 17
-    x2_mm: 57
+    x2_mm: 55.5
     y2_mm: 263
     stroke_color: black
     stroke_width_mm: 0.2
   - name: divider6
-    x1_mm: 108
+    x1_mm: 106.5
     y1_mm: 17
-    x2_mm: 108
+    x2_mm: 106.5
     y2_mm: 263
     stroke_color: black
     stroke_width_mm: 0.2
   - name: divider7
-    x1_mm: 159
+    x1_mm: 157.5
     y1_mm: 17
-    x2_mm: 159
+    x2_mm: 157.5
     y2_mm: 263
     stroke_color: black
     stroke_width_mm: 0.2

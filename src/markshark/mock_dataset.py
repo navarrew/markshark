@@ -63,32 +63,16 @@ def load_bubblemap(path: str) -> Dict[str, Any]:
 
 
 def _get_page_size_mm(metadata: Dict[str, Any]) -> Tuple[float, float]:
-    """Extract page size in mm from metadata."""
-    PAGE_SIZES_MM = {
-        "letter": (215.9, 279.4),
-        "a4": (210.0, 297.0),
-        "legal": (215.9, 355.6),
-        "a3": (297.0, 420.0),
-    }
-
-    page_size = metadata.get("page_size", "letter")
-
-    if isinstance(page_size, dict):
-        return (
-            page_size.get("width_mm", 215.9),
-            page_size.get("height_mm", 279.4)
-        )
-    elif isinstance(page_size, str):
-        return PAGE_SIZES_MM.get(page_size.lower(), PAGE_SIZES_MM["letter"])
-    else:
-        return PAGE_SIZES_MM["letter"]
+    """Extract page size in mm from metadata. Delegates to canonical implementation."""
+    from .tools.bubblemap_io import _get_page_size_mm as _canonical
+    return _canonical(metadata)
 
 
 def detect_format(bubblemap: Dict[str, Any]) -> Dict[str, Any]:
     """
     Auto-detect format from bubblemap, supporting multi-page templates.
 
-    Accepts both *_zone (preferred) and *_layout (backward compatibility) keys.
+    Reads *_zone keys from the bubblemap YAML.
 
     Returns dict with:
         - total_questions: int
@@ -113,6 +97,7 @@ def detect_format(bubblemap: Dict[str, Any]) -> Dict[str, Any]:
         "num_pages": 1,
         "pages": [],
         "page_size_mm": (215.9, 279.4),
+        "styles": {},
     }
 
     # Find all page keys (page_1, page_2, etc.)
@@ -137,14 +122,16 @@ def detect_format(bubblemap: Dict[str, Any]) -> Dict[str, Any]:
     # Get page size for v3 coordinate conversion
     result["page_size_mm"] = _get_page_size_mm(metadata)
 
+    # Extract styles (used for bubble_shape resolution, etc.)
+    result["styles"] = bubblemap.get("styles", {})
+
     # Process each page
     all_answer_zones = []
     for page_idx, page_data in enumerate(pages_data):
-        # Accept both answer_zones and answer_layouts (prefer _zone)
-        answer_zones = page_data.get("answer_zones") or page_data.get("answer_layouts", [])
+        answer_zones = page_data.get("answer_zones", [])
         page_info = {
             "page_num": page_idx + 1,
-            "answer_layouts": answer_zones,  # Keep as answer_layouts for internal use
+            "answer_zones": answer_zones,
         }
 
         # Collect answer zones
@@ -155,40 +142,29 @@ def detect_format(bubblemap: Dict[str, Any]) -> Dict[str, Any]:
             first_zone = answer_zones[0]
             result["answer_labels"] = str(first_zone.get("labels", "ABCDE"))
 
-        # Check for version zone/layout (typically on page 1)
-        # Accept version_zone (preferred), version_zones (legacy list), or version_layout (legacy)
+        # Check for version zone (typically on page 1)
         version_zone = page_data.get("version_zone")
-        version_zones = page_data.get("version_zones")  # Legacy: list format
-        version_layout = page_data.get("version_layout")  # Legacy: old naming
         if version_zone:
             result["has_version"] = True
             result["version_labels"] = str(version_zone.get("labels", "ABCD"))
-            page_info["version_layout"] = version_zone
-        elif version_zones:
-            result["has_version"] = True
-            result["version_labels"] = str(version_zones[0].get("labels", "ABCD"))
-            page_info["version_layout"] = version_zones[0]  # Use first for compatibility
-        elif version_layout:
-            result["has_version"] = True
-            result["version_labels"] = str(version_layout.get("labels", "ABCD"))
-            page_info["version_layout"] = version_layout
+            page_info["version_zone"] = version_zone
 
-        # Check for ID zone/layout (typically on page 1)
-        id_zone = page_data.get("id_zone") or page_data.get("id_layout")
+        # Check for ID zone (typically on page 1)
+        id_zone = page_data.get("id_zone")
         if id_zone:
             result["id_digits"] = int(id_zone.get("numcols", id_zone.get("choices", 10)))
-            page_info["id_layout"] = id_zone
+            page_info["id_zone"] = id_zone
 
-        # Check for name zones/layouts (typically on page 1)
-        first_name_zone = page_data.get("first_name_zone") or page_data.get("first_name_layout")
-        last_name_zone = page_data.get("last_name_zone") or page_data.get("last_name_layout")
+        # Check for name zones (typically on page 1)
+        first_name_zone = page_data.get("first_name_zone")
+        last_name_zone = page_data.get("last_name_zone")
 
         if first_name_zone:
             result["has_first_name"] = True
-            page_info["first_name_layout"] = first_name_zone
+            page_info["first_name_zone"] = first_name_zone
         if last_name_zone:
             result["has_last_name"] = True
-            page_info["last_name_layout"] = last_name_zone
+            page_info["last_name_zone"] = last_name_zone
 
         result["pages"].append(page_info)
 
@@ -416,36 +392,33 @@ def generate_fake_students(
 def grid_centers(
     x_tl: float, y_tl: float,
     x_br: float, y_br: float,
-    numrows: int, numcols: int
+    numrows: int, numcols: int,
 ) -> List[Tuple[float, float]]:
-    """
-    Compute normalized (0-1) center coordinates for a grid of bubbles.
-    Returns list of (x, y) tuples in row-major order.
-    """
-    centers = []
-    row_denom = max(1, numrows - 1)
-    col_denom = max(1, numcols - 1)
+    """Compute normalized (0-1) center coordinates for a grid of bubbles.
 
-    for r in range(numrows):
-        y = y_tl + (y_br - y_tl) * (r / row_denom) if row_denom > 0 else y_tl
-        for c in range(numcols):
-            x = x_tl + (x_br - x_tl) * (c / col_denom) if col_denom > 0 else x_tl
-            centers.append((x, y))
-
-    return centers
+    Delegates to the canonical implementation in score_tools.
+    """
+    from .tools.score_tools import grid_centers_axis_mode
+    return grid_centers_axis_mode(x_tl, y_tl, x_br, y_br, numrows, numcols)
 
 
 def draw_filled_bubble(
     draw: ImageDraw.ImageDraw,
-    cx: int, cy: int, radius: int,
-    darkness: float = 1.0
+    cx: int, cy: int, rx: int,
+    darkness: float = 1.0,
+    ry: int = None,
 ):
     """
-    Draw a filled bubble with variable darkness.
+    Draw a filled bubble (circle or oval) with variable darkness.
 
     Args:
-        darkness: 0.0 = very light (barely visible), 1.0 = solid black
+        cx, cy: Centre pixel coordinates.
+        rx: Horizontal radius in pixels.
+        darkness: 0.0 = very light (barely visible), 1.0 = solid black.
+        ry: Vertical radius in pixels.  If *None*, uses *rx* (circle).
     """
+    if ry is None:
+        ry = rx
     # Map darkness to grayscale and alpha
     # Light marks: high gray value (200), low alpha (100)
     # Dark marks: low gray value (0), high alpha (255)
@@ -453,7 +426,7 @@ def draw_filled_bubble(
     alpha = int(100 + 155 * darkness)
 
     rgba = (gray, gray, gray, alpha)
-    draw.ellipse([cx - radius, cy - radius, cx + radius, cy + radius], fill=rgba)
+    draw.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=rgba)
 
 
 def _get_layout_coords(layout: Dict[str, Any], page_size_mm: Tuple[float, float] = (215.9, 279.4)) -> Tuple[float, float, float, float, float]:
@@ -491,13 +464,76 @@ def _get_layout_coords(layout: Dict[str, Any], page_size_mm: Tuple[float, float]
     return x_tl, y_tl, x_br, y_br, radius_pct
 
 
+def _resolve_bubble_shape(layout: Dict[str, Any],
+                          styles: Dict[str, Any] = None) -> str:
+    """Resolve the bubble_shape for a layout, checking style references.
+
+    Precedence:
+      1. ``layout["bubble_shape"]`` (explicit on the zone)
+      2. style referenced by ``layout["style"]`` → ``bubble_shape``
+      3. style's ``extends`` chain
+      4. ``"circle"`` (default)
+    """
+    # Direct on layout
+    if "bubble_shape" in layout:
+        return str(layout["bubble_shape"]).lower()
+
+    if styles and "style" in layout:
+        style_name = layout["style"]
+        visited: set = set()
+        while style_name and style_name not in visited:
+            visited.add(style_name)
+            style = styles.get(style_name, {})
+            if "bubble_shape" in style:
+                return str(style["bubble_shape"]).lower()
+            style_name = style.get("extends")
+
+    return "circle"
+
+
+def _get_bubble_radii(
+    layout: Dict[str, Any],
+    img_w: int, img_h: int,
+    page_size_mm: Tuple[float, float] = (215.9, 279.4),
+    styles: Dict[str, Any] = None,
+) -> Tuple[int, int]:
+    """Return (rx, ry) pixel radii for a bubble in *layout*.
+
+    For ``bubble_shape == "oval"``, the radii are derived from the grid
+    cell dimensions so the fill matches the printed oval proportions.
+    For circles, rx == ry.
+    """
+    x_tl, y_tl, x_br, y_br, radius_pct = _get_layout_coords(layout, page_size_mm)
+    rx = max(1, int(radius_pct * img_w))
+
+    shape = _resolve_bubble_shape(layout, styles)
+    if shape == "oval":
+        numrows = int(layout.get("numrows", layout.get("questions", 1)))
+        numcols = int(layout.get("numcols", layout.get("choices", 1)))
+        # Cell dimensions as fractions of image
+        cell_w = (x_br - x_tl) / max(numcols, 1)
+        cell_h = (y_br - y_tl) / max(numrows, 1)
+        # Convert to pixels
+        cell_w_px = cell_w * img_w
+        cell_h_px = cell_h * img_h
+        # Oval radii: fill ~70% of cell in each direction
+        fill_frac = 0.70
+        rx = max(1, int(cell_w_px * fill_frac / 2))
+        ry = max(1, int(cell_h_px * fill_frac / 2))
+    else:
+        ry = rx
+
+    return rx, ry
+
+
 def fill_layout_by_columns(
     draw: ImageDraw.ImageDraw,
     layout: Dict[str, Any],
     text: str,
     img_w: int, img_h: int,
     darkness: float = 1.0,
-    page_size_mm: Tuple[float, float] = (215.9, 279.4)
+    page_size_mm: Tuple[float, float] = (215.9, 279.4),
+    styles: Dict[str, Any] = None,
 ) -> int:
     """
     Fill bubbles column-by-column (for ID, name fields).
@@ -510,10 +546,10 @@ def fill_layout_by_columns(
     numrows = int(layout.get("numrows", layout.get("questions", 0)))
     numcols = int(layout.get("numcols", layout.get("choices", 0)))
 
-    x_tl, y_tl, x_br, y_br, radius_pct = _get_layout_coords(layout, page_size_mm)
+    x_tl, y_tl, x_br, y_br, _radius_pct = _get_layout_coords(layout, page_size_mm)
 
     centers = grid_centers(x_tl, y_tl, x_br, y_br, numrows, numcols)
-    radius_px = max(1, int(radius_pct * img_w))
+    rx, ry = _get_bubble_radii(layout, img_w, img_h, page_size_mm, styles)
 
     # Normalize text for matching
     text = str(text).upper()[:numcols]
@@ -535,7 +571,7 @@ def fill_layout_by_columns(
             cx_pct, cy_pct = centers[idx]
             cx = int(cx_pct * img_w)
             cy = int(cy_pct * img_h)
-            draw_filled_bubble(draw, cx, cy, radius_px, darkness)
+            draw_filled_bubble(draw, cx, cy, rx, darkness, ry)
             filled += 1
 
     return filled
@@ -547,7 +583,8 @@ def fill_layout_by_rows(
     answers: List[str],
     img_w: int, img_h: int,
     darkness_range: Tuple[float, float] = (0.7, 1.0),
-    page_size_mm: Tuple[float, float] = (215.9, 279.4)
+    page_size_mm: Tuple[float, float] = (215.9, 279.4),
+    styles: Dict[str, Any] = None,
 ) -> int:
     """
     Fill bubbles row-by-row (for answer layouts).
@@ -561,10 +598,10 @@ def fill_layout_by_rows(
     numrows = int(layout.get("numrows", layout.get("questions", 0)))
     numcols = int(layout.get("numcols", layout.get("choices", 0)))
 
-    x_tl, y_tl, x_br, y_br, radius_pct = _get_layout_coords(layout, page_size_mm)
+    x_tl, y_tl, x_br, y_br, _radius_pct = _get_layout_coords(layout, page_size_mm)
 
     centers = grid_centers(x_tl, y_tl, x_br, y_br, numrows, numcols)
-    radius_px = max(1, int(radius_pct * img_w))
+    rx, ry = _get_bubble_radii(layout, img_w, img_h, page_size_mm, styles)
 
     filled = 0
     for row_idx, answer in enumerate(answers[:numrows]):
@@ -587,7 +624,7 @@ def fill_layout_by_rows(
                 cy = int(cy_pct * img_h)
                 # Random darkness within range
                 darkness = random.uniform(*darkness_range)
-                draw_filled_bubble(draw, cx, cy, radius_px, darkness)
+                draw_filled_bubble(draw, cx, cy, rx, darkness, ry)
                 filled += 1
 
     return filled
@@ -643,6 +680,9 @@ def render_student_sheets(
     def get_darkness():
         return max(0.3, min(1.0, base_darkness + random.uniform(-darkness_var, darkness_var)))
 
+    # Styles dict for bubble shape resolution (oval vs circle)
+    styles = format_info.get("styles", {})
+
     result_images = []
     answer_idx = 0  # Track position across all pages
 
@@ -660,45 +700,48 @@ def render_student_sheets(
             page_info = {}
 
         # Fill student ID (typically page 1 only)
-        if "id_layout" in page_info:
+        if "id_zone" in page_info:
             fill_layout_by_columns(
-                draw, page_info["id_layout"],
+                draw, page_info["id_zone"],
                 student["student_id"],
                 img_w, img_h,
                 get_darkness(),
-                page_size_mm
+                page_size_mm,
+                styles,
             )
 
         # Fill names (typically page 1 only)
-        if "first_name_layout" in page_info:
+        if "first_name_zone" in page_info:
             fill_layout_by_columns(
-                draw, page_info["first_name_layout"],
+                draw, page_info["first_name_zone"],
                 student["first_name"],
                 img_w, img_h,
                 get_darkness(),
-                page_size_mm
+                page_size_mm,
+                styles,
             )
 
-        if "last_name_layout" in page_info:
+        if "last_name_zone" in page_info:
             fill_layout_by_columns(
-                draw, page_info["last_name_layout"],
+                draw, page_info["last_name_zone"],
                 student["last_name"],
                 img_w, img_h,
                 get_darkness(),
-                page_size_mm
+                page_size_mm,
+                styles,
             )
 
         # Fill version (typically page 1 only)
-        if "version_layout" in page_info:
-            layout = page_info["version_layout"]
+        if "version_zone" in page_info:
+            layout = page_info["version_zone"]
             labels = str(layout.get("labels", "ABCD"))
             numrows = int(layout.get("numrows", 1))
             numcols = int(layout.get("numcols", len(labels)))
 
-            x_tl, y_tl, x_br, y_br, radius_pct = _get_layout_coords(layout, page_size_mm)
+            x_tl, y_tl, x_br, y_br, _radius_pct = _get_layout_coords(layout, page_size_mm)
 
             centers = grid_centers(x_tl, y_tl, x_br, y_br, numrows, numcols)
-            radius_px = max(1, int(radius_pct * img_w))
+            rx, ry = _get_bubble_radii(layout, img_w, img_h, page_size_mm, styles)
 
             try:
                 col_idx = labels.upper().index(version.upper())
@@ -706,12 +749,12 @@ def render_student_sheets(
                     cx_pct, cy_pct = centers[col_idx]
                     cx = int(cx_pct * img_w)
                     cy = int(cy_pct * img_h)
-                    draw_filled_bubble(draw, cx, cy, radius_px, get_darkness())
+                    draw_filled_bubble(draw, cx, cy, rx, get_darkness(), ry)
             except ValueError:
                 pass
 
         # Fill answers for this page
-        for layout in page_info.get("answer_layouts", []):
+        for layout in page_info.get("answer_zones", []):
             numrows = int(layout.get("numrows", layout.get("questions", 0)))
             layout_answers = student["answers"][answer_idx:answer_idx + numrows]
 
@@ -719,7 +762,8 @@ def render_student_sheets(
                 draw, layout, layout_answers,
                 img_w, img_h,
                 darkness_range=(base_darkness - darkness_var, base_darkness + darkness_var),
-                page_size_mm=page_size_mm
+                page_size_mm=page_size_mm,
+                styles=styles,
             )
             answer_idx += numrows
 
@@ -884,6 +928,7 @@ def generate_mock_dataset(
     out_dir: str,
     num_students: int = 100,
     num_absent: int = 2,
+    num_versions: int = 2,
     seed: int = 42,
     dpi: int = 150,
     darkness_min: float = 0.4,
@@ -902,6 +947,10 @@ def generate_mock_dataset(
         out_dir: Output directory for generated files
         num_students: Number of fake students to generate (default: 100)
         num_absent: Number of absent students to add to roster (default: 2)
+        num_versions: Number of exam versions to generate (default: 2).
+            Only used when the template has a version field.
+            Set to 1 for a single version, up to the number of version
+            labels defined in the bubblemap (e.g. 4 for "ABCD").
         seed: Random seed for reproducibility (default: 42)
         dpi: DPI for rendered images (default: 150)
         darkness_min: Minimum bubble darkness 0-1 (default: 0.4)
@@ -956,13 +1005,14 @@ def generate_mock_dataset(
     if verbose:
         print("\nGenerating answer key(s)...")
     if format_info['has_version']:
-        # Generate 2 versions
         version_labels = format_info['version_labels']
+        # Clamp num_versions to available labels
+        actual_num_versions = max(1, min(num_versions, len(version_labels)))
         keys = generate_versioned_keys(
             format_info['total_questions'],
             format_info['answer_labels'],
             version_labels,
-            num_versions=2
+            num_versions=actual_num_versions,
         )
         versions_to_use = list(keys.keys())
     else:

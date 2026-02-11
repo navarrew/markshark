@@ -31,7 +31,9 @@ class BubbleSheetTemplate:
     description: str = ""
     num_questions: Optional[int] = None
     num_choices: Optional[int] = None
-    
+    num_pages: Optional[int] = None
+    choices_label: str = ""  # Human-readable, e.g. "5 choices (A-E)" or "10 T/F, 20 A-E"
+
     def to_dict(self) -> Dict:
         """Convert template to dictionary for JSON/YAML serialization"""
         return {
@@ -42,6 +44,8 @@ class BubbleSheetTemplate:
             'description': self.description,
             'num_questions': self.num_questions,
             'num_choices': self.num_choices,
+            'num_pages': self.num_pages,
+            'choices_label': self.choices_label,
         }
     
     def __str__(self) -> str:
@@ -149,13 +153,13 @@ class TemplateManager:
             logger.error(f"Error saving preferences to {self.preferences_file}: {e}")
 
     @staticmethod
-    def _find_answer_layouts_in_yaml(yaml_data: dict) -> Tuple[bool, Optional[int], Optional[int]]:
+    def _find_answer_zones_in_yaml(yaml_data: dict) -> Tuple[bool, Optional[int], Optional[int]]:
         """
-        Find answer_layouts/answer_zones in YAML data, supporting all formats:
-        - Schema v3+: answer_zones in page_1 section
-        - Multi-page: answer_layouts in page_X sections
-        - Legacy flat: answer_layouts at top level
-        - Very old: answer_rows at top level
+        Find answer_zones in YAML data.
+
+        Supports:
+        - Multi-page: answer_zones in page_X sections
+        - Flat: answer_zones at top level
 
         Returns:
             Tuple of (found, num_questions, num_choices)
@@ -166,20 +170,18 @@ class TemplateManager:
         num_questions = None
         num_choices = None
 
-        # Helper to extract question/choice info from a list of layouts/zones
-        def count_from_layouts(layouts_list):
+        # Helper to extract question/choice info from a list of zones
+        def count_from_zones(zones_list):
             total = 0
             choices = None
-            if isinstance(layouts_list, list):
-                for layout in layouts_list:
-                    if isinstance(layout, dict):
-                        # Count questions (numrows for row-selection layouts)
-                        total += layout.get('numrows', 0)
-                        # Get num_choices from numcols (or labels length)
+            if isinstance(zones_list, list):
+                for zone in zones_list:
+                    if isinstance(zone, dict):
+                        total += zone.get('numrows', 0)
                         if choices is None:
-                            choices = layout.get('numcols')
-                            if choices is None and 'labels' in layout:
-                                labels = layout['labels']
+                            choices = zone.get('numcols')
+                            if choices is None and 'labels' in zone:
+                                labels = zone['labels']
                                 if isinstance(labels, str):
                                     choices = len(labels)
                                 elif isinstance(labels, list):
@@ -190,15 +192,13 @@ class TemplateManager:
         page_keys = [k for k in yaml_data.keys() if k.startswith('page_')]
 
         if page_keys:
-            # Multi-page format - check each page for answer_zones or answer_layouts
             total_questions = 0
             for page_key in sorted(page_keys):
                 page_data = yaml_data.get(page_key, {})
                 if isinstance(page_data, dict):
-                    # Try answer_zones first (schema v3+), then answer_layouts (older)
-                    layouts = page_data.get('answer_zones') or page_data.get('answer_layouts', [])
-                    if layouts:
-                        count, choices = count_from_layouts(layouts)
+                    zones = page_data.get('answer_zones', [])
+                    if zones:
+                        count, choices = count_from_zones(zones)
                         total_questions += count
                         if num_choices is None and choices:
                             num_choices = choices
@@ -207,26 +207,101 @@ class TemplateManager:
                 num_questions = total_questions
                 return True, num_questions, num_choices
 
-        # Check for flat format - answer_zones (schema v3+) or answer_layouts (older) at top level
-        layouts = yaml_data.get('answer_zones') or yaml_data.get('answer_layouts')
-        if layouts:
-            total_questions, num_choices = count_from_layouts(layouts)
+        # Check for flat format - answer_zones at top level
+        zones = yaml_data.get('answer_zones')
+        if zones:
+            total_questions, num_choices = count_from_zones(zones)
             if total_questions > 0:
                 num_questions = total_questions
                 return True, num_questions, num_choices
 
-        # Check for old answer_rows format (legacy)
-        if 'answer_rows' in yaml_data:
-            answer_rows = yaml_data['answer_rows']
-            if isinstance(answer_rows, list):
-                num_questions = len(answer_rows)
-                if answer_rows and isinstance(answer_rows[0], dict):
-                    choices = answer_rows[0].get('choices', [])
-                    num_choices = len(choices) if choices else None
-                return True, num_questions, num_choices
-
         return False, None, None
-    
+
+    @staticmethod
+    def _describe_choices_from_yaml(yaml_data: dict) -> str:
+        """
+        Build a human-readable description of the choice layout from answer zones.
+
+        For a uniform template (all zones use A-E):
+            "5 choices (A-E)"
+        For a mixed template (some T/F, some A-E):
+            "10 T/F, 20 A-E"
+
+        Returns empty string if no answer zones found.
+        """
+        if not isinstance(yaml_data, dict):
+            return ""
+
+        # Collect (numrows, labels_str) from every answer zone
+        zone_info: list = []  # list of (num_questions, labels_display)
+
+        def extract_zones(layouts_list):
+            if not isinstance(layouts_list, list):
+                return
+            for layout in layouts_list:
+                if not isinstance(layout, dict):
+                    continue
+                nrows = layout.get('numrows', 0)
+                if nrows <= 0:
+                    continue
+
+                labels = layout.get('labels', '')
+                ncols = layout.get('numcols')
+                if isinstance(labels, str) and labels:
+                    # Use the labels directly, e.g. "ABCDE" → "A-E", "TF" → "T/F"
+                    zone_info.append((nrows, labels))
+                elif isinstance(labels, list) and labels:
+                    zone_info.append((nrows, ''.join(str(l) for l in labels)))
+                elif ncols:
+                    zone_info.append((nrows, str(ncols)))
+
+        # Check page_N sections
+        page_keys = [k for k in yaml_data.keys() if k.startswith('page_')]
+        if page_keys:
+            for page_key in sorted(page_keys):
+                page_data = yaml_data.get(page_key, {})
+                if isinstance(page_data, dict):
+                    zones = page_data.get('answer_zones', [])
+                    extract_zones(zones)
+
+        # Flat format fallback
+        if not zone_info:
+            zones = yaml_data.get('answer_zones')
+            if zones:
+                extract_zones(zones)
+
+        if not zone_info:
+            return ""
+
+        def format_labels(labels_str: str) -> str:
+            """Convert labels string to a nice display form."""
+            s = labels_str.strip()
+            if not s:
+                return ""
+            if len(s) == 2:
+                return f"{s[0]}/{s[1]}"  # "TF" → "T/F"
+            if len(s) > 2:
+                return f"{s[0]}-{s[-1]}"  # "ABCDE" → "A-E"
+            return s
+
+        # Group zones by their labels
+        groups: dict = {}  # labels_str → total questions
+        for nrows, labels_str in zone_info:
+            groups[labels_str] = groups.get(labels_str, 0) + nrows
+
+        # If all zones have the same labels, use compact form
+        if len(groups) == 1:
+            labels_str, total = next(iter(groups.items()))
+            display = format_labels(labels_str)
+            return f"{len(labels_str)} choices ({display})" if display else f"{len(labels_str)} choices"
+
+        # Mixed: "10 T/F, 20 A-E"
+        parts = []
+        for labels_str, total in groups.items():
+            display = format_labels(labels_str)
+            parts.append(f"{total} {display}" if display else f"{total}×{len(labels_str)}")
+        return ", ".join(parts)
+
     def _scan_templates_in_dir(self, directory: Path) -> List[BubbleSheetTemplate]:
         """
         Internal method to scan templates in a specific directory.
@@ -269,11 +344,13 @@ class TemplateManager:
             description = ""
             num_questions = None
             num_choices = None
-            
+            num_pages = None
+            choices_label = ""
+
             try:
                 with open(yaml_path, 'r') as f:
                     yaml_data = yaml.safe_load(f)
-                    
+
                     # Look for metadata section
                     if isinstance(yaml_data, dict):
                         metadata = yaml_data.get('metadata', {})
@@ -282,21 +359,31 @@ class TemplateManager:
                             description = metadata.get('description', description)
                             num_questions = metadata.get('num_questions', num_questions)
                             num_choices = metadata.get('num_choices', num_choices)
+                            num_pages = metadata.get('pages', num_pages)
                             # Also check total_questions (alternate key)
                             if num_questions is None:
                                 num_questions = metadata.get('total_questions', num_questions)
-                        
+
                         # Try to infer num_questions and num_choices from answer layouts
                         if num_questions is None or num_choices is None:
-                            found, inferred_questions, inferred_choices = self._find_answer_layouts_in_yaml(yaml_data)
+                            found, inferred_questions, inferred_choices = self._find_answer_zones_in_yaml(yaml_data)
                             if num_questions is None:
                                 num_questions = inferred_questions
                             if num_choices is None:
                                 num_choices = inferred_choices
-                
+
+                        # Build human-readable choices description from answer zones
+                        choices_label = self._describe_choices_from_yaml(yaml_data)
+
+                        # Infer num_pages from page_N keys if not in metadata
+                        if num_pages is None:
+                            page_keys = [k for k in yaml_data.keys() if k.startswith('page_')]
+                            if page_keys:
+                                num_pages = len(page_keys)
+
             except Exception as e:
                 logger.warning(f"Error reading metadata from {yaml_path}: {e}")
-            
+
             template = BubbleSheetTemplate(
                 template_id=template_id,
                 display_name=display_name,
@@ -305,6 +392,8 @@ class TemplateManager:
                 description=description,
                 num_questions=num_questions,
                 num_choices=num_choices,
+                num_pages=num_pages,
+                choices_label=choices_label,
             )
 
 
@@ -482,7 +571,7 @@ class TemplateManager:
                 'schema_version': 1,
             },
             'page_1': {
-                'answer_layouts': [
+                'answer_zones': [
                     {
                         'x_topleft': 0.1,
                         'y_topleft': 0.1,
@@ -543,13 +632,12 @@ class TemplateManager:
                 if not isinstance(yaml_data, dict):
                     errors.append("Bubblemap YAML must contain a dictionary/mapping")
                 else:
-                    # Check for answer layouts/zones using the helper that supports all formats
-                    found, _, _ = self._find_answer_layouts_in_yaml(yaml_data)
+                    # Check for answer zones
+                    found, _, _ = self._find_answer_zones_in_yaml(yaml_data)
                     if not found:
                         errors.append(
                             "Bubblemap YAML missing answer zones. "
-                            "Expected 'answer_zones' (schema v3+) or 'answer_layouts' (legacy) "
-                            "in page_X sections or at top level"
+                            "Expected 'answer_zones' in page_X sections or at top level"
                         )
                     
             except yaml.YAMLError as e:

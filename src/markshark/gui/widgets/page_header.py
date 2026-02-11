@@ -8,6 +8,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QWidget,
     QHBoxLayout,
+    QVBoxLayout,
     QLabel,
 )
 
@@ -18,7 +19,13 @@ ICON_PATH = Path(__file__).parent.parent / "resources" / "icons" / "SHARKICON.pn
 
 class PageHeader(QWidget):
     """
-    Page header with title on the left and MarkShark icon on the right.
+    Page header with title on top row, description below, and MarkShark icon on the right.
+
+    Layout:
+        +----------------------------------+--------+
+        | Title (large, bold)              |        |
+        | Description (smaller, gray)      |  ICON  |
+        +----------------------------------+--------+
 
     Usage:
         header = PageHeader("Quick Grade", "Upload scans and grade them.")
@@ -31,37 +38,38 @@ class PageHeader(QWidget):
 
     def _setup_ui(self, title: str, description: str):
         """Build the header UI."""
+        # Main horizontal layout: icon on left, text on right
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 5)
 
-        # Left side: title and description
-        left_layout = QHBoxLayout()
-        left_layout.setSpacing(10)
-
-        # Title
-        title_label = QLabel(title)
-        title_label.setStyleSheet("font-size: 24px; font-weight: bold;")
-        left_layout.addWidget(title_label)
-
-        # Description (if provided)
-        if description:
-            desc_label = QLabel(description)
-            desc_label.setWordWrap(True)
-            desc_label.setStyleSheet("color: #666;")
-            left_layout.addWidget(desc_label, 1)
-
-        layout.addLayout(left_layout, 1)
-
-        # Right side: icon
+        # Left side: icon (vertically centered)
         if ICON_PATH.exists():
             icon_label = QLabel()
             pixmap = QPixmap(str(ICON_PATH))
-            # Scale to approximately 2cm (~75 pixels at 96 DPI)
+            # Scale to 80x80 pixels
             scaled = pixmap.scaled(
                 80, 80,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             )
             icon_label.setPixmap(scaled)
-            icon_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             layout.addWidget(icon_label)
+
+        # Right side: title on top, description below (vertical stack)
+        text_layout = QVBoxLayout()
+        text_layout.setSpacing(2)
+
+        # Title (top row)
+        title_label = QLabel(title)
+        title_label.setStyleSheet("font-size: 24px; font-weight: bold;")
+        text_layout.addWidget(title_label)
+
+        # Description (bottom row, if provided)
+        if description:
+            desc_label = QLabel(description)
+            desc_label.setWordWrap(True)
+            desc_label.setStyleSheet("color: white; font-size: 14pt;")
+            text_layout.addWidget(desc_label)
+
+        layout.addLayout(text_layout, 1)

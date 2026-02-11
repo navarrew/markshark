@@ -4,14 +4,18 @@ MarkShark
 score_core.py  —  Axis-based MarkShark grading engine
 
 Features:
- - Multi-version exam support (NEW)
- - CSV includes: correct, incorrect, blank, multi, percent
- - KEY row(s) written below header (when key(s) provided)
+ - Multi-version exam support
+ - Simplified CSV output: Page, Version, LastName, FirstName, StudentID,
+   Correct, Incorrect, Blank, Multi, Percent, Flagged, FlagDetails, Q1-Qn
+ - KEY row(s) at top for each version
+ - Flagged column: Y if student has any flagged items, blank otherwise
+ - FlagDetails column: coded flags like Q10:multi|Q5:blank|ID:orphan
  - Annotated PNGs:
      * Names/ID: blue circles, optional white % text
      * Answers: green=correct, red=incorrect, grey=blank, orange=multi
  - Optional % fill text via --label-density
  - Columns limited to len(key) when a key is provided
+ - Stats and reports generated separately from this raw data output
 """
 
 from __future__ import annotations
@@ -20,8 +24,6 @@ import csv
 import sys
 from typing import Optional, List, Tuple, Dict
 
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 
 import numpy as np
 import cv2
@@ -205,190 +207,6 @@ def suggest_matches(
 
 
 # ----------------------------
-# Basic Stats Functions (for inline stats during scoring)
-# ----------------------------
-
-def _compute_basic_stats(
-    all_student_data: List[Dict],  # List of {answers, correct, total, version}
-    keys_dict: Optional[Dict[str, List[str]]],
-    q_out: int,
-) -> Dict:
-    """
-    Compute basic exam and item statistics from scoring results.
-    Handles multi-version exams properly by computing per-version item stats.
-    
-    Args:
-        all_student_data: List of dicts with keys: answers, correct, total, version
-        keys_dict: Dict mapping version -> answer key list
-        q_out: Number of questions to analyze
-    
-    Returns dict with:
-        - n_students: total number of students
-        - mean_score: mean number correct (pooled)
-        - mean_percent: mean percentage correct (pooled)
-        - std_dev: standard deviation of scores (pooled)
-        - high_score: highest score (pooled)
-        - low_score: lowest score (pooled)
-        - kr20_overall: KR-20 computed across all students (pooled)
-        - versions: dict of per-version stats:
-            {version: {n, mean, kr20, per_item_pct, per_item_pb}}
-    """
-    n_students = len(all_student_data)
-    
-    empty_result = {
-        "n_students": 0,
-        "mean_score": 0,
-        "mean_percent": 0,
-        "std_dev": 0,
-        "high_score": 0,
-        "low_score": 0,
-        "kr20_overall": float("nan"),
-        "versions": {},
-    }
-    
-    if n_students == 0:
-        return empty_result
-    
-    # Extract scores for pooled stats
-    scores = [d["correct"] for d in all_student_data if d["total"] > 0]
-    totals = [d["total"] for d in all_student_data if d["total"] > 0]
-    
-    if not scores:
-        return empty_result
-    
-    # Pooled exam-level stats
-    mean_score = np.mean(scores)
-    mean_total = np.mean(totals) if totals else q_out
-    mean_percent = (mean_score / mean_total * 100) if mean_total > 0 else 0
-    std_dev = np.std(scores, ddof=1) if len(scores) > 1 else 0
-    high_score = max(scores)
-    low_score = min(scores)
-    
-    # Group students by version
-    students_by_version: Dict[str, List[Dict]] = {}
-    for d in all_student_data:
-        ver = d.get("version", "").rstrip("*") or "A"  # Default to A if no version
-        if ver not in students_by_version:
-            students_by_version[ver] = []
-        students_by_version[ver].append(d)
-    
-    # Determine if this is a multi-version exam
-    is_multi_version = len(students_by_version) > 1 and keys_dict and len(keys_dict) > 1
-    
-    # Compute per-version stats
-    version_stats = {}
-    all_correctness_matrices = []  # For pooled KR-20
-    
-    for ver, students in sorted(students_by_version.items()):
-        ver_n = len(students)
-        ver_scores = [d["correct"] for d in students if d["total"] > 0]
-        
-        if not ver_scores:
-            continue
-        
-        ver_mean = np.mean(ver_scores)
-        
-        # Get the key for this version
-        key = None
-        if keys_dict:
-            key = keys_dict.get(ver, keys_dict.get(list(keys_dict.keys())[0]))
-            key = key[:q_out] if key else None
-        
-        # Build correctness matrix for this version
-        correctness = np.zeros((ver_n, q_out))
-        for i, d in enumerate(students):
-            answers = d.get("answers", [])
-            for j, ans in enumerate(answers[:q_out]):
-                if key and j < len(key):
-                    if ans and ans == key[j]:
-                        correctness[i, j] = 1
-        
-        all_correctness_matrices.append(correctness)
-        
-        # Per-item stats for this version
-        per_item_pct = (correctness.mean(axis=0) * 100).tolist() if ver_n > 0 else []
-        
-        # Point-biserial for this version
-        total_scores = correctness.sum(axis=1)
-        per_item_pb = []
-        for j in range(q_out):
-            item_col = correctness[:, j]
-            total_minus_item = total_scores - item_col
-            pb = _point_biserial(item_col, total_minus_item)
-            per_item_pb.append(pb)
-        
-        # KR-20 for this version
-        ver_kr20 = _kr20(correctness, total_scores)
-        
-        version_stats[ver] = {
-            "n": ver_n,
-            "mean": round(ver_mean, 2),
-            "kr20": round(ver_kr20, 3) if not np.isnan(ver_kr20) else float("nan"),
-            "per_item_pct": [round(p, 1) for p in per_item_pct],
-            "per_item_pb": [round(p, 3) if not np.isnan(p) else float("nan") for p in per_item_pb],
-        }
-    
-    # Compute overall KR-20 (pooled across all versions)
-    # This treats each student's correctness pattern as a row, regardless of version
-    kr20_overall = float("nan")
-    if all_correctness_matrices:
-        pooled_correctness = np.vstack(all_correctness_matrices)
-        pooled_totals = pooled_correctness.sum(axis=1)
-        kr20_overall = _kr20(pooled_correctness, pooled_totals)
-    
-    return {
-        "n_students": n_students,
-        "mean_score": round(mean_score, 2),
-        "mean_percent": round(mean_percent, 1),
-        "std_dev": round(std_dev, 2),
-        "high_score": high_score,
-        "low_score": low_score,
-        "kr20_overall": round(kr20_overall, 3) if not np.isnan(kr20_overall) else float("nan"),
-        "versions": version_stats,
-        "is_multi_version": is_multi_version,
-    }
-
-
-def _point_biserial(item: np.ndarray, total_minus_item: np.ndarray) -> float:
-    """Compute point-biserial correlation for an item."""
-    p = item.mean()
-    q = 1 - p
-    if p == 0 or p == 1:
-        return float("nan")
-    
-    mask_1 = item == 1
-    mask_0 = item == 0
-    
-    if mask_1.sum() == 0 or mask_0.sum() == 0:
-        return float("nan")
-    
-    M1 = total_minus_item[mask_1].mean()
-    M0 = total_minus_item[mask_0].mean()
-    s = total_minus_item.std(ddof=1)
-    
-    if s == 0 or np.isnan(s):
-        return float("nan")
-    
-    return float(((M1 - M0) / s) * np.sqrt(p * q))
-
-
-def _kr20(correctness: np.ndarray, total_scores: np.ndarray) -> float:
-    """Compute KR-20 reliability coefficient."""
-    k = correctness.shape[1]
-    if k < 2:
-        return float("nan")
-    
-    p = correctness.mean(axis=0)
-    pq_sum = (p * (1 - p)).sum()
-    var_total = np.var(total_scores, ddof=1)
-    
-    if var_total <= 0 or np.isnan(var_total):
-        return float("nan")
-    
-    return float((k / (k - 1.0)) * (1.0 - (pq_sum / var_total)))
-
-
-# ----------------------------
 # Utilities
 # ----------------------------
 
@@ -438,62 +256,62 @@ def _process_single_page(
     info = {"last_name": "", "first_name": "", "student_id": "", "version": ""}
     
     # Decode name/ID from this page (if layouts are present)
-    if page_layout.last_name_layout:
+    if page_layout.last_name_zone:
         picked, _, _ = decode_layout(
             gray,
-            page_layout.last_name_layout,
+            page_layout.last_name_zone,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["last_name"] = indices_to_text_col(
-            picked, page_layout.last_name_layout.labels or " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            picked, page_layout.last_name_zone.labels or " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         ).strip()
-    
-    if page_layout.first_name_layout:
+
+    if page_layout.first_name_zone:
         picked, _, _ = decode_layout(
             gray,
-            page_layout.first_name_layout,
+            page_layout.first_name_zone,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["first_name"] = indices_to_text_col(
-            picked, page_layout.first_name_layout.labels or " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            picked, page_layout.first_name_zone.labels or " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         ).strip()
-    
-    if page_layout.id_layout:
+
+    if page_layout.id_zone:
         picked, _, _ = decode_layout(
             gray,
-            page_layout.id_layout,
+            page_layout.id_zone,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["student_id"] = indices_to_text_col(
-            picked, page_layout.id_layout.labels or "0123456789"
+            picked, page_layout.id_zone.labels or "0123456789"
         ).strip()
-    
-    if page_layout.version_layout:
+
+    if page_layout.version_zone:
         # Version detection (usually only on page 1)
         picked, _, _ = decode_layout(
             gray,
-            page_layout.version_layout,
+            page_layout.version_zone,
             min_fill=min_fill,
             top2_ratio=top2_ratio,
             min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         if picked and len(picked) > 0 and picked[0] is not None:
-            labels = page_layout.version_layout.labels or "ABCD"
+            labels = page_layout.version_zone.labels or "ABCD"
             info["version"] = labels[picked[0]] if picked[0] < len(labels) else ""
-    
+
     # Decode answers from this page
     answers: List[Optional[str]] = []
-    for layout in page_layout.answer_layouts:
+    for layout in page_layout.answer_zones:
         picked, _, scores = decode_layout(
             gray,
             layout,
@@ -573,10 +391,13 @@ def _annotate_names_ids(
             cv2.circle(out, (cx, cy), radius, color_zone, thickness, lineType=cv2.LINE_AA)
             if label_density:
                 pct = int(round(100 * scores[idx]))
-                cv2.putText(out, f"{pct}", (cx - 8, cy + 5),
+                # Position text in the top-left corner of the bubble's bounding box
+                txt_x = x + 1
+                txt_y = y + int(10 * font_scale / 0.28)  # scale offset with font size
+                cv2.putText(out, f"{pct}", (txt_x, txt_y),
                             cv2.FONT_HERSHEY_SIMPLEX, float(font_scale), text_color, int(label_thickness), cv2.LINE_AA)
 
-    for attr in ("last_name_layout", "first_name_layout", "id_layout"):
+    for attr in ("last_name_zone", "first_name_zone", "id_zone"):
         lay = getattr(bmap, attr, None)
         if isinstance(lay, GridLayout):
             draw_layout(lay)
@@ -673,7 +494,7 @@ box_top_extra: Optional[int] = None,
     q_global = 0
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
 
-    for layout in bmap.answer_layouts:
+    for layout in bmap.answer_zones:
         centers = grid_centers_axis_mode(
             layout.x_topleft, layout.y_topleft,
             layout.x_bottomright, layout.y_bottomright,
@@ -853,47 +674,37 @@ def score_pdf(
     adaptive_rescoring: bool = SCORING_DEFAULTS.adaptive_rescoring,
     adaptive_max_adjustment: int = SCORING_DEFAULTS.adaptive_max_adjustment,
     adaptive_min_above_floor: float = SCORING_DEFAULTS.adaptive_min_above_floor,
-    # NEW: Review/flagging options
-    review_pdf: Optional[str] = None,  # Output PDF containing only flagged pages
-    flagged_xlsx: Optional[str] = None,  # Output XLSX listing flagged items for review
-    low_confidence_threshold: float = 0.15,  # Flag answers with separation below this
-    # NEW: Inline stats option
-    include_stats: bool = True,  # Append summary stats rows to CSV
-    # NEW: Roster matching
-    roster_csv: Optional[str] = None,  # Optional roster CSV for matching/absent detection
+    # Roster matching (for orphan detection - adds ID:orphan flags)
+    roster_csv: Optional[str] = None,
 ) -> str:
     
     """
     Grade a PDF or image stack using axis-based geometry.
-    
-    NEW: Multi-page bubble sheet support!
-    NEW: Multi-version exam support!
-    NEW: Flagging and review PDF support!
-    NEW: Inline basic statistics!
+
+    Produces a simplified CSV for downstream processing by the GUI or report tools.
 
     Behavior:
       - Supports single-page or multi-page bubble sheets
       - For multi-page: processes pages in groups (page 1+2 = student 1, page 3+4 = student 2, etc.)
       - Name/ID taken from page 1, answers combined from all pages
-      - Detects version from version_layout bubbles
+      - Detects version from version_zone bubbles
       - Loads multi-version keys if key file contains #Version headers
       - Scores each student against their version's key
       - If key is provided: limit output columns and scoring to first len(key) questions.
-      - CSV includes metrics: correct, incorrect, blank, multi, percent.
-      - KEY row(s) written under header (one per version).
-      - Annotated images combine blue name/ID overlays and answer overlays.
-      - Page column shows "1-2" for 2-page sheets, "1" for single-page
-      
-    Flagging (NEW):
-      - Tracks answers that are blank, multi, or low-confidence
-      - If review_pdf is provided: generates a PDF with just the flagged pages
-      - If flagged_xlsx is provided: writes XLSX with flagged items + Corrected_Answer column
-      - Flagged pages get special annotations highlighting problem areas
-      
-    Inline Stats (NEW):
-      - If include_stats=True and key is provided: appends summary rows to CSV
-      - Exam stats: N, Mean, StdDev, High, Low, KR-20
-      - Item stats: % Correct, Point-Biserial for each question
+
+    CSV Output Format:
+      - Header: Page, Version, LastName, FirstName, StudentID, Correct, Incorrect, Blank, Multi, Percent, Flagged, FlagDetails, Q1, Q2, ...
+      - KEY rows at top (one per version, Page=KEY)
+      - Student rows with scores and answers
+      - Flagged column: "Y" if student has any flagged issues, blank otherwise
+      - FlagDetails column: pipe-separated flags like "Q5:blank|Q10:multi|ID:orphan"
+      - Page column references the annotated PDF page numbers for easy lookup
+
+    Annotated PDF:
+      - Generates an annotated PDF with overlays on each page
+      - Blue circles for name/ID fields
+      - Green/red/grey/orange circles for correct/incorrect/blank/multi answers
+      - Page numbers in CSV correspond to pages in this PDF
     """
     bmap: Bubblemap = load_bublmap(bublmap_path)
     pages = IO.load_pages(input_path, dpi=dpi, renderer=pdf_renderer)
@@ -928,7 +739,7 @@ def score_pdf(
     # Calculate total questions across all pages, and per-page question counts
     questions_per_page = []
     for page in bmap.pages:
-        page_q = sum(layout.numrows for layout in page.answer_layouts)
+        page_q = sum(layout.numrows for layout in page.answer_zones)
         questions_per_page.append(page_q)
     total_q = sum(questions_per_page)
 
@@ -955,13 +766,17 @@ def score_pdf(
         remaining -= active
 
     # Make the CSV header
-    header = ["Version", "Page", "LastName", "FirstName", "StudentID"]
+    # Format: Page, Version, LastName, FirstName, StudentID, Score, Correct, Incorrect, Blank, Multi, Percent, Flagged, FlagDetails, Q1, Q2, ...
+    header = ["Page", "Version", "LastName", "FirstName", "StudentID"]
 
     if keys_dict:
-        header += ["Correct", "Incorrect", "Blank", "Multi", "Percent"]
+        header += ["Score", "Correct", "Incorrect", "Blank", "Multi", "Percent"]
     else:
         header += ["Blank"]
-        
+
+    # Add Flagged and FlagDetails columns
+    header += ["Flagged", "FlagDetails"]
+
     header += [f"Q{i+1}" for i in range(q_out)]
 
     _ensure_dir(os.path.dirname(out_csv) or ".")
@@ -989,12 +804,8 @@ def score_pdf(
         except Exception:
             pdf_writer = None
     
-    # ==================== FLAGGING INFRASTRUCTURE ====================
-    # Track flagged items for review PDF generation
-    flagged_items: List[Dict] = []  # List of {student_id, page, question, issue, answer, fill_pct, ...}
-    flagged_page_images: List[Tuple[int, np.ndarray]] = []  # (page_idx, annotated_image) for review PDF
-    
-    # Helper to check if a student has flagged answers
+    # ==================== FLAGGING HELPERS ====================
+    # Helper to check if a student has any flagged answers
     def _has_flags(answers: List[Optional[str]]) -> bool:
         for a in answers:
             if a is None or a == "":  # blank
@@ -1002,37 +813,29 @@ def score_pdf(
             if isinstance(a, str) and "," in a:  # multi
                 return True
         return False
-    
-    # Helper to record flagged items for a student
-    def _record_flags(
-        student_id: str,
-        page_num: int,
-        answers: List[Optional[str]],
-        student_name: str = "",
-    ):
+
+    # Helper to build FlagDetails string for a student
+    def _build_flag_details(answers: List[Optional[str]], is_orphan: bool = False) -> str:
+        """
+        Build a pipe-separated flag details string.
+        Format: Q5:blank|Q10:multi|ID:orphan
+        """
+        flags = []
         for q_idx, ans in enumerate(answers):
-            issue = None
             if ans is None or ans == "":
-                issue = "blank"
+                flags.append(f"Q{q_idx + 1}:blank")
             elif isinstance(ans, str) and "," in ans:
-                issue = "multi"
-            
-            if issue:
-                flagged_items.append({
-                    "student_id": student_id,
-                    "student_name": student_name,
-                    "page": page_num,
-                    "question": q_idx + 1,
-                    "issue": issue,
-                    "current_answer": ans if ans else "",
-                })
+                flags.append(f"Q{q_idx + 1}:multi")
+
+        if is_orphan:
+            flags.append("ID:orphan")
+
+        return "|".join(flags)
     # ==================================================================
     
-    # ==================== STATS COLLECTION ============================
-    # Collect data for computing basic statistics at the end
-    # Now includes version info for multi-version support
-    # Also stores full CSV row for grouped output by version
-    all_student_data: List[Dict] = []  # {answers, correct, total, version, csv_row, student_id, student_name}
+    # ==================== DATA COLLECTION ============================
+    # Collect student data for CSV output
+    all_student_data: List[Dict] = []  # {answers, csv_row, student_id}
     # ==================================================================
 
     # ==================== ROSTER LOADING ==============================
@@ -1080,6 +883,7 @@ def score_pdf(
                 
                 for page_num, img_bgr in enumerate(student_pages, start=1):
                     page_layout = bmap.get_page(page_num)
+                    _page_label = f"student {student_idx + 1}/{num_students} pg {page_num}/{pages_per_student}"
 
                     # Per-page calibration
                     page_fixed_thresh = fixed_thresh
@@ -1089,10 +893,10 @@ def score_pdf(
                         if calib_page:
                             # Create temp bmap-like object for calibration
                             temp_bmap = type('TempBmap', (object,), {
-                                'answer_layouts': calib_page.answer_layouts,
-                                'last_name_layout': calib_page.last_name_layout,
-                                'first_name_layout': calib_page.first_name_layout,
-                                'id_layout': calib_page.id_layout,
+                                'answer_zones': calib_page.answer_zones,
+                                'last_name_zone': calib_page.last_name_zone,
+                                'first_name_zone': calib_page.first_name_zone,
+                                'id_zone': calib_page.id_zone,
                             })()
                             # Only calibrate on active rows (skip unused questions)
                             calib_max_rows = active_rows_per_page[page_num - 1] if page_num <= len(active_rows_per_page) else None
@@ -1101,6 +905,7 @@ def score_pdf(
                                 temp_bmap,
                                 max_rows=calib_max_rows,
                                 verbose=verbose_calibration,
+                                page_label=_page_label,
                             )
                     
                     page_thresholds.append(page_fixed_thresh)
@@ -1131,7 +936,7 @@ def score_pdf(
                 # Metrics
                 blanks = sum(1 for a in answers_out if (a is None or a == ""))
                 multi = sum(1 for a in answers_out if (isinstance(a, str) and "," in a))
-                correct = incorrect = 0
+                score = correct = incorrect = 0
                 percent = 0.0
                 total_scored = q_out
                 version_used = student_version
@@ -1146,7 +951,8 @@ def score_pdf(
                         advanced_key_set,
                         code=student_code,
                     )
-                    correct = points  # Points earned (can be float for partial credit)
+                    score = points      # Points earned (can differ from correct count when questions have different point values)
+                    correct = status_counts.get("correct", 0)  # Raw count of correctly answered questions
                     total_scored = max_pts
                     # Calculate incorrect from status counts
                     incorrect = status_counts.get("incorrect", 0)
@@ -1159,12 +965,13 @@ def score_pdf(
                     key_out = keys_dict.get(key_version, [])[:q_out] if keys_dict else None
 
                 elif keys_dict:
-                    # Legacy multi-version scoring
+                    # Legacy multi-version scoring (1 point per question, so score == correct)
                     correct, total_scored, version_used = score_against_multi_keys(
                         answers_out,
                         student_version,
                         keys_dict,
                     )
+                    score = correct  # Legacy: 1 point per question
 
                     # Count incorrect
                     answered_single = sum(1 for a in answers_out if a and "," not in a)
@@ -1175,52 +982,47 @@ def score_pdf(
                     # Get the key for annotation
                     key_version = version_used.rstrip("*")
                     key_out = keys_dict.get(key_version, [])[:q_out]
-                
-                # Compose CSV row - Page column shows "1-2" for multi-page
-                page_range = f"1-{pages_per_student}" if pages_per_student > 1 else "1"
+
+                # Compose CSV row
+                # Format: Page, Version, LastName, FirstName, StudentID, Score, Correct, Incorrect, Blank, Multi, Percent, Flagged, FlagDetails, Q1...
+                # Page shows the actual PDF page number(s) for lookup in the annotated PDF
+                page_range = f"{start_page_idx + 1}-{start_page_idx + pages_per_student}" if pages_per_student > 1 else str(start_page_idx + 1)
+
+                # Build flag details for this student
+                has_flags = _has_flags(answers_out)
+                flag_details = _build_flag_details(answers_out) if has_flags else ""
+
                 row = [
-                    version_used,
                     page_range,
+                    version_used,
                     student_info.get("last_name", ""),
                     student_info.get("first_name", ""),
                     student_info.get("student_id", ""),
                 ]
-                
+
                 if keys_dict or use_advanced_scoring:
-                    # Format correct as int if whole number, else 1 decimal place
+                    # Score = points earned, Correct = number of right answers
+                    score_str = str(int(score)) if score == int(score) else f"{score:.1f}"
                     correct_str = str(int(correct)) if correct == int(correct) else f"{correct:.1f}"
-                    row += [correct_str, str(incorrect), str(blanks), str(multi), f"{percent:.1f}"]
+                    percent_str = f"{percent:.1f}"
+                    row += [score_str, correct_str, str(incorrect), str(blanks), str(multi), percent_str]
                 else:
                     row += [str(blanks)]
 
+                # Add Flagged and FlagDetails columns
+                row += ["Y" if has_flags else "", flag_details]
+
                 row += answers_csv
 
-                # ==================== FLAGGING ====================
-                # Record flagged items for this student (multi-page)
-                if _has_flags(answers_out):
-                    student_name = f"{student_info.get('last_name', '')} {student_info.get('first_name', '')}".strip()
-                    _record_flags(
-                        student_id=student_info.get("student_id", f"student_{student_idx+1}"),
-                        page_num=start_page_idx + 1,  # First page of this student's set
-                        answers=answers_out,
-                        student_name=student_name,
-                    )
-                # ==================================================
-                
-                # ==================== STATS COLLECTION ====================
-                # Collect data for stats computation (with version for multi-version support)
-                student_name = f"{student_info.get('last_name', '')} {student_info.get('first_name', '')}".strip()
+                # (Flagging is now built inline in flag_details column)
+
+                # Store student data for CSV output
                 all_student_data.append({
                     "answers": answers_out,
-                    "correct": correct if (keys_dict or use_advanced_scoring) else 0,
-                    "total": total_scored if (keys_dict or use_advanced_scoring) else q_out,
-                    "version": version_used.rstrip("*") if version_used else "",
-                    "csv_row": row,  # Store for grouped output
+                    "csv_row": row,
                     "student_id": student_info.get("student_id", ""),
-                    "student_name": student_name,
-                    "page": start_page_idx + 1,
+                    "student_name": f"{student_info.get('last_name', '')} {student_info.get('first_name', '')}".strip(),
                 })
-                # ==========================================================
 
                 # Annotate all pages for this student
                 if out_annotated_dir or out_pdf_path:
@@ -1231,23 +1033,23 @@ def score_pdf(
                             raise ValueError(f"Could not get layout for page {page_num}")
                         
                         # DEBUG: Verify we have the right page
-                        num_answer_layouts_this_page = len(page_layout.answer_layouts)
+                        num_answer_zones_this_page = len(page_layout.answer_zones)
                         if verbose_calibration:
-                            print(f"  Annotating page {page_num} with {num_answer_layouts_this_page} answer layout(s)")
-                            if num_answer_layouts_this_page > 0:
-                                first_layout = page_layout.answer_layouts[0]
-                                print(f"    First layout coords: ({first_layout.x_topleft:.4f}, {first_layout.y_topleft:.4f}) to ({first_layout.x_bottomright:.4f}, {first_layout.y_bottomright:.4f})")
-                                print(f"    First layout: {first_layout.numrows} rows × {first_layout.numcols} cols")
+                            print(f"  Annotating page {page_num} with {num_answer_zones_this_page} answer zone(s)")
+                            if num_answer_zones_this_page > 0:
+                                first_zone = page_layout.answer_zones[0]
+                                print(f"    First zone coords: ({first_zone.x_topleft:.4f}, {first_zone.y_topleft:.4f}) to ({first_zone.x_bottomright:.4f}, {first_zone.y_bottomright:.4f})")
+                                print(f"    First zone: {first_zone.numrows} rows × {first_zone.numcols} cols")
                         
                         page_fixed_thresh = page_thresholds[page_num - 1]
                         
                         # Get answers for this page only
                         # Calculate which answers belong to this page
                         answers_before_page = sum(
-                            sum(layout.numrows for layout in bmap.get_page(p).answer_layouts)
+                            sum(layout.numrows for layout in bmap.get_page(p).answer_zones)
                             for p in range(1, page_num)
                         )
-                        answers_in_page = sum(layout.numrows for layout in page_layout.answer_layouts)
+                        answers_in_page = sum(layout.numrows for layout in page_layout.answer_zones)
                         
                         # For annotation, we need the answers specific to THIS page
                         # Slice from all_answers to get just this page's answers
@@ -1266,9 +1068,9 @@ def score_pdf(
                         # Annotate with name/ID zones
                         # Create a proper Bubblemap-like object from PageLayout
                         temp_bmap_names = type('TempBmap', (object,), {
-                            'last_name_layout': page_layout.last_name_layout,
-                            'first_name_layout': page_layout.first_name_layout,
-                            'id_layout': page_layout.id_layout,
+                            'last_name_zone': page_layout.last_name_zone,
+                            'first_name_zone': page_layout.first_name_zone,
+                            'id_zone': page_layout.id_zone,
                         })()
                         
                         vis = _annotate_names_ids(
@@ -1281,7 +1083,7 @@ def score_pdf(
                         # Annotate with answer zones
                         # Create a proper Bubblemap-like object from PageLayout
                         temp_bmap_answers = type('TempBmap', (object,), {
-                            'answer_layouts': page_layout.answer_layouts,
+                            'answer_zones': page_layout.answer_zones,
                         })()
                         
                         vis = _annotate_answers(
@@ -1312,22 +1114,20 @@ def score_pdf(
                             else:
                                 annotated_pages.append(vis)
                         
-                        # Track flagged pages for review PDF (multi-page mode)
-                        if (review_pdf or flagged_xlsx) and _has_flags(answers_out):
-                            actual_page_num = start_page_idx + page_num
-                            flagged_page_images.append((actual_page_num, vis.copy()))
         
         else:
             # SINGLE-PAGE MODE: Original logic (unchanged)
             for page_idx, img_bgr in enumerate(pages, start=1):
                 # Per-page calibration for lightly marked sheets
                 page_fixed_thresh = fixed_thresh
+                _page_label = f"{page_idx}/{len(pages)}"
                 if fixed_thresh is None and auto_calibrate_thresh:
                     page_fixed_thresh, _calib_stats = calibrate_fixed_thresh_for_page(
                         img_bgr,
                         bmap,
                         max_rows=q_out if q_out < total_q else None,
                         verbose=verbose_calibration,
+                        page_label=_page_label,
                     )
                 # Decode all fields using the shared axis-mode pipeline
                 info, answers, backgrounds = process_page_all(
@@ -1340,6 +1140,7 @@ def score_pdf(
                     background_percentile=background_percentile,
                     adaptive_min_above_floor=adaptive_min_above_floor,
                     verbose_calibration=verbose_calibration,
+                    page_label=_page_label,
                 )
 
                 # Try adaptive rescoring if enabled and there are blanks
@@ -1358,6 +1159,7 @@ def score_pdf(
                         adaptive_max_adjustment=adaptive_max_adjustment,
                         max_questions=q_out if q_out < total_q else None,
                         verbose=verbose_calibration,
+                        page_label=_page_label,
                     )
 
                 # Limit answers to the Qs we output (based on key length if present)
@@ -1370,7 +1172,7 @@ def score_pdf(
                 # Metrics
                 blanks = sum(1 for a in answers_out if (a is None or a == ""))
                 multi = sum(1 for a in answers_out if (isinstance(a, str) and "," in a))
-                correct = incorrect = 0
+                score = correct = incorrect = 0
                 percent = 0.0
                 total_scored = q_out
                 version_used = student_version
@@ -1385,7 +1187,8 @@ def score_pdf(
                         advanced_key_set,
                         code=student_code,
                     )
-                    correct = points  # Points earned (can be float for partial credit)
+                    score = points      # Points earned (can differ from correct count when questions have different point values)
+                    correct = status_counts.get("correct", 0)  # Raw count of correctly answered questions
                     total_scored = max_pts
                     # Calculate incorrect from status counts
                     incorrect = status_counts.get("incorrect", 0)
@@ -1398,12 +1201,13 @@ def score_pdf(
                     key_out = keys_dict.get(key_version, [])[:q_out] if keys_dict else None
 
                 elif keys_dict:
-                    # Legacy multi-version scoring
+                    # Legacy multi-version scoring (1 point per question, so score == correct)
                     correct, total_scored, version_used = score_against_multi_keys(
                         answers_out,
                         student_version,
                         keys_dict,
                     )
+                    score = correct  # Legacy: 1 point per question
 
                     # Count incorrect (total scored - blanks - multi - correct)
                     answered_single = sum(1 for a in answers_out if a and "," not in a)
@@ -1416,48 +1220,43 @@ def score_pdf(
                     key_out = keys_dict.get(key_version, [])[:q_out]
 
                 # Compose CSV row
+                # Format: Page, Version, LastName, FirstName, StudentID, Score, Correct, Incorrect, Blank, Multi, Percent, Flagged, FlagDetails, Q1...
+
+                # Build flag details for this student
+                has_flags = _has_flags(answers_out)
+                flag_details = _build_flag_details(answers_out) if has_flags else ""
+
                 row = [
+                    str(page_idx),  # Page number for lookup in annotated PDF
                     version_used,
-                    str(page_idx),
                     info.get("last_name", ""),
                     info.get("first_name", ""),
                     info.get("student_id", ""),
-                ] 
+                ]
 
                 if keys_dict or use_advanced_scoring:
-                    # Format correct as int if whole number, else 1 decimal place
+                    # Score = points earned, Correct = number of right answers
+                    score_str = str(int(score)) if score == int(score) else f"{score:.1f}"
                     correct_str = str(int(correct)) if correct == int(correct) else f"{correct:.1f}"
-                    row += [correct_str, str(incorrect), str(blanks), str(multi), f"{percent:.1f}"]
+                    percent_str = f"{percent:.1f}"
+                    row += [score_str, correct_str, str(incorrect), str(blanks), str(multi), percent_str]
                 else:
                     row += [str(blanks)]
 
+                # Add Flagged and FlagDetails columns
+                row += ["Y" if has_flags else "", flag_details]
+
                 row += answers_csv
 
-                # ==================== FLAGGING ====================
-                # Record flagged items for this student
-                if _has_flags(answers_out):
-                    student_name = f"{info.get('last_name', '')} {info.get('first_name', '')}".strip()
-                    _record_flags(
-                        student_id=info.get("student_id", f"page_{page_idx}"),
-                        page_num=page_idx,
-                        answers=answers_out,
-                        student_name=student_name,
-                    )
-                # ==================================================
-                
-                # ==================== STATS COLLECTION ====================
-                # Collect data for stats computation (with version for multi-version support)
+                # (Flagging is now built inline in flag_details column)
+
+                # Store student data for CSV output
                 all_student_data.append({
                     "answers": answers_out,
-                    "correct": correct if (keys_dict or use_advanced_scoring) else 0,
-                    "total": total_scored if (keys_dict or use_advanced_scoring) else q_out,
-                    "version": version_used.rstrip("*") if version_used else "",
-                    "csv_row": row,  # Store for grouped output
+                    "csv_row": row,
                     "student_id": info.get("student_id", ""),
-                    "student_name": student_name,
-                    "page": page_idx,
+                    "student_name": f"{info.get('last_name', '')} {info.get('first_name', '')}".strip(),
                 })
-                # ==========================================================
 
                 # Annotated image: names/IDs in blue (with optional %), then answers overlay
                 if out_annotated_dir or out_pdf_path:
@@ -1491,149 +1290,17 @@ def score_pdf(
                         else:
                             annotated_pages.append(vis)
                     
-                    # Track flagged pages for review PDF (single-page mode)
-                    if (review_pdf or flagged_xlsx) and _has_flags(answers_out):
-                        flagged_page_images.append((page_idx, vis.copy()))
-                        
     if out_pdf_path:
         if pdf_writer is not None:
             pdf_writer.close(save=True)
         elif annotated_pages:
             IO.save_images_as_pdf(annotated_pages, out_pdf_path, dpi=dpi, quality=pdf_quality)
 
-    # ==================== WRITE GROUPED CSV + STATS ====================
-    # Write CSV grouped by version:
-    # - Version A: header, key, students
-    # - Version B: header, key, students  
-    # - Summary statistics at the end
-    
-    # Group students by version
-    students_by_version: Dict[str, List[Dict]] = {}
-    for d in all_student_data:
-        ver = d.get("version", "") or "A"  # Default to A if no version
-        if ver not in students_by_version:
-            students_by_version[ver] = []
-        students_by_version[ver].append(d)
-    
-    # Check if multi-version
-    is_multi_version_output = len(students_by_version) > 1 and keys_dict and len(keys_dict) > 1
-    
-    with open(out_csv, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        
-        # Compute stats FIRST so we have per-version stats available
-        stats = None
-        if include_stats and keys_dict and all_student_data:
-            stats = _compute_basic_stats(
-                all_student_data=all_student_data,
-                keys_dict=keys_dict,
-                q_out=q_out,
-            )
-        
-        # Helper for stats rows
-        n_cols_before_q = 5 + 5 if keys_dict else 5 + 1
-        
-        def make_stats_row(label: str, value, q_values=None):
-            """Helper to create a stats row with label and optional per-Q values."""
-            row = [""] * n_cols_before_q
-            row[0] = label
-            if q_values:
-                row.extend([str(v) if v == v else "" for v in q_values])
-            else:
-                row.extend([""] * q_out)
-            if value is not None:
-                row[1] = str(value)
-            return row
-        
-        # Write each version's section (with its item stats immediately after)
-        for ver_idx, ver in enumerate(sorted(students_by_version.keys())):
-            students = students_by_version[ver]
-            
-            # Add blank line between versions (except before first)
-            if ver_idx > 0:
-                writer.writerow([])
-            
-            # Write section header for multi-version exams
-            if is_multi_version_output:
-                writer.writerow([f"=== VERSION {ver} ({len(students)} students) ==="])
-            
-            # Write column header
-            writer.writerow(csv_header)
-            
-            # Write KEY row for this version
-            if keys_dict and ver in keys_dict:
-                key_row = [ver, "0", "KEY", "KEY", "KEY"]
-                if keys_dict:
-                    key_row += ["", "", "", "", ""]
-                else:
-                    key_row += [""]
-                key_row += keys_dict[ver][:q_out]
-                writer.writerow(key_row)
-            
-            # Write student rows for this version
-            for student in students:
-                writer.writerow(student["csv_row"])
-            
-            # Write item stats for THIS version immediately after its students
-            if stats and stats.get("versions") and ver in stats["versions"]:
-                ver_stats = stats["versions"][ver]
-                if ver_stats.get("per_item_pct"):
-                    writer.writerow([])
-                    if is_multi_version_output:
-                        writer.writerow(make_stats_row(f"--- ITEM STATISTICS: VERSION {ver} (N={ver_stats['n']}) ---", ""))
-                    else:
-                        writer.writerow(make_stats_row("--- ITEM STATISTICS ---", ""))
-                    writer.writerow(make_stats_row(f"PCT_CORRECT{'_'+ver if is_multi_version_output else ''}", "", ver_stats["per_item_pct"]))
-                    writer.writerow(make_stats_row(f"POINT_BISERIAL{'_'+ver if is_multi_version_output else ''}", "", ver_stats["per_item_pb"]))
-        
-        # ==================== WRITE OVERALL STATS AT END ====================
-        if stats:
-            # Separator
-            writer.writerow([])
-            writer.writerow([])
-            
-            # Overall exam statistics header
-            writer.writerow(make_stats_row("=== EXAM STATISTICS (ALL VERSIONS) ===", ""))
-            writer.writerow(make_stats_row("N_STUDENTS", stats["n_students"]))
-            writer.writerow(make_stats_row("MEAN_SCORE", stats["mean_score"]))
-            writer.writerow(make_stats_row("MEAN_PERCENT", f"{stats['mean_percent']:.1f}%"))
-            writer.writerow(make_stats_row("STD_DEV", stats["std_dev"]))
-            writer.writerow(make_stats_row("HIGH_SCORE", stats["high_score"]))
-            writer.writerow(make_stats_row("LOW_SCORE", stats["low_score"]))
-            
-            # KR-20: Overall
-            if not np.isnan(stats["kr20_overall"]):
-                writer.writerow(make_stats_row("KR20_OVERALL", stats["kr20_overall"]))
-            
-            # KR-20: Per version (if multi-version)
-            if stats.get("is_multi_version") and stats.get("versions"):
-                for ver, ver_stats in sorted(stats["versions"].items()):
-                    if not np.isnan(ver_stats["kr20"]):
-                        writer.writerow(make_stats_row(f"KR20_VERSION_{ver}", f"{ver_stats['kr20']} (N={ver_stats['n']})"))
-            
-            # Note: Per-version item stats are now written immediately after each version's students
-            
-            # Print stats summary to stderr
-            print(f"[info] Exam stats: N={stats['n_students']}, Mean={stats['mean_score']:.1f} ({stats['mean_percent']:.1f}%), "
-                  f"SD={stats['std_dev']:.2f}, Range={stats['low_score']}-{stats['high_score']}", file=sys.stderr)
-            
-            if not np.isnan(stats["kr20_overall"]):
-                print(f"[info] KR-20 overall: {stats['kr20_overall']:.3f}", file=sys.stderr)
-            
-            if stats.get("is_multi_version") and stats.get("versions"):
-                for ver, ver_stats in sorted(stats["versions"].items()):
-                    if not np.isnan(ver_stats["kr20"]):
-                        print(f"[info] KR-20 version {ver}: {ver_stats['kr20']:.3f} (N={ver_stats['n']})", file=sys.stderr)
-    # =================================================================
-
-    # ==================== ROSTER MATCHING =============================
-    # If roster provided, find orphan scans and absent students
-    orphan_students = []
-    absent_roster = {}
+    # ==================== ROSTER MATCHING (for orphan detection) ====================
+    # If roster provided, find orphan scans and mark them in FlagDetails
+    orphan_ids = set()
     if roster:
         matched, orphans, absent_ids = match_roster(all_student_data, roster)
-        orphan_students = orphans
-        absent_roster = {sid: roster[sid] for sid in absent_ids}
 
         # Log roster matching results
         print(f"[info] Roster matching: {len(matched)} matched, {len(orphans)} orphan scans, {len(absent_ids)} absent students", file=sys.stderr)
@@ -1645,6 +1312,9 @@ def score_pdf(
             if len(orphans) > 5:
                 print(f"       ... and {len(orphans) - 5} more", file=sys.stderr)
 
+            # Track orphan IDs so we can add ID:orphan to their FlagDetails
+            orphan_ids = {o.get('student_id', '') for o in orphans}
+
         if absent_ids:
             print(f"[info] Absent students (on roster, no scan):", file=sys.stderr)
             for sid in absent_ids[:5]:  # Show first 5
@@ -1652,174 +1322,95 @@ def score_pdf(
                 print(f"       - {sid} ({info.get('full_name', 'unknown')})", file=sys.stderr)
             if len(absent_ids) > 5:
                 print(f"       ... and {len(absent_ids) - 5} more", file=sys.stderr)
-
-        # Add orphan scans to flagged items for review
-        for orphan in orphan_students:
-            # Get suggestions from absent roster
-            suggestions = suggest_matches(
-                orphan.get('student_id', ''),
-                orphan.get('student_name', ''),
-                absent_roster,
-                max_suggestions=3
-            )
-            suggestion_text = "; ".join([
-                f"{s['student_id']} ({s['name']}) [{s['reason']}]"
-                for s in suggestions
-            ]) if suggestions else ""
-
-            flagged_items.append({
-                "student_id": orphan.get("student_id", ""),
-                "student_name": orphan.get("student_name", ""),
-                "page": orphan.get("page", ""),
-                "question": "ID",  # Special question marker for ID issues
-                "issue": "orphan",  # Not in roster
-                "current_answer": orphan.get("student_id", ""),
-                "suggested_match": suggestion_text,
-            })
     # =================================================================
 
-    # ==================== GENERATE REVIEW OUTPUTS ====================
-    # Write flagged XLSX if requested
-    if flagged_xlsx and (flagged_items or orphan_students):
-        _ensure_dir(os.path.dirname(flagged_xlsx) or ".")
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Flagged Items"
+    # ==================== WRITE SIMPLIFIED CSV ====================
+    # Format:
+    # - Header row
+    # - KEY row(s) for each version
+    # - Student rows (all students, with Flagged/FlagDetails columns)
+    # - No stats, no version grouping headers
 
-        # Header row - add Suggested Match column for roster matching
-        headers = ["Student ID", "Student Name", "Page", "Question", "Issue", "Current Answer", "Corrected Answer", "Suggested Match"]
-        ws.append(headers)
+    with open(out_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
 
-        # Style header row
-        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-        header_font = Font(bold=True, color="FFFFFF")
-        thin_border = Border(
-            left=Side(style='thin'),
-            right=Side(style='thin'),
-            top=Side(style='thin'),
-            bottom=Side(style='thin')
-        )
+        # Write header
+        writer.writerow(csv_header)
 
-        for col_num, header in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col_num)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.border = thin_border
-            cell.alignment = Alignment(horizontal='center')
+        # Write KEY row(s) - one per version
+        if keys_dict:
+            for ver in sorted(keys_dict.keys()):
+                key_answers = keys_dict[ver][:q_out]
+                # KEY row format: Page=KEY, Version, LastName=KEY, FirstName=KEY, StudentID=KEY, ...
+                key_row = ["KEY", ver, "KEY", "KEY", "KEY"]
+                if keys_dict:
+                    key_row += ["", "", "", "", "", ""]  # Score, Correct, Incorrect, Blank, Multi, Percent (empty for KEY)
+                else:
+                    key_row += [""]  # Just Blank column
+                key_row += ["", ""]  # Flagged, FlagDetails (empty for KEY)
+                key_row += key_answers
+                writer.writerow(key_row)
 
-        # Data rows
-        for item in flagged_items:
-            ws.append([
-                item["student_id"],
-                item["student_name"],
-                item["page"],
-                item["question"],
-                item["issue"],
-                item.get("current_answer", ""),
-                "",  # Empty Corrected Answer column for teacher input
-                item.get("suggested_match", ""),  # Suggested match from roster
-            ])
+        # Write student rows
+        for student_data in all_student_data:
+            row = student_data["csv_row"]
 
-        # Style data rows and highlight Corrected Answer column
-        yellow_fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
-        orange_fill = PatternFill(start_color="FFD699", end_color="FFD699", fill_type="solid")  # For orphan rows
-        for row_num in range(2, len(flagged_items) + 2):
-            item = flagged_items[row_num - 2]
-            is_orphan = item.get("issue") == "orphan"
+            # Check if this student is an orphan (not in roster) - add to FlagDetails
+            student_id = student_data.get("student_id", "")
+            if student_id in orphan_ids:
+                # Find the FlagDetails column and append ID:orphan
+                # Row format: Page, Version, LastName, FirstName, StudentID, [Score, Correct, Incorrect, Blank, Multi, Percent OR just Blank], Flagged, FlagDetails, Q1...
+                flagged_col_idx = 5 + (6 if keys_dict else 1)  # Index of Flagged column
+                flag_details_idx = flagged_col_idx + 1
 
-            for col_num in range(1, len(headers) + 1):
-                cell = ws.cell(row=row_num, column=col_num)
-                cell.border = thin_border
-                # Highlight the Corrected Answer column (yellow) or entire row if orphan (orange)
-                if is_orphan:
-                    cell.fill = orange_fill
-                elif col_num == 7:  # Corrected Answer column
-                    cell.fill = yellow_fill
-                # Format ID columns as text to prevent Excel from treating them as numbers
-                if col_num in (1, 7):  # Student ID and Corrected Answer columns
-                    cell.number_format = '@'  # Text format
+                # Update Flagged to Y
+                row[flagged_col_idx] = "Y"
 
-        # Set column widths
-        ws.column_dimensions['A'].width = 12  # Student ID
-        ws.column_dimensions['B'].width = 20  # Student Name
-        ws.column_dimensions['C'].width = 8   # Page
-        ws.column_dimensions['D'].width = 10  # Question
-        ws.column_dimensions['E'].width = 10  # Issue
-        ws.column_dimensions['F'].width = 15  # Current Answer
-        ws.column_dimensions['G'].width = 18  # Corrected Answer
-        ws.column_dimensions['H'].width = 45  # Suggested Match
+                # Append ID:orphan to FlagDetails
+                if row[flag_details_idx]:
+                    row[flag_details_idx] += "|ID:orphan"
+                else:
+                    row[flag_details_idx] = "ID:orphan"
 
-        # Freeze header row
-        ws.freeze_panes = 'A2'
+            writer.writerow(row)
 
-        # Add Absent Students sheet if there are absent students
-        if absent_roster:
-            ws_absent = wb.create_sheet(title="Absent Students")
-            absent_headers = ["Student ID", "First Name", "Last Name", "Notes"]
-            ws_absent.append(absent_headers)
-
-            # Style header
-            for col_num, header in enumerate(absent_headers, 1):
-                cell = ws_absent.cell(row=1, column=col_num)
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.border = thin_border
-                cell.alignment = Alignment(horizontal='center')
-
-            # Data rows
-            for sid, info in sorted(absent_roster.items()):
-                ws_absent.append([
-                    sid,
-                    info.get("first_name", ""),
-                    info.get("last_name", ""),
-                    "",  # Notes column for teacher
-                ])
-
-            # Style and width
-            for row_num in range(2, len(absent_roster) + 2):
-                for col_num in range(1, len(absent_headers) + 1):
-                    cell = ws_absent.cell(row=row_num, column=col_num)
-                    cell.border = thin_border
-                    # Format Student ID column as text
-                    if col_num == 1:
-                        cell.number_format = '@'
-
-            ws_absent.column_dimensions['A'].width = 12
-            ws_absent.column_dimensions['B'].width = 15
-            ws_absent.column_dimensions['C'].width = 15
-            ws_absent.column_dimensions['D'].width = 30
-            ws_absent.freeze_panes = 'A2'
-
-        wb.save(flagged_xlsx)
-        orphan_count = sum(1 for item in flagged_items if item.get("issue") == "orphan")
-        answer_flags = len(flagged_items) - orphan_count
-        print(f"[info] Wrote {answer_flags} answer flags + {orphan_count} orphan scans to {flagged_xlsx}", file=sys.stderr)
-        if absent_roster:
-            print(f"[info] Added {len(absent_roster)} absent students to separate sheet", file=sys.stderr)
-    
-    # Generate review PDF with flagged pages
-    if review_pdf and flagged_page_images:
-        _ensure_dir(os.path.dirname(review_pdf) or ".")
-        review_pages = [img for _, img in sorted(flagged_page_images, key=lambda x: x[0])]
-        
-        try:
-            review_writer = IO.PdfPageWriter(review_pdf, dpi=dpi)
-            for img in review_pages:
-                review_writer.add_page(img)
-            review_writer.close(save=True)
-        except Exception:
-            # Fallback to PyMuPDF-based saving
-            IO.save_images_as_pdf(review_pages, review_pdf, dpi=dpi, quality=pdf_quality)
-        
-        print(f"[info] Wrote review PDF with {len(review_pages)} flagged pages to {review_pdf}", file=__import__('sys').stderr)
-    elif review_pdf and not flagged_page_images:
-        print("[info] No flagged pages - review PDF not created", file=__import__('sys').stderr)
-    
     # Print summary
-    if flagged_items:
-        blank_count = sum(1 for item in flagged_items if item["issue"] == "blank")
-        multi_count = sum(1 for item in flagged_items if item["issue"] == "multi")
-        print(f"[info] Flagging summary: {blank_count} blank, {multi_count} multi across {len(set(item['student_id'] for item in flagged_items))} students", file=__import__('sys').stderr)
+    n_students = len(all_student_data)
+    n_flagged = sum(1 for d in all_student_data if _has_flags(d.get("answers", [])))
+    print(f"[info] Wrote {n_students} students to {out_csv} ({n_flagged} with flags)", file=sys.stderr)
+    # =================================================================
+
+    # ==================== SAVE SCORING PARAMETERS ====================
+    # Write a small JSON file alongside the CSV so the report generator
+    # can record which parameters produced these results.
+    import json as _json
+    params_path = os.path.splitext(out_csv)[0] + "_params.json"
+    _meta = bmap.metadata or {}
+    scoring_params = {
+        "template": {
+            "name": _meta.get("display_name", os.path.basename(os.path.dirname(bublmap_path))),
+            "description": _meta.get("description", ""),
+            "bubblemap_path": str(bublmap_path),
+            "pages": bmap.num_pages,
+            "total_questions": bmap.total_questions,
+        },
+        "min_fill": round(min_fill * 100, 1),       # back to 0-100 for display
+        "top2_ratio": round(top2_ratio * 100, 1),   # back to 0-100 for display
+        "min_top2_diff": min_top2_diff,
+        "fixed_thresh": fixed_thresh if fixed_thresh is not None else "auto",
+        "auto_calibrate_thresh": auto_calibrate_thresh,
+        "calibrate_background": calibrate_background,
+        "background_percentile": background_percentile,
+        "adaptive_rescoring": adaptive_rescoring,
+        "adaptive_max_adjustment": adaptive_max_adjustment,
+        "adaptive_min_above_floor": adaptive_min_above_floor,
+        "dpi": dpi,
+    }
+    try:
+        with open(params_path, "w", encoding="utf-8") as pf:
+            _json.dump(scoring_params, pf, indent=2)
+    except Exception:
+        pass  # non-critical
     # =================================================================
 
     return out_csv

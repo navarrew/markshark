@@ -5,13 +5,16 @@ Provides a compact bar for selecting:
 - Working directory (where projects live)
 - Current project (subdirectory within working dir)
 
-Settings are persisted via QSettings.
+Settings are persisted via SettingsStore (~/.markshark/settings.json).
 """
 
 from pathlib import Path
 from typing import Optional, List
 
-from PySide6.QtCore import Signal, QSettings
+from PySide6.QtCore import Signal
+
+from ..models.project_registry import ProjectRegistry
+from ..models.settings_store import SettingsStore
 from PySide6.QtWidgets import (
     QWidget,
     QHBoxLayout,
@@ -31,7 +34,7 @@ class ProjectSelector(QWidget):
     Compact project/directory selector bar.
 
     Emits signals when the working directory or project changes.
-    Persists selections via QSettings.
+    Persists selections via SettingsStore.
     """
 
     working_dir_changed = Signal(Path)
@@ -39,7 +42,8 @@ class ProjectSelector(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.settings = QSettings()
+        self.settings = SettingsStore()
+        self._registry = ProjectRegistry()
         self._setup_ui()
         self._load_settings()
 
@@ -54,7 +58,50 @@ class ProjectSelector(QWidget):
         frame_layout.setContentsMargins(8, 6, 8, 6)
         frame_layout.setSpacing(12)
 
-        # Working directory
+        # Project selector (left side)
+        frame_layout.addWidget(QLabel("Project:"))
+
+        _BAR_BTN = (
+            "QPushButton { background-color: #0d6efd; color: white;"
+            "              border: none; border-radius: 3px; padding: 3px 10px; }"
+            "QPushButton:hover { background-color: #0b5ed7; }"
+        )
+
+        self.project_combo = QComboBox()
+        self.project_combo.setMinimumWidth(140)
+        self.project_combo.setEditable(False)
+        self.project_combo.setPlaceholderText("(none)")
+        self.project_combo.setStyleSheet(
+            "QComboBox { background-color: #1a1a1a; color: white;"
+            "            border: 1px solid #444; border-radius: 3px;"
+            "            padding: 3px 8px; }"
+            "QComboBox::drop-down { border: none; }"
+            "QComboBox QAbstractItemView { background-color: #1a1a1a;"
+            "            color: white; selection-background-color: #0d6efd; }"
+        )
+        self.project_combo.currentTextChanged.connect(self._on_project_changed)
+        frame_layout.addWidget(self.project_combo)
+
+        new_project_btn = QPushButton("New")
+        new_project_btn.setMaximumWidth(50)
+        new_project_btn.setStyleSheet(_BAR_BTN)
+        new_project_btn.clicked.connect(self._new_project)
+        frame_layout.addWidget(new_project_btn)
+
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.setMaximumWidth(70)
+        refresh_btn.setToolTip("Refresh project list")
+        refresh_btn.setStyleSheet(_BAR_BTN)
+        refresh_btn.clicked.connect(self._refresh_projects)
+        frame_layout.addWidget(refresh_btn)
+
+        # Separator
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        frame_layout.addWidget(sep)
+
+        # Working directory (right side)
         frame_layout.addWidget(QLabel("Working Directory:"))
 
         self.workdir_edit = QLineEdit()
@@ -65,35 +112,9 @@ class ProjectSelector(QWidget):
 
         browse_btn = QPushButton("Browse...")
         browse_btn.setMaximumWidth(80)
+        browse_btn.setStyleSheet(_BAR_BTN)
         browse_btn.clicked.connect(self._browse_workdir)
         frame_layout.addWidget(browse_btn)
-
-        # Separator
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setFrameShadow(QFrame.Shadow.Sunken)
-        frame_layout.addWidget(sep)
-
-        # Project selector
-        frame_layout.addWidget(QLabel("Project:"))
-
-        self.project_combo = QComboBox()
-        self.project_combo.setMinimumWidth(150)
-        self.project_combo.setEditable(True)
-        self.project_combo.setPlaceholderText("(none)")
-        self.project_combo.currentTextChanged.connect(self._on_project_changed)
-        frame_layout.addWidget(self.project_combo)
-
-        new_project_btn = QPushButton("New...")
-        new_project_btn.setMaximumWidth(60)
-        new_project_btn.clicked.connect(self._new_project)
-        frame_layout.addWidget(new_project_btn)
-
-        refresh_btn = QPushButton("↻")
-        refresh_btn.setMaximumWidth(30)
-        refresh_btn.setToolTip("Refresh project list")
-        refresh_btn.clicked.connect(self._refresh_projects)
-        frame_layout.addWidget(refresh_btn)
 
         # Main layout
         main_layout = QVBoxLayout(self)
@@ -146,6 +167,11 @@ class ProjectSelector(QWidget):
         self.project_changed.emit(text)
         self._save_settings()
 
+        # Auto-register project in the global registry
+        project_path = self.project_dir()
+        if project_path and project_path.exists():
+            self._registry.register(project_path)
+
     def _refresh_projects(self):
         """Scan working directory for existing projects."""
         workdir = self.workdir_edit.text()
@@ -165,15 +191,11 @@ class ProjectSelector(QWidget):
 
         for item in sorted(workdir_path.iterdir()):
             if item.is_dir() and not item.name.startswith("."):
-                # Check if it looks like a project (has input/ or runs/ subfolder)
-                if (item / "input").exists() or (item / "runs").exists():
+                # Project structure
+                if (item / "input_files").exists() or (item / "score_data").exists():
                     projects.append(item.name)
-                # Or just list all directories as potential projects
-                elif not any(item.iterdir()):
-                    # Empty directory - could be new project
-                    pass
-                else:
-                    # Non-empty directory without project structure - still list it
+                # Non-empty directory without project structure - still list it
+                elif any(item.iterdir()):
                     projects.append(item.name)
 
         for proj in projects:
@@ -216,13 +238,16 @@ class ProjectSelector(QWidget):
                 QMessageBox.warning(self, "Invalid Name", "Please enter a valid project name.")
                 return
 
-            # Create project directory
+            # Create project directory with flat structure
             project_path = Path(workdir) / safe_name
             try:
                 project_path.mkdir(exist_ok=True)
-                (project_path / "input").mkdir(exist_ok=True)
-                (project_path / "runs").mkdir(exist_ok=True)
+                (project_path / "input_files").mkdir(exist_ok=True)
+                (project_path / "score_data").mkdir(exist_ok=True)
                 (project_path / "logs").mkdir(exist_ok=True)
+
+                # Register in global registry
+                self._registry.register(project_path)
 
                 # Refresh and select new project
                 self._refresh_projects()
@@ -260,27 +285,18 @@ class ProjectSelector(QWidget):
         """
         Get the appropriate output directory.
 
-        Returns project/runs/<next_run> if project is selected,
-        otherwise returns working_dir or a temp directory.
+        Returns the project directory directly (flat structure).
+        Falls back to working_dir or a temp directory.
         """
         import tempfile
 
         project_path = self.project_dir()
         if project_path:
-            runs_dir = project_path / "runs"
-            runs_dir.mkdir(exist_ok=True)
-
-            # Find next run number
-            existing = [d.name for d in runs_dir.iterdir() if d.is_dir() and d.name.startswith("run_")]
-            if existing:
-                nums = [int(n.split("_")[1]) for n in existing if n.split("_")[1].isdigit()]
-                next_num = max(nums) + 1 if nums else 1
-            else:
-                next_num = 1
-
-            run_dir = runs_dir / f"run_{next_num:03d}"
-            run_dir.mkdir(exist_ok=True)
-            return run_dir
+            # Ensure subdirs exist
+            (project_path / "input_files").mkdir(exist_ok=True)
+            (project_path / "score_data").mkdir(exist_ok=True)
+            (project_path / "logs").mkdir(exist_ok=True)
+            return project_path
 
         workdir = self.working_dir()
         if workdir:

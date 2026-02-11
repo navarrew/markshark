@@ -373,7 +373,7 @@ def _get_all_bubble_centers_from_bubblemap(
             raise ValueError(f"Page {page_num} not found in bubblemap")
         
         # Extract from standard layouts
-        for layout_attr in ['last_name_layout', 'first_name_layout', 'id_layout', 'version_layout']:
+        for layout_attr in ['last_name_zone', 'first_name_zone', 'id_zone', 'version_zone']:
             layout = getattr(page, layout_attr, None)
             if layout is not None:
                 centers = _get_bubble_centers_from_layout(layout, img_width, img_height)
@@ -382,8 +382,8 @@ def _get_all_bubble_centers_from_bubblemap(
                     radius_pct = layout.radius_pct
         
         # Extract from answer layouts
-        if hasattr(page, 'answer_layouts') and page.answer_layouts:
-            for layout in page.answer_layouts:
+        if hasattr(page, 'answer_zones') and page.answer_zones:
+            for layout in page.answer_zones:
                 centers = _get_bubble_centers_from_layout(layout, img_width, img_height)
                 all_centers.extend(centers)
                 if hasattr(layout, 'radius_pct'):
@@ -396,14 +396,14 @@ def _get_all_bubble_centers_from_bubblemap(
         
         page_data = bubblemap[page_key]
         
-        for layout_name in ['last_name_layout', 'first_name_layout', 'id_layout', 'version_layout']:
+        for layout_name in ['last_name_zone', 'first_name_zone', 'id_zone', 'version_zone']:
             if layout_name in page_data:
                 centers = _get_bubble_centers_from_layout(page_data[layout_name], img_width, img_height)
                 all_centers.extend(centers)
                 radius_pct = page_data[layout_name].get('radius_pct', radius_pct)
-        
-        if 'answer_layouts' in page_data:
-            for layout in page_data['answer_layouts']:
+
+        if 'answer_zones' in page_data:
+            for layout in page_data['answer_zones']:
                 centers = _get_bubble_centers_from_layout(layout, img_width, img_height)
                 all_centers.extend(centers)
                 radius_pct = layout.get('radius_pct', radius_pct)

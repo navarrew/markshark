@@ -38,7 +38,9 @@ class LogViewer(QWidget):
         # Text area
         self.text_edit = QTextEdit()
         self.text_edit.setReadOnly(True)
-        self.text_edit.setFont(QFont("Courier", 10))
+        font = QFont("Courier New", 10)
+        font.setStyleHint(QFont.StyleHint.Monospace)
+        self.text_edit.setFont(font)
         self.text_edit.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         group_layout.addWidget(self.text_edit)
 
@@ -89,3 +91,24 @@ class LogViewer(QWidget):
     def get_text(self) -> str:
         """Get all log text."""
         return self.text_edit.toPlainText()
+
+    def save_to_file(self, path) -> bool:
+        """
+        Save all log content to a text file.
+
+        Args:
+            path: File path (str or Path) to write the log to.
+
+        Returns:
+            True if saved successfully, False otherwise.
+        """
+        from pathlib import Path as _Path
+
+        try:
+            p = _Path(path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(self.get_text(), encoding="utf-8")
+            return True
+        except Exception as e:
+            print(f"[warn] Could not save log to {path}: {e}")
+            return False

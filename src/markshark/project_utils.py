@@ -1,14 +1,34 @@
 #!/usr/bin/env python3
 """
 Project-based file management utilities for MarkShark.
-Provides structured directory organization for exam grading projects.
+
+Flat project structure — one working copy of each file type,
+with optional timestamped archiving on re-run.
+
+Project layout:
+    project_name/
+    ├── input_files/           # User inputs + aligned scans
+    │   ├── scans.pdf
+    │   ├── aligned_scans.pdf
+    │   ├── key.txt
+    │   └── roster.csv
+    ├── score_data/            # Scoring artifacts
+    │   ├── results.csv
+    │   ├── corrections.csv
+    │   └── result_params.json
+    ├── exam_report.xlsx       # Top-level outputs
+    ├── scored_scans.pdf
+    ├── logs/
+    └── archive/               # Timestamped snapshots (user opts in)
+        └── 2025-01-21_143022/
 """
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Tuple, List
+from typing import Optional, Dict, List
 
 
 def sanitize_project_name(name: str) -> str:
@@ -46,95 +66,15 @@ def sanitize_project_name(name: str) -> str:
     return name
 
 
-def get_next_scored_number(project_dir: Path) -> int:
-    """
-    Find the next available scored run number in a project's scored directory.
-
-    Scans the scored/ subdirectory for existing scored_XXX_* folders
-    and returns the next sequential number.
-
-    Args:
-        project_dir: Path to the project directory
-
-    Returns:
-        Next scored number (1-based)
-
-    Examples:
-        If scored/ contains: scored_001_..., scored_002_...
-        Returns: 3
-    """
-    scored_dir = project_dir / "scored"
-
-    if not scored_dir.exists():
-        return 1
-
-    # Find all scored_XXX_* directories
-    scored_pattern = re.compile(r'^scored_(\d+)_')
-    max_num = 0
-
-    for item in scored_dir.iterdir():
-        if item.is_dir():
-            match = scored_pattern.match(item.name)
-            if match:
-                num = int(match.group(1))
-                max_num = max(max_num, num)
-
-    return max_num + 1
-
-
-# Keep old function name for backward compatibility
-def get_next_run_number(project_dir: Path) -> int:
-    """Deprecated: Use get_next_scored_number instead."""
-    return get_next_scored_number(project_dir)
-
-
-def create_scored_directory(project_dir: Path, timestamp: Optional[datetime] = None) -> Tuple[Path, str]:
-    """
-    Create a new versioned scored directory within a project.
-
-    Creates a directory like: scored/scored_001_2025-01-21_1430/
-
-    Args:
-        project_dir: Path to the project directory
-        timestamp: Optional datetime to use (defaults to now)
-
-    Returns:
-        Tuple of (scored_directory_path, scored_label)
-        where scored_label is like "scored_001_2025-01-21_1430"
-    """
-    if timestamp is None:
-        timestamp = datetime.now()
-
-    scored_num = get_next_scored_number(project_dir)
-    date_str = timestamp.strftime("%Y-%m-%d_%H%M")
-    scored_label = f"scored_{scored_num:03d}_{date_str}"
-
-    scored_dir = project_dir / "scored" / scored_label
-    scored_dir.mkdir(parents=True, exist_ok=True)
-
-    return scored_dir, scored_label
-
-
-# Keep old function name for backward compatibility
-def create_run_directory(project_dir: Path, timestamp: Optional[datetime] = None) -> Tuple[Path, str]:
-    """Deprecated: Use create_scored_directory instead."""
-    return create_scored_directory(project_dir, timestamp)
-
-
 def create_project_structure(base_dir: Path, project_name: str) -> Path:
     """
     Create the complete project directory structure.
 
     Creates:
         {base_dir}/{project_name}/
-        ├── input/       (raw scans and aligned scans)
-        ├── scored/
-        ├── reports/
+        ├── input_files/    (scans, key, roster, aligned scans)
+        ├── score_data/     (results, corrections, params)
         └── logs/
-
-    The input directory contains:
-        - raw_scans.pdf: Original uploaded scans
-        - aligned_scan_YYYY-MM-DD_HHMM.pdf: Aligned scans (one per alignment run)
 
     Args:
         base_dir: Base working directory
@@ -146,12 +86,99 @@ def create_project_structure(base_dir: Path, project_name: str) -> Path:
     project_dir = base_dir / project_name
 
     # Create subdirectories
-    (project_dir / "input").mkdir(parents=True, exist_ok=True)
-    (project_dir / "scored").mkdir(parents=True, exist_ok=True)
-    (project_dir / "reports").mkdir(parents=True, exist_ok=True)
+    (project_dir / "input_files").mkdir(parents=True, exist_ok=True)
+    (project_dir / "score_data").mkdir(parents=True, exist_ok=True)
     (project_dir / "logs").mkdir(parents=True, exist_ok=True)
 
     return project_dir
+
+
+def get_project_paths(project_dir: Path) -> Dict[str, Path]:
+    """
+    Return canonical file paths for a flat-structure project.
+
+    For key and roster, globs input_files/ for key.* and roster.*
+    and returns the first match (or the .txt / .csv default).
+
+    Args:
+        project_dir: Path to the project directory
+
+    Returns:
+        Dictionary of canonical path names to Path objects.
+    """
+    input_files = project_dir / "input_files"
+    score_data = project_dir / "score_data"
+
+    # Glob for key and roster (any extension)
+    key_matches = sorted(input_files.glob("key.*")) if input_files.exists() else []
+    roster_matches = sorted(input_files.glob("roster.*")) if input_files.exists() else []
+
+    return {
+        # Directories
+        "input_files": input_files,
+        "score_data": score_data,
+        "logs": project_dir / "logs",
+        "archive": project_dir / "archive",
+        # Input files
+        "scans": input_files / "scans.pdf",
+        "aligned": input_files / "aligned_scans.pdf",
+        "key": key_matches[0] if key_matches else input_files / "key.txt",
+        "roster": roster_matches[0] if roster_matches else input_files / "roster.csv",
+        # Score data
+        "results_csv": score_data / "results.csv",
+        "corrections_csv": score_data / "corrections.csv",
+        "result_params": score_data / "result_params.json",
+        # Top-level outputs
+        "report": project_dir / "exam_report.xlsx",
+        "scored_pdf": project_dir / "scored_scans.pdf",
+    }
+
+
+def has_existing_results(project_dir: Path) -> bool:
+    """Check whether this project already has scoring results."""
+    return (project_dir / "score_data" / "results.csv").exists()
+
+
+def archive_current_results(project_dir: Path) -> Path:
+    """
+    Move current project outputs to a timestamped archive folder.
+
+    Moves:
+      - input_files/aligned_scans.pdf  (if exists)
+      - score_data/*                   (if exists)
+      - scored_scans.pdf                     (if exists)
+      - exam_report.xlsx               (if exists)
+
+    Returns:
+        Path to the archive folder created.
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    archive_dir = project_dir / "archive" / timestamp
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    # Archive score_data/
+    src_score = project_dir / "score_data"
+    if src_score.exists() and any(src_score.iterdir()):
+        dst_score = archive_dir / "score_data"
+        dst_score.mkdir(exist_ok=True)
+        for f in src_score.iterdir():
+            if f.is_file():
+                shutil.move(str(f), str(dst_score / f.name))
+
+    # Archive aligned scans
+    aligned = project_dir / "input_files" / "aligned_scans.pdf"
+    if aligned.exists():
+        dst_input = archive_dir / "input_files"
+        dst_input.mkdir(exist_ok=True)
+        shutil.move(str(aligned), str(dst_input / "aligned_scans.pdf"))
+
+    # Archive top-level outputs
+    for name in ("scored_scans.pdf", "exam_report.xlsx"):
+        src = project_dir / name
+        if src.exists():
+            shutil.move(str(src), str(archive_dir / name))
+
+    return archive_dir
 
 
 def get_project_info(project_dir: Path) -> dict:
@@ -164,35 +191,46 @@ def get_project_info(project_dir: Path) -> dict:
     Returns:
         Dictionary with project metadata:
         - name: project name (directory name)
-        - num_runs: number of completed scoring runs
-        - last_run: path to most recent scored run (or None)
+        - has_results: whether score_data/results.csv exists
+        - last_scored: modification time of results.csv (or None)
+        - num_archives: count of archive/ subdirectories
         - created: creation time (or None if unavailable)
     """
     info = {
         "name": project_dir.name,
-        "num_runs": 0,
-        "last_run": None,
+        "has_results": False,
+        "last_scored": None,
+        "num_archives": 0,
         "created": None,
+        "template_name": None,
     }
 
-    scored_dir = project_dir / "scored"
+    results_csv = project_dir / "score_data" / "results.csv"
+    if results_csv.exists():
+        info["has_results"] = True
+        try:
+            info["last_scored"] = datetime.fromtimestamp(results_csv.stat().st_mtime)
+        except Exception:
+            pass
 
-    if scored_dir.exists():
-        scored_dirs = sorted(
-            [d for d in scored_dir.iterdir() if d.is_dir() and d.name.startswith("scored_")],
-            key=lambda x: x.name
-        )
-        info["num_runs"] = len(scored_dirs)
-        if scored_dirs:
-            info["last_run"] = scored_dirs[-1]
+    # Read template info from the scoring params JSON (if present)
+    params_json = project_dir / "score_data" / "results_params.json"
+    if params_json.exists():
+        try:
+            import json as _json
+            with open(params_json, "r", encoding="utf-8") as f:
+                params = _json.load(f)
+            tpl = params.get("template", {})
+            if tpl.get("name"):
+                info["template_name"] = tpl["name"]
+        except Exception:
+            pass
 
-    # Also check legacy 'results' folder for backward compatibility
-    results_dir = project_dir / "results"
-    if results_dir.exists():
-        run_dirs = [d for d in results_dir.iterdir() if d.is_dir() and d.name.startswith("run_")]
-        info["num_runs"] += len(run_dirs)
-        if run_dirs and info["last_run"] is None:
-            info["last_run"] = sorted(run_dirs, key=lambda x: x.name)[-1]
+    archive_dir = project_dir / "archive"
+    if archive_dir.exists():
+        info["num_archives"] = len([
+            d for d in archive_dir.iterdir() if d.is_dir()
+        ])
 
     try:
         info["created"] = datetime.fromtimestamp(project_dir.stat().st_ctime)
@@ -206,8 +244,7 @@ def find_projects(base_dir: Path) -> list[dict]:
     """
     Find all project directories in the base directory.
 
-    A project directory is identified by having the expected subdirectory
-    structure (input/, scored/ or results/, logs/).
+    A project directory is identified by having input_files/ and score_data/ subdirs.
 
     Args:
         base_dir: Base working directory to scan
@@ -224,19 +261,10 @@ def find_projects(base_dir: Path) -> list[dict]:
         if not item.is_dir():
             continue
 
-        # Check if it looks like a project (has expected subdirs)
-        # Support both new (scored) and legacy (results/aligned) structures
-        has_input = (item / "input").exists()
-        has_scored = (item / "scored").exists() or (item / "results").exists()
-        has_logs = (item / "logs").exists()
-        # Legacy support: check for aligned/ but don't require it
-        has_aligned_legacy = (item / "aligned").exists()
+        has_input_files = (item / "input_files").exists()
+        has_score_data = (item / "score_data").exists()
 
-        # Accept projects with either the new structure (input + scored + logs)
-        # or legacy structure that also had aligned/
-        if has_input and has_scored and has_logs:
-            projects.append(get_project_info(item))
-        elif has_input and has_aligned_legacy and has_scored and has_logs:
+        if has_input_files and has_score_data:
             projects.append(get_project_info(item))
 
     return sorted(projects, key=lambda x: x.get("created") or datetime.min, reverse=True)
@@ -244,7 +272,7 @@ def find_projects(base_dir: Path) -> list[dict]:
 
 def _find_results_csv(directory: Path) -> Optional[Path]:
     """
-    Find a results CSV file in a scored run directory.
+    Find a results CSV file in a directory.
 
     Looks for common results CSV names:
     - results.csv (from Score tab)
@@ -252,7 +280,7 @@ def _find_results_csv(directory: Path) -> Optional[Path]:
     - Any other *results*.csv file
 
     Args:
-        directory: Path to the scored run directory
+        directory: Path to search
 
     Returns:
         Path to the results CSV, or None if not found
@@ -275,113 +303,18 @@ def _find_results_csv(directory: Path) -> Optional[Path]:
     return None
 
 
-def find_scored_runs(project_dir: Path) -> List[dict]:
-    """
-    Find all scored run directories in a project, sorted by most recent first.
-
-    Searches both the new 'scored/' directory and legacy 'results/' directory.
-
-    Args:
-        project_dir: Path to the project directory
-
-    Returns:
-        List of dictionaries with run info:
-        - path: Path to the scored directory
-        - label: Directory name (e.g., "scored_001_2025-01-21_1430")
-        - number: Run number (e.g., 1)
-        - timestamp: Extracted datetime or None
-        - has_csv: Whether a results CSV exists in this directory
-        - csv_path: Path to the results CSV (or None)
-    """
-    runs = []
-
-    # Check new 'scored/' directory
-    scored_dir = project_dir / "scored"
-    if scored_dir.exists():
-        scored_pattern = re.compile(r'^scored_(\d+)_(\d{4}-\d{2}-\d{2}_\d{4})$')
-        for item in scored_dir.iterdir():
-            if item.is_dir():
-                match = scored_pattern.match(item.name)
-                if match:
-                    num = int(match.group(1))
-                    date_str = match.group(2)
-                    try:
-                        timestamp = datetime.strptime(date_str, "%Y-%m-%d_%H%M")
-                    except ValueError:
-                        timestamp = None
-
-                    csv_path = _find_results_csv(item)
-                    runs.append({
-                        "path": item,
-                        "label": item.name,
-                        "number": num,
-                        "timestamp": timestamp,
-                        "has_csv": csv_path is not None,
-                        "csv_path": csv_path,
-                    })
-
-    # Check legacy 'results/' directory for backward compatibility
-    results_dir = project_dir / "results"
-    if results_dir.exists():
-        run_pattern = re.compile(r'^run_(\d+)_(\d{4}-\d{2}-\d{2}_\d{4})$')
-        for item in results_dir.iterdir():
-            if item.is_dir():
-                match = run_pattern.match(item.name)
-                if match:
-                    num = int(match.group(1))
-                    date_str = match.group(2)
-                    try:
-                        timestamp = datetime.strptime(date_str, "%Y-%m-%d_%H%M")
-                    except ValueError:
-                        timestamp = None
-
-                    csv_path = _find_results_csv(item)
-                    runs.append({
-                        "path": item,
-                        "label": item.name,
-                        "number": num,
-                        "timestamp": timestamp,
-                        "has_csv": csv_path is not None,
-                        "csv_path": csv_path,
-                    })
-
-    # Sort by timestamp (most recent first), then by number
-    runs.sort(key=lambda x: (x["timestamp"] or datetime.min, x["number"]), reverse=True)
-
-    return runs
-
-
 def get_report_path(project_dir: Path, timestamp: Optional[datetime] = None) -> Path:
     """
-    Get the path for a new report file.
+    Get the path for the project report file.
 
-    Creates path like: reports/report_2025-01-21.xlsx
+    In the flat structure, the report always lives at the project root
+    as exam_report.xlsx.
 
     Args:
         project_dir: Path to the project directory
-        timestamp: Optional datetime to use (defaults to now)
+        timestamp: Ignored (kept for API compatibility)
 
     Returns:
         Path for the report file
     """
-    if timestamp is None:
-        timestamp = datetime.now()
-
-    reports_dir = project_dir / "reports"
-    reports_dir.mkdir(parents=True, exist_ok=True)
-
-    date_str = timestamp.strftime("%Y-%m-%d")
-    report_name = f"report_{date_str}.xlsx"
-
-    # If file already exists, add a counter
-    report_path = reports_dir / report_name
-    if report_path.exists():
-        counter = 2
-        while True:
-            report_name = f"report_{date_str}_{counter}.xlsx"
-            report_path = reports_dir / report_name
-            if not report_path.exists():
-                break
-            counter += 1
-
-    return report_path
+    return project_dir / "exam_report.xlsx"

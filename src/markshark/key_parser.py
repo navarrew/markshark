@@ -792,11 +792,3 @@ def to_legacy_keys_dict(key_set: AnswerKeySet) -> Dict[str, List[str]]:
     return result
 
 
-def load_key_file_legacy(path: Union[str, Path]) -> Dict[str, List[str]]:
-    """
-    Load answer key file and return in legacy format.
-
-    For backward compatibility with existing scoring code.
-    """
-    key_set = load_key_file(path)
-    return to_legacy_keys_dict(key_set)

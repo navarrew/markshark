@@ -9,7 +9,8 @@ Mirrors the Streamlit "Quick Grade" functionality:
 5. Generate report
 """
 
-import tempfile
+import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -38,15 +39,19 @@ from ..workers import CLIRunner
 
 # Try to import MarkShark defaults
 try:
-    from markshark.defaults import (
-        SCORING_DEFAULTS,
-        ALIGN_DEFAULTS,
-        RENDER_DEFAULTS,
-    )
+    from markshark.defaults import SCORING_DEFAULTS
     from markshark.template_manager import TemplateManager
+    from markshark.project_utils import (
+        get_project_paths,
+        has_existing_results,
+        archive_current_results,
+    )
 except ImportError:
-    SCORING_DEFAULTS = ALIGN_DEFAULTS = RENDER_DEFAULTS = None
+    SCORING_DEFAULTS = None
     TemplateManager = None
+    get_project_paths = None
+    has_existing_results = None
+    archive_current_results = None
 
 
 def _dflt(obj, attr: str, fallback):
@@ -80,11 +85,20 @@ class QuickGradePage(QWidget):
         self.aligned_pdf: Optional[Path] = None
         self.results_csv: Optional[Path] = None
         self.scored_pdf: Optional[Path] = None
+        self.report_xlsx: Optional[Path] = None
         self._pending_score = False
         self._current_bubblemap: Optional[str] = None
 
         self._setup_ui()
         self._load_templates()
+
+        # When the project changes, clear stale paths and re-populate
+        self.project_selector.project_changed.connect(self._on_project_changed)
+        self.project_selector.working_dir_changed.connect(
+            lambda _: self._update_browse_dirs()
+        )
+        # Seed browse dirs from whatever the ProjectSelector restored from settings
+        self._update_browse_dirs()
 
     def _setup_ui(self):
         """Build the page UI."""
@@ -92,7 +106,7 @@ class QuickGradePage(QWidget):
 
         # Header with icon
         header = PageHeader(
-            "Quick Grade",
+            "MarkShark Quick Grader",
             "Upload scans, answer key, and roster (optional), then align, score, and generate reports."
         )
         layout.addWidget(header)
@@ -100,23 +114,6 @@ class QuickGradePage(QWidget):
         # Project/directory selector bar
         self.project_selector = ProjectSelector()
         layout.addWidget(self.project_selector)
-
-        # Action buttons
-        btn_layout = QHBoxLayout()
-
-        self.align_score_btn = QPushButton("1. Align && Score")
-        self.align_score_btn.setMinimumHeight(36)
-        self.align_score_btn.clicked.connect(self._run_align_and_score)
-        btn_layout.addWidget(self.align_score_btn)
-
-        self.report_btn = QPushButton("2. Generate Report")
-        self.report_btn.setMinimumHeight(36)
-        self.report_btn.clicked.connect(self._run_report)
-        self.report_btn.setEnabled(False)
-        btn_layout.addWidget(self.report_btn)
-
-        btn_layout.addStretch()
-        layout.addLayout(btn_layout)
 
         # Progress bar
         self.progress = QProgressBar()
@@ -131,39 +128,56 @@ class QuickGradePage(QWidget):
         splitter = QSplitter(Qt.Orientation.Vertical)
         layout.addWidget(splitter, 1)
 
-        # Tabs for inputs
+        # Tabs for inputs — minimum height prevents file selectors from squishing
         tabs = QTabWidget()
-        tabs.addTab(self._create_inputs_tab(), "Input Files")
-        tabs.addTab(self._create_after_tab(), "Upload Corrections")
-        tabs.addTab(self._create_options_tab(), "Options")
+        tabs.addTab(self._create_inputs_tab(), "Align && Score")
+        tabs.addTab(self._create_after_tab(), "Generate Report")
+        tabs.addTab(self._create_options_tab(), "Grader Settings")
+        tabs.setMinimumHeight(320)
         splitter.addWidget(tabs)
 
-        # Log viewer
+        # Log viewer + output buttons side-by-side
+        log_row = QHBoxLayout()
+
         self.log = LogViewer("Processing Log")
-        splitter.addWidget(self.log)
+        log_row.addWidget(self.log, 1)
+
+        # Output buttons — always visible, stacked vertically, greyed out until results exist
+        output_btn_panel = QVBoxLayout()
+        output_btn_panel.setContentsMargins(0, 0, 0, 0)
+
+        output_label = QLabel("Outputs")
+        output_label.setStyleSheet("font-weight: bold; font-size: 11px; color: #6c757d;")
+        output_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        output_btn_panel.addWidget(output_label)
+
+        self.open_folder_btn = QPushButton("Open\n Project Folder")
+        self.open_folder_btn.setEnabled(False)
+        self.open_folder_btn.setFixedWidth(100)
+        self.open_folder_btn.clicked.connect(lambda: self._open_file(self.work_dir))
+        output_btn_panel.addWidget(self.open_folder_btn)
+
+        self.open_report_btn = QPushButton("Open\nReport")
+        self.open_report_btn.setEnabled(False)
+        self.open_report_btn.setFixedWidth(100)
+        self.open_report_btn.clicked.connect(lambda: self._open_file(self.report_xlsx))
+        output_btn_panel.addWidget(self.open_report_btn)
+
+        self.open_scored_btn = QPushButton("Open\nScored Scans")
+        self.open_scored_btn.setEnabled(False)
+        self.open_scored_btn.setFixedWidth(100)
+        self.open_scored_btn.clicked.connect(lambda: self._open_file(self.scored_pdf))
+        output_btn_panel.addWidget(self.open_scored_btn)
+
+        output_btn_panel.addStretch()
+        log_row.addLayout(output_btn_panel)
+
+        # Wrap log_row in a widget so QSplitter can manage it
+        log_container = QWidget()
+        log_container.setLayout(log_row)
+        splitter.addWidget(log_container)
 
         splitter.setSizes([350, 200])
-
-        # Output buttons (hidden initially)
-        self.output_frame = QFrame()
-        output_layout = QHBoxLayout(self.output_frame)
-        output_layout.setContentsMargins(0, 5, 0, 0)
-
-        self.open_csv_btn = QPushButton("Open results.csv")
-        self.open_csv_btn.clicked.connect(lambda: self._open_file(self.results_csv))
-        output_layout.addWidget(self.open_csv_btn)
-
-        self.open_scored_btn = QPushButton("Open scored.pdf")
-        self.open_scored_btn.clicked.connect(lambda: self._open_file(self.scored_pdf))
-        output_layout.addWidget(self.open_scored_btn)
-
-        self.open_folder_btn = QPushButton("Open Output Folder")
-        self.open_folder_btn.clicked.connect(lambda: self._open_file(self.work_dir))
-        output_layout.addWidget(self.open_folder_btn)
-
-        output_layout.addStretch()
-        self.output_frame.setVisible(False)
-        layout.addWidget(self.output_frame)
 
     def _create_inputs_tab(self) -> QWidget:
         """Create the Inputs tab."""
@@ -178,13 +192,14 @@ class QuickGradePage(QWidget):
         self.template_combo.setMinimumWidth(300)
         template_layout.addWidget(self.template_combo, 1)
         layout.addWidget(template_group)
+        layout.addSpacing(8)
 
         # File inputs
-        files_group = QGroupBox("Files")
+        files_group = QGroupBox("Upload Scanned Bubblesheets, Key, and Class Roster Files")
         files_layout = QVBoxLayout(files_group)
 
         self.scans_selector = FileSelector(
-            "Scanned answer sheets:",
+            "Scanned answer sheets (PDF):",
             "PDF files (*.pdf)",
             "Select scanned PDF...",
         )
@@ -207,94 +222,255 @@ class QuickGradePage(QWidget):
         layout.addWidget(files_group)
 
         layout.addStretch()
+
+        # Run button at the bottom of this tab
+        self.align_score_btn = QPushButton("Run")
+        self.align_score_btn.setMinimumHeight(36)
+        self.align_score_btn.setStyleSheet(
+            "QPushButton { background-color: #0d6efd; color: white; "
+            "font-weight: bold; font-size: 14px; border-radius: 4px; padding: 6px 20px; }"
+            "QPushButton:hover { background-color: #0b5ed7; }"
+            "QPushButton:disabled { background-color: #6c757d; }"
+        )
+        self.align_score_btn.clicked.connect(self._run_align_and_score)
+        layout.addWidget(self.align_score_btn)
+
         return widget
 
     def _create_options_tab(self) -> QWidget:
-        """Create the Options tab."""
+        """Create the Grader Settings tab — single box, two columns."""
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        # Scoring options
-        scoring_group = QGroupBox("Scoring Options")
-        scoring_layout = QGridLayout(scoring_group)
+        settings_group = QGroupBox("Grader Settings")
+        grid = QGridLayout(settings_group)
+        grid.setColumnStretch(0, 0)  # labels
+        grid.setColumnStretch(1, 1)  # left controls
+        grid.setColumnStretch(2, 0)  # labels
+        grid.setColumnStretch(3, 1)  # right controls
 
-        self.annotate_all_cb = QCheckBox("Annotate all bubbles")
-        self.annotate_all_cb.setChecked(True)
-        scoring_layout.addWidget(self.annotate_all_cb, 0, 0)
+        # ── Left column: Alignment + Scoring ──
+        row = 0
+        left_header = QLabel("Alignment")
+        left_header.setStyleSheet("font-weight: bold;")
+        grid.addWidget(left_header, row, 0, 1, 2)
 
-        self.label_density_cb = QCheckBox("Show % fill labels")
-        self.label_density_cb.setChecked(True)
-        scoring_layout.addWidget(self.label_density_cb, 0, 1)
-
-        self.auto_thresh_cb = QCheckBox("Auto-calibrate threshold")
-        self.auto_thresh_cb.setChecked(_dflt(SCORING_DEFAULTS, "auto_calibrate_thresh", True))
-        scoring_layout.addWidget(self.auto_thresh_cb, 1, 0)
-
-        self.verbose_thresh_cb = QCheckBox("Verbose threshold")
-        self.verbose_thresh_cb.setChecked(True)
-        scoring_layout.addWidget(self.verbose_thresh_cb, 1, 1)
-
-        self.review_pdf_cb = QCheckBox("Generate review PDF")
-        self.review_pdf_cb.setChecked(True)
-        scoring_layout.addWidget(self.review_pdf_cb, 2, 0)
-
-        self.flagged_xlsx_cb = QCheckBox("Generate flagged XLSX")
-        self.flagged_xlsx_cb.setChecked(True)
-        scoring_layout.addWidget(self.flagged_xlsx_cb, 2, 1)
-
-        self.include_stats_cb = QCheckBox("Include statistics")
-        self.include_stats_cb.setChecked(True)
-        scoring_layout.addWidget(self.include_stats_cb, 3, 0)
-
-        layout.addWidget(scoring_group)
-
-        # Alignment options
-        align_group = QGroupBox("Alignment Options")
-        align_layout = QGridLayout(align_group)
-
-        align_layout.addWidget(QLabel("Method:"), 0, 0)
+        row += 1
+        grid.addWidget(QLabel("Align method:"), row, 0)
         self.align_method_combo = QComboBox()
         self.align_method_combo.addItems(["auto", "fast", "slow", "aruco"])
-        align_layout.addWidget(self.align_method_combo, 0, 1)
+        grid.addWidget(self.align_method_combo, row, 1)
 
-        align_layout.addWidget(QLabel("Min ArUco markers:"), 1, 0)
-        self.min_markers_spin = QSpinBox()
-        self.min_markers_spin.setRange(0, 32)
-        self.min_markers_spin.setValue(_dflt(ALIGN_DEFAULTS, "min_aruco", 4))
-        align_layout.addWidget(self.min_markers_spin, 1, 1)
+        row += 1
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.Shape.HLine)
+        sep1.setFrameShadow(QFrame.Shadow.Sunken)
+        grid.addWidget(sep1, row, 0, 1, 2)
 
-        align_layout.addWidget(QLabel("Render DPI:"), 2, 0)
-        self.dpi_spin = QSpinBox()
-        self.dpi_spin.setRange(72, 600)
-        self.dpi_spin.setValue(_dflt(RENDER_DEFAULTS, "dpi", 150))
-        align_layout.addWidget(self.dpi_spin, 2, 1)
+        row += 1
+        left_header2 = QLabel("Scoring")
+        left_header2.setStyleSheet("font-weight: bold;")
+        grid.addWidget(left_header2, row, 0, 1, 2)
 
-        layout.addWidget(align_group)
+        row += 1
+        grid.addWidget(QLabel("Min % filled:"), row, 0)
+        self.min_fill_spin = QSpinBox()
+        self.min_fill_spin.setRange(0, 100)
+        self.min_fill_spin.setSuffix("%")
+        self.min_fill_spin.setValue(_dflt(SCORING_DEFAULTS, "min_fill", 45))
+        self.min_fill_spin.setToolTip(
+            "Minimum fill score (0-100%) to consider a bubble filled.\n"
+            "Increase to require darker marks; decrease to accept lighter marks."
+        )
+        grid.addWidget(self.min_fill_spin, row, 1)
+
+        row += 1
+        grid.addWidget(QLabel("Top-2 ratio:"), row, 0)
+        self.top2_ratio_spin = QSpinBox()
+        self.top2_ratio_spin.setRange(0, 100)
+        self.top2_ratio_spin.setSuffix("%")
+        self.top2_ratio_spin.setValue(_dflt(SCORING_DEFAULTS, "top2_ratio", 80))
+        self.top2_ratio_spin.setToolTip(
+            "Second-best bubble must be ≤ this % of best to count as single answer.\n"
+            "Lower values are stricter (more likely to flag as multi)."
+        )
+        grid.addWidget(self.top2_ratio_spin, row, 1)
+
+        row += 1
+        grid.addWidget(QLabel("Min score diff:"), row, 0)
+        self.min_top2_diff_spin = QSpinBox()
+        self.min_top2_diff_spin.setRange(0, 100)
+        self.min_top2_diff_spin.setSuffix(" pts")
+        self.min_top2_diff_spin.setValue(int(_dflt(SCORING_DEFAULTS, "min_top2_diff", 10)))
+        self.min_top2_diff_spin.setToolTip(
+            "Minimum difference (percentage points) between top 2 bubbles\n"
+            "to not score as multi. Increase to require larger separation."
+        )
+        grid.addWidget(self.min_top2_diff_spin, row, 1)
+
+        # ── Right column: Annotation options ──
+        row_r = 0
+        right_header = QLabel("Annotation")
+        right_header.setStyleSheet("font-weight: bold;")
+        grid.addWidget(right_header, row_r, 2, 1, 2)
+
+        row_r += 1
+        self.annotate_all_cb = QCheckBox("Annotate all bubbles")
+        self.annotate_all_cb.setChecked(True)
+        grid.addWidget(self.annotate_all_cb, row_r, 2, 1, 2)
+
+        row_r += 1
+        self.label_density_cb = QCheckBox("Show % fill labels")
+        self.label_density_cb.setChecked(True)
+        grid.addWidget(self.label_density_cb, row_r, 2, 1, 2)
+
+        row_r += 1
+        self.auto_thresh_cb = QCheckBox("Auto-calibrate threshold")
+        self.auto_thresh_cb.setChecked(_dflt(SCORING_DEFAULTS, "auto_calibrate_thresh", True))
+        grid.addWidget(self.auto_thresh_cb, row_r, 2, 1, 2)
+
+        row_r += 1
+        self.verbose_thresh_cb = QCheckBox("Verbose threshold")
+        self.verbose_thresh_cb.setChecked(True)
+        grid.addWidget(self.verbose_thresh_cb, row_r, 2, 1, 2)
+
+        layout.addWidget(settings_group)
 
         layout.addStretch()
         return widget
 
     def _create_after_tab(self) -> QWidget:
-        """Create the After Scoring tab."""
+        """Create the Generate Report tab.
+
+        All three file selectors (results, corrections, roster) live in a
+        single group box.  Files auto-populate from the project's flat
+        structure when a project is selected.
+        """
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        # Corrections
-        corrections_group = QGroupBox("Apply Corrections")
-        corrections_layout = QVBoxLayout(corrections_group)
-        corrections_layout.addWidget(QLabel(
-            "After reviewing flagged items, upload the filled corrections file:"
-        ))
-        self.corrections_selector = FileSelector(
-            "Corrections XLSX:",
-            "Excel files (*.xlsx)",
-            "Optional corrections file...",
+        # Single group box for all report input files
+        files_group = QGroupBox("Upload Files to Generate Report")
+        files_layout = QVBoxLayout(files_group)
+
+        self.results_selector = FileSelector(
+            "Results CSV:",
+            "CSV files (*.csv)",
+            "Auto-populated from project score_data/...",
         )
-        corrections_layout.addWidget(self.corrections_selector)
-        layout.addWidget(corrections_group)
+        self.results_selector.file_selected.connect(self._on_results_loaded)
+        files_layout.addWidget(self.results_selector)
+
+        self.corrections_selector = FileSelector(
+            "Corrections (optional):",
+            "CSV files (*.csv);;Excel files (*.xlsx)",
+            "Auto-populated from project score_data/...",
+        )
+        files_layout.addWidget(self.corrections_selector)
+
+        self.report_roster_selector = FileSelector(
+            "Class roster (optional):",
+            "CSV files (*.csv)",
+            "Auto-populated from project input_files/...",
+        )
+        files_layout.addWidget(self.report_roster_selector)
+
+        layout.addWidget(files_group)
 
         layout.addStretch()
+
+        # Create Report button at the bottom of this tab
+        self.report_btn = QPushButton("Create Report")
+        self.report_btn.setMinimumHeight(36)
+        self.report_btn.setStyleSheet(
+            "QPushButton { background-color: #0d6efd; color: white; "
+            "font-weight: bold; font-size: 14px; border-radius: 4px; padding: 6px 20px; }"
+            "QPushButton:hover { background-color: #0b5ed7; }"
+            "QPushButton:disabled { background-color: #6c757d; }"
+        )
+        self.report_btn.setEnabled(False)
+        self.report_btn.clicked.connect(self._run_report)
+        layout.addWidget(self.report_btn)
+
         return widget
+
+    def _auto_populate_input_files(self):
+        """Auto-populate the Align & Score file selectors from input_files/.
+
+        Looks for:
+          - input_files/scans.pdf       → Scans selector
+          - input_files/key.*           → Key selector
+          - input_files/roster.*        → Roster selector  (Align & Score tab)
+          - input_files/aligned_scans.pdf → (sets aligned_pdf path)
+        Only sets a path if the file exists and the selector is currently empty.
+        """
+        project_dir = self.project_selector.project_dir()
+        if not project_dir:
+            return
+
+        input_files = project_dir / "input_files"
+        if not input_files.exists():
+            return
+
+        # Scans
+        if not self.scans_selector.exists():
+            scans_matches = sorted(input_files.glob("scans.*"))
+            if scans_matches:
+                self.scans_selector.set_path(str(scans_matches[0]))
+
+        # Key
+        if not self.key_selector.exists():
+            key_matches = sorted(input_files.glob("key.*"))
+            if key_matches:
+                self.key_selector.set_path(str(key_matches[0]))
+
+        # Roster (Align & Score tab)
+        if not self.roster_selector.exists():
+            roster_matches = sorted(input_files.glob("roster.*"))
+            if roster_matches:
+                self.roster_selector.set_path(str(roster_matches[0]))
+
+    def _auto_populate_report_files(self, _name: str = ""):
+        """Auto-populate report file selectors from the project's flat structure.
+
+        Called when the project changes.  Fills in:
+          - score_data/results.csv   → Results CSV
+          - score_data/corrections.csv → Corrections
+          - input_files/roster.*     → Roster
+        Only sets a path if the file exists and the selector is currently empty
+        (so we don't overwrite something the user manually chose).
+        """
+        project_dir = self.project_selector.project_dir()
+        if not project_dir:
+            return
+
+        # Results
+        results_csv = project_dir / "score_data" / "results.csv"
+        if results_csv.exists() and not self.results_selector.exists():
+            self.results_selector.set_path(str(results_csv))
+
+        # Corrections
+        corrections_csv = project_dir / "score_data" / "corrections.csv"
+        if corrections_csv.exists() and not self.corrections_selector.exists():
+            self.corrections_selector.set_path(str(corrections_csv))
+
+        # Roster — glob for roster.* in input_files/
+        input_files = project_dir / "input_files"
+        if input_files.exists() and not self.report_roster_selector.exists():
+            roster_matches = sorted(input_files.glob("roster.*"))
+            if roster_matches:
+                self.report_roster_selector.set_path(str(roster_matches[0]))
+
+        # Check for existing report
+        report_xlsx = project_dir / "exam_report.xlsx"
+        if report_xlsx.exists():
+            self.report_xlsx = report_xlsx
+
+        # Enable report button if we have results
+        if self.results_selector.exists():
+            self.report_btn.setEnabled(True)
+
+        self._enable_output_buttons()
 
     def _load_templates(self):
         """Load templates into the combo box."""
@@ -316,6 +492,79 @@ class QuickGradePage(QWidget):
         """Trigger the scans file browser (called from main window menu)."""
         self.scans_selector.trigger_browse()
 
+    def _on_results_loaded(self, path_str: str):
+        """Handle user loading a previous results CSV via the Generate Report tab."""
+        csv_path = Path(path_str)
+        if not csv_path.exists():
+            return
+        self.results_csv = csv_path
+
+        # Determine work_dir: if CSV is in score_data/, use the project root
+        if csv_path.parent.name == "score_data":
+            self.work_dir = csv_path.parent.parent
+        else:
+            self.work_dir = csv_path.parent
+
+        # Look for scored PDF — check project root first, then next to CSV
+        scored_candidates = [
+            self.work_dir / "scored_scans.pdf",
+            csv_path.parent / "scored_scans.pdf",
+        ]
+        for p in scored_candidates:
+            if p.exists():
+                self.scored_pdf = p
+                break
+
+        self.report_btn.setEnabled(True)
+        self._enable_output_buttons()
+        self.status_label.setText(f"Loaded results: {csv_path.name}")
+        self.log.append_line(f"Loaded previous results: {csv_path}")
+
+    def _on_project_changed(self, _name: str = ""):
+        """Handle project change: clear all file selectors and re-populate.
+
+        When switching projects (or creating a new one), stale file paths
+        from the previous project must not linger.  We clear every selector
+        first, then auto-populate from the new project's flat structure.
+        """
+        # Clear all file selectors
+        self.scans_selector.clear()
+        self.key_selector.clear()
+        self.roster_selector.clear()
+        self.results_selector.clear()
+        self.corrections_selector.clear()
+        self.report_roster_selector.clear()
+
+        # Reset state
+        self.results_csv = None
+        self.scored_pdf = None
+        self.aligned_pdf = None
+        self.report_xlsx = None
+        self.report_btn.setEnabled(False)
+        self._enable_output_buttons()
+
+        # Update browse dirs and auto-populate from new project
+        self._update_browse_dirs()
+
+    def _update_browse_dirs(self, _name: str = ""):
+        """Point all file-browse dialogs at the current project folder,
+        and auto-populate the report selectors from the flat structure."""
+        project_dir = self.project_selector.project_dir()
+        working_dir = self.project_selector.working_dir()
+        start = str(project_dir) if project_dir else (str(working_dir) if working_dir else "")
+        if not start:
+            return
+        self.scans_selector.set_start_dir(start)
+        self.key_selector.set_start_dir(start)
+        self.roster_selector.set_start_dir(start)
+        self.results_selector.set_start_dir(start)
+        self.corrections_selector.set_start_dir(start)
+        self.report_roster_selector.set_start_dir(start)
+
+        # Auto-populate file selectors from the project's flat structure
+        self._auto_populate_input_files()
+        self._auto_populate_report_files()
+
     def _validate_inputs(self) -> bool:
         """Validate required inputs."""
         if not self.scans_selector.exists():
@@ -329,6 +578,50 @@ class QuickGradePage(QWidget):
 
         return True
 
+    def _copy_inputs_to_project(self):
+        """
+        Copy input files (scans, key, roster) to the project's input_files/ folder.
+
+        Files are renamed to standard names so the project is self-contained:
+            input_files/scans.pdf
+            input_files/key.csv  (or key.txt, key.xlsx — preserves extension)
+            input_files/roster.csv
+        Existing files are overwritten (the user is re-running with new inputs).
+        """
+        project_dir = self.project_selector.project_dir()
+        if not project_dir:
+            return
+
+        input_dir = project_dir / "input_files"
+        input_dir.mkdir(exist_ok=True)
+
+        # Copy scans
+        if self.scans_selector.exists():
+            src = Path(self.scans_selector.path())
+            dst = input_dir / f"scans{src.suffix}"
+            try:
+                shutil.copy2(str(src), str(dst))
+            except Exception as e:
+                print(f"[warn] Could not copy scans to input_files/: {e}")
+
+        # Copy key
+        if self.key_selector.exists():
+            src = Path(self.key_selector.path())
+            dst = input_dir / f"key{src.suffix}"
+            try:
+                shutil.copy2(str(src), str(dst))
+            except Exception as e:
+                print(f"[warn] Could not copy key to input_files/: {e}")
+
+        # Copy roster
+        if self.roster_selector.exists():
+            src = Path(self.roster_selector.path())
+            dst = input_dir / f"roster{src.suffix}"
+            try:
+                shutil.copy2(str(src), str(dst))
+            except Exception as e:
+                print(f"[warn] Could not copy roster to input_files/: {e}")
+
     def _run_align_and_score(self):
         """Run the align and score workflow."""
         if self.runner.is_running():
@@ -338,9 +631,35 @@ class QuickGradePage(QWidget):
         if not self._validate_inputs():
             return
 
-        # Setup work directory from project selector
+        # Setup work directory from project selector (now returns project root)
         self.work_dir = self.project_selector.output_dir()
         self.work_dir.mkdir(parents=True, exist_ok=True)
+
+        # Archive-or-overwrite dialog if results already exist
+        project_dir = self.project_selector.project_dir()
+        if project_dir and has_existing_results and has_existing_results(project_dir):
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Icon.Question)
+            msg.setWindowTitle("Existing Results Found")
+            msg.setText(
+                "This project already has scoring results.\n"
+                "Would you like to archive them before re-running?"
+            )
+            archive_btn = msg.addButton("Archive && Continue", QMessageBox.ButtonRole.AcceptRole)
+            overwrite_btn = msg.addButton("Overwrite", QMessageBox.ButtonRole.DestructiveRole)
+            cancel_btn = msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+            msg.setDefaultButton(archive_btn)
+            msg.exec()
+
+            clicked = msg.clickedButton()
+            if clicked == cancel_btn:
+                return
+            elif clicked == archive_btn:
+                archive_path = archive_current_results(project_dir)
+                self.log.append_line(f"Archived previous results to: {archive_path}\n")
+
+        # Copy input files to project input_files/ folder for archival
+        self._copy_inputs_to_project()
 
         # Update status with project info
         project_name = self.project_selector.project_name()
@@ -354,10 +673,10 @@ class QuickGradePage(QWidget):
         bubblemap = str(template.bubblemap_yaml_path)
         self._current_bubblemap = bubblemap
 
-        # Output paths
-        self.aligned_pdf = self.work_dir / "aligned_scans.pdf"
-        self.results_csv = self.work_dir / "results.csv"
-        self.scored_pdf = self.work_dir / "scored.pdf"
+        # Output paths — flat structure
+        self.aligned_pdf = self.work_dir / "input_files" / "aligned_scans.pdf"
+        self.results_csv = self.work_dir / "score_data" / "results.csv"
+        self.scored_pdf = self.work_dir / "scored_scans.pdf"
 
         # UI updates
         self.log.clear()
@@ -374,9 +693,7 @@ class QuickGradePage(QWidget):
             self.scans_selector.path(),
             "--template", template_pdf,
             "--out-pdf", str(self.aligned_pdf),
-            "--dpi", str(self.dpi_spin.value()),
             "--align-method", self.align_method_combo.currentText(),
-            "--min-markers", str(self.min_markers_spin.value()),
             "--bubblemap", bubblemap,
         ]
 
@@ -394,13 +711,17 @@ class QuickGradePage(QWidget):
             str(self.aligned_pdf),
             "--bublmap", self._current_bubblemap,
             "--out-csv", str(self.results_csv),
-            "--out-pdf", "scored.pdf",
-            "--dpi", str(self.dpi_spin.value()),
+            "--out-pdf", str(self.scored_pdf),
         ]
 
         # Key file
         if self.key_selector.exists():
             args += ["--key-txt", self.key_selector.path()]
+
+        # Scoring parameters
+        args += ["--min-fill", str(self.min_fill_spin.value())]
+        args += ["--top2-ratio", str(self.top2_ratio_spin.value())]
+        args += ["--min-top2-diff", str(self.min_top2_diff_spin.value())]
 
         # Options
         if self.annotate_all_cb.isChecked():
@@ -411,16 +732,6 @@ class QuickGradePage(QWidget):
             args += ["--no-auto-thresh"]
         if self.verbose_thresh_cb.isChecked():
             args += ["--verbose-thresh"]
-        if self.include_stats_cb.isChecked():
-            args += ["--include-stats"]
-        else:
-            args += ["--no-include-stats"]
-
-        # Flagging
-        if self.review_pdf_cb.isChecked():
-            args += ["--review-pdf", str(self.work_dir / "flagged_for_review.pdf")]
-        if self.flagged_xlsx_cb.isChecked():
-            args += ["--flagged-xlsx", str(self.work_dir / "flagged_for_review.xlsx")]
 
         # Roster
         if self.roster_selector.exists():
@@ -446,16 +757,28 @@ class QuickGradePage(QWidget):
 
         self.log.append_header("GENERATING REPORT")
 
-        report_path = self.work_dir / "exam_report.xlsx"
+        report_path = self.work_dir / "exam_report.xlsx"  # top-level
         args = [
             "report",
             str(self.results_csv),
             "--out-xlsx", str(report_path),
         ]
 
+        # Roster — prefer the one on this tab, fall back to the Align & Score tab
+        if self.report_roster_selector.exists():
+            args += ["--roster", self.report_roster_selector.path()]
+        elif self.roster_selector.exists():
+            args += ["--roster", self.roster_selector.path()]
+
+        # Corrections
         if self.corrections_selector.exists():
             args += ["--corrections", self.corrections_selector.path()]
             self.log.append_line(f"Applying corrections from: {self.corrections_selector.path()}")
+
+        # Optional project name
+        project_name = self.project_selector.project_name()
+        if project_name:
+            args += ["--project-name", project_name]
 
         self.log.append_line(f"Command: markshark {' '.join(args)}\n")
         self.runner.run(args, "report")
@@ -463,6 +786,21 @@ class QuickGradePage(QWidget):
     def _on_output(self, text: str):
         """Handle CLI output."""
         self.log.append(text)
+
+    def _save_log(self):
+        """Save the current log to the project's logs/ directory."""
+        if not self.work_dir:
+            return
+        project_dir = self.project_selector.project_dir()
+        if project_dir:
+            logs_dir = project_dir / "logs"
+        else:
+            logs_dir = self.work_dir / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        log_path = logs_dir / f"log_{timestamp}.txt"
+        if self.log.save_to_file(log_path):
+            self.log.append_line(f"\nLog saved to: {log_path}")
 
     def _on_step_finished(self, exit_code: int, step_name: str):
         """Handle step completion."""
@@ -476,30 +814,51 @@ class QuickGradePage(QWidget):
 
             elif step_name == "score":
                 self.status_label.setText("Quick Grade complete!")
-                self.output_frame.setVisible(True)
+                self._enable_output_buttons()
                 self.report_btn.setEnabled(True)
+                # Force-populate report tab with the results we just created
+                if self.results_csv and self.results_csv.exists():
+                    self.results_selector.set_path(str(self.results_csv))
+                self._auto_populate_report_files()
+                self._save_log()
                 self.grading_complete.emit({
                     "work_dir": str(self.work_dir),
                     "results_csv": str(self.results_csv),
                     "scored_pdf": str(self.scored_pdf),
                     "aligned_pdf": str(self.aligned_pdf),
                 })
-                QMessageBox.information(self, "Complete", "Alignment and scoring complete!")
+                project_label = self.project_selector.project_name() or "Quick Grade"
+                QMessageBox.information(self, "Complete", f"Scoring complete!  ({project_label})")
 
             elif step_name == "report":
                 self.status_label.setText("Report generated!")
-                report_path = self.work_dir / "exam_report.xlsx"
-                if report_path.exists():
-                    QMessageBox.information(self, "Report Ready", f"Report saved to:\n{report_path}")
-                    self._open_file(report_path)
+                self._save_log()
+                self.report_xlsx = self.work_dir / "exam_report.xlsx"
+                self._enable_output_buttons()
+                if self.report_xlsx.exists():
+                    QMessageBox.information(self, "Report Ready", f"Report saved to:\n{self.report_xlsx}")
+                    self._open_file(self.report_xlsx)
         else:
             self.status_label.setText(f"Error in {step_name}")
             self._pending_score = False
+            self._save_log()
             QMessageBox.warning(self, "Error", f"{step_name} failed. Check the log.")
 
         self.progress.setVisible(False)
         self.align_score_btn.setEnabled(True)
         self.report_btn.setEnabled(self.results_csv and self.results_csv.exists())
+
+    def _enable_output_buttons(self):
+        """Enable the output buttons based on which files actually exist."""
+        self.open_report_btn.setEnabled(
+            self.report_xlsx is not None and self.report_xlsx.exists()
+        )
+        self.open_scored_btn.setEnabled(
+            self.scored_pdf is not None and self.scored_pdf.exists()
+        )
+        self.open_folder_btn.setEnabled(
+            self.work_dir is not None and self.work_dir.exists()
+        )
 
     def _open_file(self, path: Optional[Path]):
         """Open a file with the system default application."""

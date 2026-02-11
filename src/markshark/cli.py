@@ -7,7 +7,6 @@ cli.py  —  MarkShark command line engine
 from __future__ import annotations
 
 import sys
-import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -45,9 +44,9 @@ def quick_grade(
     input_pdf: str = typer.Argument(..., help="Raw student scans PDF"),
     template_id: str = typer.Option(..., "--template", "-t", help="Template ID or display name (use 'markshark templates' to list)"),
     key_txt: Optional[str] = typer.Option(None, "--key-txt", "-k", help="Answer key file (optional)"),
-    out_csv: str = typer.Option("quick_grade_results.csv", "--out-csv", "-o", help="Output CSV of results"),
-    out_pdf: str = typer.Option("quick_grade_annotated.pdf", "--out-pdf", help="Output annotated PDF"),
-    out_dir: Optional[str] = typer.Option(None, "--out-dir", help="Output directory (default: same as out_csv)"),
+    out_csv: str = typer.Option("score_data/results.csv", "--out-csv", "-o", help="Output CSV of results"),
+    out_pdf: str = typer.Option("scored_scans.pdf", "--out-pdf", help="Output annotated PDF"),
+    out_dir: Optional[str] = typer.Option(None, "--out-dir", help="Output directory (project root; default: same as out_csv parent)"),
     dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Render DPI"),
     templates_dir: Optional[str] = typer.Option(None, "--templates-dir", help="Custom templates directory"),
     # Alignment options
@@ -96,10 +95,14 @@ def quick_grade(
         
         out_dir_path = Path(out_dir)
         out_dir_path.mkdir(parents=True, exist_ok=True)
+        # Ensure parent directories for output files exist
+        Path(out_csv).parent.mkdir(parents=True, exist_ok=True)
         
         # Step 1: Align (with bubblemap for bubble grid fallback)
         rprint("[cyan]Step 1/2: Aligning scans...[/cyan]")
-        aligned_pdf = out_dir_path / "aligned_scans.pdf"
+        input_files_dir = out_dir_path / "input_files"
+        input_files_dir.mkdir(parents=True, exist_ok=True)
+        aligned_pdf = input_files_dir / "aligned_scans.pdf"
         
         align_pdf_scans(
             input_pdf=input_pdf,
@@ -167,7 +170,6 @@ def align(
     template: str = typer.Option(..., "--template", "-t", help="Template PDF to align to"),
     out_pdf: str = typer.Option("aligned_scans.pdf", "--out-pdf", "-o", help="Output aligned PDF"),
     dpi: int = typer.Option(RENDER_DEFAULTS.dpi, "--dpi", help="Render DPI for alignment & output"),
-    template_page: int = typer.Option(1, "--template-page", help="Template page index to use (1-based)"),
     align_method: str = typer.Option(
         "auto", "--align-method",
         help="Alignment method: auto|fast|slow|aruco. "
@@ -228,7 +230,6 @@ def align(
         template=template,
         out_pdf=out_pdf,
         dpi=dpi,
-        template_page=template_page,
         align_method=align_method,
         estimator_method=estimator_method,
         dict_name=dict_name,
@@ -259,16 +260,6 @@ def score(
         None,
         "--out-pdf",
         help=f"Annotated PDF output filename. Default: {SCORING_DEFAULTS.out_pdf}. Use \"\"\" to disable.",
-    ),
-    review_pdf: Optional[str] = typer.Option(
-        None,
-        "--review-pdf",
-        help="Output PDF containing only pages with flagged answers (blank/multi). Use for manual review.",
-    ),
-    flagged_xlsx: Optional[str] = typer.Option(
-        None,
-        "--flagged-xlsx",
-        help="Output XLSX listing flagged items (blank/multi) with Corrected Answer column for manual review.",
     ),
     roster_csv: Optional[str] = typer.Option(
         None,
@@ -307,19 +298,18 @@ def score(
         "--verbose-thresh",
         help="Print per-page threshold calibration diagnostics",
     ),
-    include_stats: bool = typer.Option(
-        True,
-        "--include-stats/--no-include-stats",
-        help="Append basic statistics (mean, std, KR-20, item difficulty, point-biserial) to CSV. Requires answer key.",
-    ),
 ):
     """
     Grade aligned scans using axis-based bublmap.
-    
-    When --key-txt is provided and --include-stats is enabled (default), the output CSV
-    will include summary rows at the bottom with:
-    - Exam statistics: N, Mean, StdDev, High/Low scores, KR-20 reliability
-    - Item statistics: % correct and point-biserial for each question
+
+    Outputs a simplified CSV with:
+    - Header row with Page, Version, LastName, FirstName, StudentID, Correct, Incorrect, Blank, Multi, Flagged, FlagDetails, Q1...
+    - KEY row(s) for each version
+    - Student rows with scores and answers
+    - Flagged column: "Y" if student has any flagged issues
+    - FlagDetails column: pipe-separated flags like "Q5:blank|Q10:multi|ID:orphan"
+
+    Use the 'report' command to generate statistics and Excel reports from this CSV.
     """
     try:
         _ = load_bublmap(bublmap)
@@ -365,9 +355,6 @@ def score(
             adaptive_min_above_floor=scoring.adaptive_min_above_floor,
             annotate_all_cells=annotate_all_cells,
             label_density=label_density,
-            review_pdf=review_pdf,
-            flagged_xlsx=flagged_xlsx,
-            include_stats=include_stats,
             roster_csv=roster_csv,
         )
     except Exception as e:
@@ -375,14 +362,7 @@ def score(
         raise typer.Exit(code=2)
 
     rprint(f"[green]Wrote:[/green] {out_csv}")
-    if include_stats and key_txt:
-        rprint(f"[cyan]Stats included:[/cyan] See bottom of {out_csv} for exam & item statistics")
-    if review_pdf:
-        rprint(f"[yellow]Review PDF:[/yellow] {review_pdf}")
-    if flagged_xlsx:
-        rprint(f"[yellow]Flagged XLSX:[/yellow] {flagged_xlsx}")
-    if roster_csv:
-        rprint(f"[cyan]Roster matching:[/cyan] Check flagged XLSX for orphan scans and absent students")
+    rprint(f"[cyan]Format:[/cyan] Simplified CSV with Flagged/FlagDetails columns. Use 'report' command for statistics.")
 
 
 # ---------------------- REPORT ----------------------
@@ -392,8 +372,8 @@ def report(
     out_xlsx: str = typer.Option("exam_report.xlsx", "--out-xlsx", "-o", help="Output Excel report"),
     roster_csv: Optional[str] = typer.Option(None, "--roster", "-r", help="Optional class roster CSV (StudentID, LastName, FirstName)"),
     project_name: Optional[str] = typer.Option(None, "--project-name", help="Project name to include in report header"),
-    run_label: Optional[str] = typer.Option(None, "--run-label", help="Run label (e.g., run_001_2025-01-21_1430) to include in report header"),
-    corrections_xlsx: Optional[str] = typer.Option(None, "--corrections-xlsx", help="Filled flagged.xlsx with corrections (lists details on Summary tab)"),
+    run_label: Optional[str] = typer.Option(None, "--run-label", help="Run label (e.g., 2025-01-21_final) to include in report header"),
+    corrections: Optional[str] = typer.Option(None, "--corrections", "--corrections-xlsx", help="Corrections file (.csv or .xlsx) to apply and list on Summary tab"),
 ):
     """
     Generate an Excel report with per-version tabs, item analysis, and roster checking.
@@ -413,7 +393,7 @@ def report(
             roster_csv=roster_csv,
             project_name=project_name,
             run_label=run_label,
-            corrections_xlsx=corrections_xlsx,
+            corrections_xlsx=corrections,
         )
         rprint(f"[green]Report generated:[/green] {out_xlsx}")
     except Exception as e:
@@ -554,57 +534,6 @@ def mock_dataset(
     except Exception as e:
         rprint(f"[red]Mock dataset generation failed:[/red] {e}")
         raise typer.Exit(code=2)
-
-
-# ------------------------------- STREAMLIT ---------------------------------
-def _find_available_port(start_port: int = 8501, max_attempts: int = 10) -> int:
-    """Find an available port starting from start_port."""
-    import socket
-    for offset in range(max_attempts):
-        port = start_port + offset
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("localhost", port))
-                return port
-            except OSError:
-                continue
-    return start_port  # fallback to original if all attempts fail
-
-
-@app.command()
-def streamlit(
-    port: int = typer.Option(None, "--port", help="Port to serve Streamlit web interface (auto-finds available port if not specified)"),
-    headless: bool = typer.Option(False, "--headless", help="Run without opening a browser (for remote servers)"),
-):
-    """
-    Launch the Streamlit web interface.
-
-    For the native desktop GUI, use: python -m markshark.gui
-    """
-    # Resolve the path to the app module
-    app_py = (Path(__file__).resolve().parent / "app_streamlit.py")
-    if not app_py.exists():
-        rprint(f"[red]Cannot locate app_streamlit.py at {app_py}[/red]")
-        raise typer.Exit(code=2)
-
-    # Auto-find available port if not specified
-    if port is None:
-        port = _find_available_port()
-        rprint(f"[dim]Using port {port}[/dim]")
-
-    cmd = ["streamlit", "run", str(app_py), "--server.port", str(port)]
-    if headless:
-        cmd.extend(["--server.headless", "true"])
-
-    rprint(f"[cyan]Launching:[/cyan] {' '.join(cmd)}")
-    try:
-        subprocess.run(cmd, check=True)
-    except FileNotFoundError:
-        rprint("[red]Streamlit not found. Install it in your environment (`pip install streamlit`).[/red]")
-        raise typer.Exit(code=3)
-    except subprocess.CalledProcessError as e:
-        rprint(f"[red]Streamlit exited with error:[/red] {e}")
-        raise typer.Exit(code=4)
 
 
 # ------------------------------- MAIN --------------------------------

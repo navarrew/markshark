@@ -188,11 +188,10 @@ from typing import Tuple
 class AnnotationDefaults:
     """Colors/thickness/font for drawn overlays (BGR order)."""
     # Name/ID zones
-    color_zone: Tuple[int, int, int] = (255, 0, 0)        # blue circles for name/ID zones
-    percent_text_color: Tuple[int, int, int] = (255, 0, 255)  # purple for % fill labels
-    text_color: Tuple[int, int, int] = (255, 0, 0)      # alias used by older code paths
-    thickness_names: int = 2
-    label_font_scale: float = 0.5
+    color_zone: Tuple[int, int, int] = (255, 191, 128)    # light blue circles for name/ID zones
+    percent_text_color: Tuple[int, int, int] = (255, 0, 255)  # pink/magenta for % fill labels
+    thickness_names: int = 1
+    label_font_scale: float = 0.28
     label_thickness: int = 1
 
     # Answer bubbles circles
