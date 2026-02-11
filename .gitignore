@@ -33,10 +33,9 @@ share/python-wheels/
 MANIFEST
 
 # PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+#  Keep MarkShark.spec (our build config) but ignore generated manifests
 *.manifest
-*.spec
+# Note: MarkShark.spec is tracked — it's our PyInstaller build config
 
 # Installer logs
 pip-log.txt

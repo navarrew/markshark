@@ -131,6 +131,31 @@ def match_roster(
     return matched, orphans, absent_ids
 
 
+def _id_edit_distance(a: str, b: str) -> int:
+    """Levenshtein edit distance between two ID strings.
+
+    Handles insertion, deletion, and substitution.
+    Student IDs are typically 8-10 chars so this is trivially fast.
+    """
+    if len(a) < len(b):
+        return _id_edit_distance(b, a)
+    if not b:
+        return len(a)
+
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a):
+        curr = [i + 1]
+        for j, cb in enumerate(b):
+            cost = 0 if ca == cb else 1
+            curr.append(min(
+                curr[j] + 1,       # insert
+                prev[j + 1] + 1,   # delete
+                prev[j] + cost,    # substitute
+            ))
+        prev = curr
+    return prev[-1]
+
+
 def suggest_matches(
     orphan_id: str,
     orphan_name: str,
@@ -158,24 +183,54 @@ def suggest_matches(
         score = 0
         reasons = []
 
-        # Check for similar IDs (digit transposition, off-by-one)
+        # ── ID similarity scoring ──
+        len_diff = abs(len(orphan_id) - len(roster_id))
+
         if len(orphan_id) == len(roster_id):
-            # Count different digits
+            # Same-length: positional digit comparison
             diff_count = sum(1 for a, b in zip(orphan_id, roster_id) if a != b)
             if diff_count == 1:
-                score += 3
+                score += 6
                 reasons.append("1 digit off")
             elif diff_count == 2:
-                # Check for transposition
+                # Check for adjacent-digit transposition
                 for i in range(len(orphan_id) - 1):
                     swapped = orphan_id[:i] + orphan_id[i+1] + orphan_id[i] + orphan_id[i+2:]
                     if swapped == roster_id:
-                        score += 4
+                        score += 7
                         reasons.append("digit swap")
                         break
                 else:
-                    score += 1
+                    score += 2
                     reasons.append("2 digits off")
+
+        elif len_diff == 1:
+            # One digit missing or extra — try single-char deletion
+            longer = orphan_id if len(orphan_id) > len(roster_id) else roster_id
+            shorter = roster_id if len(orphan_id) > len(roster_id) else orphan_id
+            found_deletion = False
+            for i in range(len(longer)):
+                if longer[:i] + longer[i+1:] == shorter:
+                    score += 5
+                    reasons.append(
+                        "1 extra digit" if len(orphan_id) > len(roster_id)
+                        else "1 digit missing"
+                    )
+                    found_deletion = True
+                    break
+            if not found_deletion:
+                # Fallback: edit distance for messier single-char-diff cases
+                ed = _id_edit_distance(orphan_id, roster_id)
+                if ed <= 2:
+                    score += max(1, 4 - ed)
+                    reasons.append(f"edit distance {ed}")
+
+        elif len_diff <= 3:
+            # Larger length difference — use edit distance
+            ed = _id_edit_distance(orphan_id, roster_id)
+            if ed <= 3:
+                score += max(1, 4 - ed)
+                reasons.append(f"edit distance {ed}")
 
         # Check for name similarity
         roster_name_lower = roster_info.get('full_name', '').lower().strip()
@@ -201,7 +256,8 @@ def suggest_matches(
                 'reason': ', '.join(reasons),
             })
 
-    # Sort by score descending, take top N
+    # Filter out very low-confidence suggestions, sort by score, take top N
+    suggestions = [s for s in suggestions if s['score'] >= 2]
     suggestions.sort(key=lambda x: x['score'], reverse=True)
     return suggestions[:max_suggestions]
 

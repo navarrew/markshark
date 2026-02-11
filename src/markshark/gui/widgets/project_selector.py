@@ -75,7 +75,6 @@ class ProjectSelector(QWidget):
             "QComboBox { background-color: #1a1a1a; color: white;"
             "            border: 1px solid #444; border-radius: 3px;"
             "            padding: 3px 8px; }"
-            "QComboBox::drop-down { border: none; }"
             "QComboBox QAbstractItemView { background-color: #1a1a1a;"
             "            color: white; selection-background-color: #0d6efd; }"
         )
@@ -135,7 +134,8 @@ class ProjectSelector(QWidget):
             if idx >= 0:
                 self.project_combo.setCurrentIndex(idx)
             else:
-                self.project_combo.setCurrentText(saved_project)
+                # Project no longer exists — show placeholder
+                self.project_combo.setCurrentIndex(-1)
 
     def _save_settings(self):
         """Save current settings."""
@@ -182,9 +182,6 @@ class ProjectSelector(QWidget):
         self.project_combo.blockSignals(True)
         self.project_combo.clear()
 
-        # Add empty option
-        self.project_combo.addItem("")
-
         # Find project directories (those containing expected structure)
         workdir_path = Path(workdir)
         projects = []
@@ -201,11 +198,15 @@ class ProjectSelector(QWidget):
         for proj in projects:
             self.project_combo.addItem(proj)
 
-        # Restore previous selection if still valid
+        # Restore previous selection if still valid, otherwise show placeholder
+        restored = False
         if current_text:
             idx = self.project_combo.findText(current_text)
             if idx >= 0:
                 self.project_combo.setCurrentIndex(idx)
+                restored = True
+        if not restored:
+            self.project_combo.setCurrentIndex(-1)  # show "(none selected)" placeholder
 
         self.project_combo.blockSignals(False)
 
@@ -268,7 +269,9 @@ class ProjectSelector(QWidget):
         return None
 
     def project_name(self) -> str:
-        """Get the current project name."""
+        """Get the current project name (empty string if none selected)."""
+        if self.project_combo.currentIndex() < 0:
+            return ""
         return self.project_combo.currentText()
 
     def project_dir(self) -> Optional[Path]:

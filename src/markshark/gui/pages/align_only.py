@@ -434,6 +434,11 @@ class AlignOnlyPage(QWidget):
         except Exception as e:
             self.template_combo.addItem(f"(Error: {e})", None)
 
+    def showEvent(self, event):
+        """Re-populate file selectors when the page becomes visible."""
+        super().showEvent(event)
+        self._auto_populate_from_project()
+
     def _update_browse_dirs(self, _name: str = ""):
         project_dir = self.project_selector.project_dir()
         working_dir = self.project_selector.working_dir()
@@ -442,6 +447,22 @@ class AlignOnlyPage(QWidget):
             return
         self.scans_selector.set_start_dir(start)
         self.bubblemap_selector.set_start_dir(start)
+        self._auto_populate_from_project()
+
+    def _auto_populate_from_project(self):
+        """Auto-fill selectors from project's flat structure if files exist."""
+        project_dir = self.project_selector.project_dir()
+        if not project_dir:
+            return
+        input_files = project_dir / "input_files"
+        if not input_files.exists():
+            return
+
+        # Scans
+        if not self.scans_selector.exists():
+            for s in sorted(input_files.glob("scans.*")):
+                self.scans_selector.set_path(str(s))
+                break
 
     def _validate_inputs(self) -> bool:
         if not self.scans_selector.exists():

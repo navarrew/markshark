@@ -351,6 +351,11 @@ class ScoreOnlyPage(QWidget):
         except Exception as e:
             self.template_combo.addItem(f"(Error: {e})", None)
 
+    def showEvent(self, event):
+        """Re-populate file selectors when the page becomes visible."""
+        super().showEvent(event)
+        self._auto_populate_from_project()
+
     def _update_browse_dirs(self, _name: str = ""):
         project_dir = self.project_selector.project_dir()
         working_dir = self.project_selector.working_dir()
@@ -360,6 +365,33 @@ class ScoreOnlyPage(QWidget):
         self.aligned_selector.set_start_dir(start)
         self.key_selector.set_start_dir(start)
         self.roster_selector.set_start_dir(start)
+        self._auto_populate_from_project()
+
+    def _auto_populate_from_project(self):
+        """Auto-fill selectors from project's flat structure if files exist."""
+        project_dir = self.project_selector.project_dir()
+        if not project_dir:
+            return
+        input_files = project_dir / "input_files"
+        if not input_files.exists():
+            return
+
+        # Aligned PDF
+        aligned = input_files / "aligned_scans.pdf"
+        if aligned.exists() and not self.aligned_selector.exists():
+            self.aligned_selector.set_path(str(aligned))
+
+        # Key
+        if not self.key_selector.exists():
+            for k in sorted(input_files.glob("key.*")):
+                self.key_selector.set_path(str(k))
+                break
+
+        # Roster
+        if not self.roster_selector.exists():
+            for r in sorted(input_files.glob("roster.*")):
+                self.roster_selector.set_path(str(r))
+                break
 
     def _validate_inputs(self) -> bool:
         if not self.aligned_selector.exists():

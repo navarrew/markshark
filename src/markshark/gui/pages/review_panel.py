@@ -34,8 +34,15 @@ from PySide6.QtWidgets import (
     QFrame,
 )
 
-from ..widgets import PageHeader, PDFPreview, ProjectSelector
+from ..widgets import PageHeader, PDFPreview, ProjectSelector, FlagInfoPanel
 from ..models import CorrectionLog
+
+# Lazy-loaded roster helpers (avoid import errors if score_core unavailable)
+try:
+    from markshark.score_core import load_roster, suggest_matches
+except ImportError:
+    load_roster = None
+    suggest_matches = None
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +78,7 @@ _SMART_SORT_COLUMNS = frozenset({"Version"})
 _COLOR_CORRECTED = QColor("#BBDEFB")  # blue — has a correction
 _COLOR_BLANK_Q = QColor("#F9C8F5")   # pink — blank answer
 _COLOR_MULTI_Q = QColor("#FFB366")   # orange — multi-mark
+_COLOR_ORPHAN_ID = QColor("#FFCDD2") # light red — orphan ID warning
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +201,10 @@ class ReviewPanelPage(QWidget):
 
         self._answer_delegate = AnswerChoiceDelegate(self)
         self._last_correction_key: str = ""  # debounce: "row:col:value"
+
+        # Roster for orphan ID resolution
+        self._roster: Optional[Dict[str, Dict[str, str]]] = None
+        self._absent_roster: Optional[Dict[str, Dict[str, str]]] = None
 
         self._setup_ui()
 
@@ -357,15 +369,11 @@ class ReviewPanelPage(QWidget):
         self.spreadsheet.cellChanged.connect(self._on_cell_changed)
         left_layout.addWidget(self.spreadsheet, 1)
 
-        # Flag info label
-        self.flag_info_label = QLabel("Select a student to see flags.")
-        self.flag_info_label.setWordWrap(True)
-        self.flag_info_label.setStyleSheet(
-            "padding: 6px; background-color: #FFF8E1; color: #333333; "
-            "border: 1px solid #FFE082; border-radius: 3px;"
-        )
-        self.flag_info_label.setMaximumHeight(60)
-        left_layout.addWidget(self.flag_info_label)
+        # Flag info / orphan suggestions panel
+        self.flag_panel = FlagInfoPanel()
+        self.flag_panel.suggestion_accepted.connect(self._accept_suggestion)
+        self.flag_panel.roster_requested.connect(self._on_roster_requested)
+        left_layout.addWidget(self.flag_panel)
 
         main_splitter.addWidget(left_widget)
 
@@ -655,7 +663,7 @@ class ReviewPanelPage(QWidget):
             elif col_name in ("Score", "Correct", "Incorrect", "Blank", "Multi", "Percent"):
                 self.spreadsheet.setColumnWidth(col_idx, 55)
             elif col_name in ("StudentID",):
-                self.spreadsheet.setColumnWidth(col_idx, 80)
+                self.spreadsheet.setColumnWidth(col_idx, 100)
             elif col_name in ("LastName", "FirstName"):
                 self.spreadsheet.setColumnWidth(col_idx, 100)
 
@@ -676,9 +684,20 @@ class ReviewPanelPage(QWidget):
             student_id = _get_field(row_data, "StudentID", "student_id", "ID")
             student_corrections = effective.get(student_id, {})
 
+            # Orphan detection for visual indicator
+            flag_details = _get_field(row_data, "FlagDetails", "flagdetails")
+            is_orphan = "ID:orphan" in (flag_details or "")
+            orphan_corrected = (
+                is_orphan
+                and "student_id" in student_corrections
+            )
+
             for col_idx, col_name in enumerate(self._columns):
                 original_value = row_data.get(col_name, "") or ""
-                display_value = student_corrections.get(col_name, original_value)
+                # CorrectionLog stores ID corrections under "student_id"
+                # but the CSV column is "StudentID" — check both keys.
+                correction_key = "student_id" if col_name == "StudentID" else col_name
+                display_value = student_corrections.get(correction_key, original_value)
 
                 # Use sort-aware items for columns that need special ordering
                 if col_name in _NUMERIC_COLUMNS:
@@ -693,8 +712,15 @@ class ReviewPanelPage(QWidget):
                     item.setData(Qt.ItemDataRole.UserRole, row_data)
 
                 # Cell colouring
-                if col_name in student_corrections:
+                if correction_key in student_corrections:
                     item.setBackground(QBrush(_COLOR_CORRECTED))
+                elif col_name == "StudentID" and is_orphan and not orphan_corrected:
+                    item.setBackground(QBrush(_COLOR_ORPHAN_ID))
+                    item.setForeground(QBrush(QColor("#B71C1C")))  # dark red text
+                    item.setToolTip(
+                        "Orphan ID \u2014 not found in roster. "
+                        "Select row to see suggested matches."
+                    )
                 elif self._is_q_column(col_name):
                     if not display_value.strip():
                         item.setBackground(QBrush(_COLOR_BLANK_Q))
@@ -791,13 +817,18 @@ class ReviewPanelPage(QWidget):
         if item is None:
             return
 
+        correction_key = "student_id" if col_name == "StudentID" else col_name
         has_correction = (
             self._correction_log is not None
-            and self._correction_log.has_correction(student_id, col_name)
+            and self._correction_log.has_correction(student_id, correction_key)
         )
 
         if has_correction:
             item.setBackground(QBrush(_COLOR_CORRECTED))
+            item.setForeground(QBrush(QColor("black")))
+            # Clear orphan tooltip if this was a corrected orphan
+            if col_name == "StudentID":
+                item.setToolTip("")
         elif self._is_q_column(col_name):
             if not value.strip():
                 item.setBackground(QBrush(_COLOR_BLANK_Q))
@@ -889,9 +920,12 @@ class ReviewPanelPage(QWidget):
 
         self._current_student_idx = row
 
-        # Update flag info
+        # Update flag info / orphan suggestions
         flag_details = _get_field(row_data, "FlagDetails", "flagdetails")
-        self.flag_info_label.setText(self._parse_flag_details(flag_details))
+        if "ID:orphan" in (flag_details or ""):
+            self._show_orphan_suggestions(row_data)
+        else:
+            self.flag_panel.show_regular_flags(self._parse_flag_details(flag_details))
 
         # Update PDF preview
         self._load_pdf_page(row_data)
@@ -926,6 +960,144 @@ class ReviewPanelPage(QWidget):
         if not readable:
             return "No flags for this student."
         return "Flags: " + ", ".join(readable)
+
+    # =====================================================================
+    # Orphan ID Resolution
+    # =====================================================================
+
+    def _load_roster_if_needed(self) -> Optional[Dict[str, Dict[str, str]]]:
+        """Load roster from the project's input_files/ directory (cached)."""
+        if self._roster is not None:
+            return self._roster
+        if load_roster is None:
+            return None  # score_core not available
+
+        project_dir = self.project_selector.project_dir()
+        if not project_dir:
+            return None
+
+        input_files = project_dir / "input_files"
+        if not input_files.exists():
+            return None
+
+        candidates = sorted(input_files.glob("roster.*"))
+        if not candidates:
+            return None
+
+        try:
+            self._roster = load_roster(str(candidates[0]))
+            self._absent_roster = None  # force recompute
+            return self._roster
+        except Exception:
+            return None
+
+    def _compute_absent_roster(
+        self, roster: Dict[str, Dict[str, str]]
+    ) -> Dict[str, Dict[str, str]]:
+        """Return roster entries whose IDs are not matched by any non-orphan scan."""
+        if self._absent_roster is not None:
+            return self._absent_roster
+
+        # IDs that are accounted for (non-orphan scans + corrected orphans)
+        found_ids: set = set()
+        for row in self._scored_data:
+            sid = _get_field(row, "StudentID", "student_id", "ID")
+            fd = _get_field(row, "FlagDetails", "flagdetails")
+            if sid and "ID:orphan" not in fd:
+                found_ids.add(sid)
+
+        # Also count corrections that map orphan → roster ID
+        if self._correction_log is not None:
+            for corrections in self._correction_log.get_effective_corrections().values():
+                corrected_id = corrections.get("student_id")
+                if corrected_id:
+                    found_ids.add(corrected_id)
+
+        self._absent_roster = {
+            rid: info for rid, info in roster.items() if rid not in found_ids
+        }
+        return self._absent_roster
+
+    def _show_orphan_suggestions(self, row_data: Dict[str, str]):
+        """Show orphan resolution panel for the selected row."""
+        roster = self._load_roster_if_needed()
+        if not roster:
+            self.flag_panel.show_no_roster()
+            return
+
+        if suggest_matches is None:
+            self.flag_panel.show_no_roster()
+            return
+
+        orphan_id = _get_field(row_data, "StudentID", "student_id", "ID")
+        orphan_last = _get_field(row_data, "LastName", "last_name", "Last")
+        orphan_first = _get_field(row_data, "FirstName", "first_name", "First")
+        orphan_name = f"{orphan_last}, {orphan_first}".strip(", ")
+
+        absent = self._compute_absent_roster(roster)
+        suggestions = suggest_matches(
+            orphan_id=orphan_id,
+            orphan_name=orphan_name,
+            absent_roster=absent,
+            max_suggestions=3,
+        )
+
+        self.flag_panel.show_orphan_suggestions(orphan_id, orphan_name, suggestions)
+
+    def _accept_suggestion(self, original_id: str, suggested_id: str, reason: str):
+        """Handle accepting a roster match suggestion for an orphan."""
+        if self._correction_log is None:
+            QMessageBox.warning(
+                self, "No Results Loaded",
+                "Cannot save correction — no scored results are loaded.",
+            )
+            return
+
+        self._correction_log.add_student_id_correction(
+            original_id=original_id,
+            corrected_id=suggested_id,
+            reason=f"Orphan match: {reason}",
+        )
+
+        # Remove accepted ID from the absent pool
+        if self._absent_roster and suggested_id in self._absent_roster:
+            del self._absent_roster[suggested_id]
+
+        self._sync_corrections_to_logs()
+        self._populate_spreadsheet()
+        self._update_status()
+
+    def _on_roster_requested(self):
+        """Teacher clicked 'Load Roster...' — open a file dialog."""
+        if load_roster is None:
+            QMessageBox.warning(
+                self, "Unavailable",
+                "Roster loading is not available (score_core not found).",
+            )
+            return
+
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Class Roster",
+            str(self.project_selector.project_dir() or Path.home()),
+            "CSV files (*.csv);;All files (*)",
+        )
+        if path:
+            try:
+                self._roster = load_roster(path)
+                self._absent_roster = None  # force recompute
+                # Re-trigger suggestions for current row
+                row = self.spreadsheet.currentRow()
+                if row >= 0:
+                    first_item = self.spreadsheet.item(row, 0)
+                    if first_item:
+                        row_data = first_item.data(Qt.ItemDataRole.UserRole)
+                        if row_data:
+                            flag_details = _get_field(row_data, "FlagDetails", "flagdetails")
+                            if "ID:orphan" in (flag_details or ""):
+                                self._show_orphan_suggestions(row_data)
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Failed to load roster: {e}")
 
     # =====================================================================
     # PDF Preview
@@ -1099,12 +1271,32 @@ class ReviewPanelPage(QWidget):
     # =====================================================================
 
     def _update_status(self):
-        """Update the status bar."""
+        """Update the status bar with student, orphan, flagged, and correction counts."""
         parts = []
         if self._scored_data:
             total = len(self._scored_data)
-            flagged = len([r for r in self._scored_data if _get_field(r, "Flagged", "flagged")])
+            flagged = 0
+            orphans = 0
+            for r in self._scored_data:
+                if _get_field(r, "Flagged", "flagged"):
+                    flagged += 1
+                fd = _get_field(r, "FlagDetails", "flagdetails")
+                if "ID:orphan" in fd:
+                    orphans += 1
+
+            # Subtract corrected orphans (they have an ID correction)
+            if orphans and self._correction_log is not None:
+                effective = self._correction_log.get_effective_corrections()
+                for r in self._scored_data:
+                    fd = _get_field(r, "FlagDetails", "flagdetails")
+                    if "ID:orphan" in fd:
+                        sid = _get_field(r, "StudentID", "student_id", "ID")
+                        if sid in effective and "student_id" in effective[sid]:
+                            orphans -= 1
+
             parts.append(f"{total} students")
+            if orphans > 0:
+                parts.append(f"{orphans} orphans")
             parts.append(f"{flagged} flagged")
 
         if self._correction_log is not None:
@@ -1127,6 +1319,10 @@ class ReviewPanelPage(QWidget):
 
     def _on_project_changed(self, project_name: str):
         """Handle project selection change — auto-load results if available."""
+        # Clear roster cache so it reloads from the new project
+        self._roster = None
+        self._absent_roster = None
+
         project_dir = self.project_selector.project_dir()
         if project_dir:
             self._scan_for_scored_files(project_dir)

@@ -216,8 +216,6 @@ class MainWindow(QMainWindow):
             # --- Main ---
             ("Grader",            "quick_grade",      self.quick_grade_page),
             ("Review & Correct",  "review",           self.review_page),
-            ("Project Manager",   "project_manager",  self.project_manager_page),
-            ("LMS Integration",   "lms_integration",  self.lms_integration_page),
             # --- Divider ---
             _DIVIDER,
             # --- Standalone functions ---
@@ -227,7 +225,12 @@ class MainWindow(QMainWindow):
             # --- Divider ---
             _DIVIDER,
             # --- Utilities ---
+            ("Project Manager",   "project_manager",  self.project_manager_page),
             ("Template Manager",  "template_manager", self.template_manager_page),
+            ("LMS Integration",   "lms_integration",  self.lms_integration_page),
+            # --- Divider ---
+            _DIVIDER,
+            # --- Utilities ---
             ("PDF Tools",         "pdf_tools",        self.pdf_tools_page),
             ("Mock Data Utility", "mock_data",        self.mock_data_page),
             ("Map Viewer",        "map_viewer",       self.map_viewer_page),
