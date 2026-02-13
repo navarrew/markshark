@@ -220,3 +220,58 @@ markshark-pyside  # (if entry point is configured)
 | Native feel | Browser-based | True native widgets |
 
 **Key insight:** The class-based structure in PySide6 is more verbose upfront but enables complex features like the review panel and project management that would be hacky in Streamlit.
+
+---
+
+## Future Goals
+
+### Welcome Page (New Sidebar Landing Page)
+- [ ] Create a friendly, cartoony-styled welcome page as the first item in the left sidebar
+- [ ] Basic info about MarkShark — what it does, who it's for
+- [ ] Big friendly buttons / illustrated instructions in a casual, approachable format
+- [ ] "Download a Template PDF" button so users can grab a bubble sheet without navigating to the Template Manager
+- [ ] Core message front and center: "All you need is your bubble sheet and your key! If you add a roster we can do even more!"
+- [ ] Quick-start walkthrough or visual guide (scan → score → review)
+- [ ] Links/buttons to jump to Grader, Template Manager, etc. for common first actions
+
+### Default / Pinned Template per Project
+- [ ] Allow a template to be "pinned" to a project so it auto-populates whenever that project is opened
+- [ ] Global default template setting — user picks a favorite that pre-fills on all new projects
+- [ ] Per-project override: project-level pin takes precedence over the global default
+- [ ] Template selector still available for one-off changes, but the default removes repetitive re-selection
+- [ ] Most teachers will find one template and reuse it almost exclusively; only central scanning services need to juggle multiple templates regularly
+
+### Online Template Repository ("Template Store")
+- [ ] Host a curated collection of templates on Google Drive, Dropbox, or a simple static web host
+- [ ] Manifest file (JSON/YAML) at a known URL listing each template: name, description, thumbnail URL, PDF download URL, bubble map download URL, metadata (# of questions, # of versions, page size, etc.)
+- [ ] In-app "Template Store" page or dialog that fetches the manifest and displays a browsable gallery with thumbnails and descriptions
+- [ ] One-click download: user picks a template, app downloads the PDF + bubble map YAML into their local templates folder
+- [ ] Search/filter by number of questions, page size, features (ID field, name field, version bubbles, etc.)
+- [ ] Cache the manifest locally so the gallery loads instantly and only refreshes on demand or periodically
+- [ ] Versioning: manifest includes a version per template so the app can show "update available" badges
+- [ ] Works offline after initial download — templates are fully local once fetched
+- [ ] Could start with Google Drive shared folder (public links) and migrate to a proper CDN/GitHub Pages later if needed
+
+### QR Code on Templates (Auto-ID + Alignment)
+- [ ] Print a QR code on each template that encodes the template name/ID and bubble map version
+- [ ] Scanner reads the QR code and auto-selects the correct bubble map — no manual template selection needed
+- [ ] QR code doubles as an alignment anchor: OpenCV's QR detector returns corner coordinates, providing position + rotation like ArUco markers
+- [ ] Could replace one ArUco marker or supplement existing markers for redundancy
+- [ ] Pairs naturally with the "pinned template" feature — QR makes it fully automatic even without pinning
+- [ ] Graceful fallback: if QR detection fails (damaged, low-res scan), fall back to ArUco-only alignment
+
+### Annotated PDF Score Overlay
+- [ ] After scoring, stamp each page of the annotated PDF with a text block showing: student name, ID, score, percentage, date scored
+- [ ] Design templates with a dedicated "info strip" (top or bottom margin) intentionally left blank for this overlay
+- [ ] Teacher can glance at any scanned page and immediately see results without cross-referencing the CSV
+- [ ] Semi-transparent or margin-area overlay as an alternative for templates without a dedicated zone
+- [ ] Optional: include flag summary (e.g., "2 flagged questions") so flagged sheets stand out at a glance
+
+### PDF Report Output (Alternative to XLSX)
+- [ ] Generate a polished PDF report mirroring the Excel report structure
+- [ ] Page 1: Summary page — overall exam statistics and per-version stats table (like the Summary tab in XLSX)
+- [ ] Per-version pages: item analysis, key, value row, % correct, point-biserial, item quality — one page per version
+- [ ] Student scores table: paginated (e.g., ~40 students per page) so large classes flow across multiple pages
+- [ ] Easier for teachers who just want to read/print results without needing Excel
+- [ ] XLSX remains the primary format for teachers who want to copy/paste into their own gradebooks
+- [ ] Could offer both formats from the same "Generate Report" button (checkboxes or dropdown)

@@ -103,6 +103,7 @@ exe = EXE(
     pyz,
     a.scripts,
     [],
+    icon='markshark.icns',
     exclude_binaries=True,
     name="MarkShark",
     debug=False,
