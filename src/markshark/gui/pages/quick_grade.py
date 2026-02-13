@@ -143,12 +143,12 @@ class QuickGradePage(QWidget):
         layout.addWidget(splitter, 1)
 
         # Tabs for inputs — minimum height prevents file selectors from squishing
-        tabs = QTabWidget()
-        tabs.addTab(self._create_inputs_tab(), "Align && Score")
-        tabs.addTab(self._create_after_tab(), "Generate Report")
-        tabs.addTab(self._create_options_tab(), "Grader Settings")
-        tabs.setMinimumHeight(320)
-        splitter.addWidget(tabs)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._create_inputs_tab(), "Align && Score")
+        self.tabs.addTab(self._create_after_tab(), "Generate Report")
+        self.tabs.addTab(self._create_options_tab(), "Grader Settings")
+        self.tabs.setMinimumHeight(320)
+        splitter.addWidget(self.tabs)
 
         # Log viewer + output buttons side-by-side
         log_row = QHBoxLayout()
@@ -297,30 +297,6 @@ class QuickGradePage(QWidget):
             "Increase to require darker marks; decrease to accept lighter marks."
         )
         grid.addWidget(self.min_fill_spin, row, 1)
-
-        row += 1
-        grid.addWidget(QLabel("Top-2 ratio:"), row, 0)
-        self.top2_ratio_spin = QSpinBox()
-        self.top2_ratio_spin.setRange(0, 100)
-        self.top2_ratio_spin.setSuffix("%")
-        self.top2_ratio_spin.setValue(_dflt(SCORING_DEFAULTS, "top2_ratio", 80))
-        self.top2_ratio_spin.setToolTip(
-            "Second-best bubble must be ≤ this % of best to count as single answer.\n"
-            "Lower values are stricter (more likely to flag as multi)."
-        )
-        grid.addWidget(self.top2_ratio_spin, row, 1)
-
-        row += 1
-        grid.addWidget(QLabel("Min score diff:"), row, 0)
-        self.min_top2_diff_spin = QSpinBox()
-        self.min_top2_diff_spin.setRange(0, 100)
-        self.min_top2_diff_spin.setSuffix(" pts")
-        self.min_top2_diff_spin.setValue(int(_dflt(SCORING_DEFAULTS, "min_top2_diff", 10)))
-        self.min_top2_diff_spin.setToolTip(
-            "Minimum difference (percentage points) between top 2 bubbles\n"
-            "to not score as multi. Increase to require larger separation."
-        )
-        grid.addWidget(self.min_top2_diff_spin, row, 1)
 
         # ── Right column: Annotation options ──
         row_r = 0
@@ -734,8 +710,6 @@ class QuickGradePage(QWidget):
 
         # Scoring parameters
         args += ["--min-fill", str(self.min_fill_spin.value())]
-        args += ["--top2-ratio", str(self.top2_ratio_spin.value())]
-        args += ["--min-top2-diff", str(self.min_top2_diff_spin.value())]
 
         # Options
         if self.annotate_all_cb.isChecked():
@@ -842,7 +816,7 @@ class QuickGradePage(QWidget):
                     "aligned_pdf": str(self.aligned_pdf),
                 })
                 project_label = self.project_selector.project_name() or "Quick Grade"
-                QMessageBox.information(self, "Complete", f"Scoring complete!  ({project_label})")
+                self._show_scoring_complete_dialog(project_label)
 
             elif step_name == "report":
                 self.status_label.setText("Report generated!")
@@ -861,6 +835,36 @@ class QuickGradePage(QWidget):
         self.progress.setVisible(False)
         self.align_score_btn.setEnabled(True)
         self.report_btn.setEnabled(self.results_csv and self.results_csv.exists())
+
+    def _show_scoring_complete_dialog(self, project_label: str):
+        """Show a dialog after scoring completes with navigation options."""
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("Scoring Complete")
+        dlg.setText(f"Scoring complete!  ({project_label})")
+        dlg.setIcon(QMessageBox.Icon.Information)
+
+        # Add custom buttons
+        review_btn = dlg.addButton("Review && Correct", QMessageBox.ButtonRole.ActionRole)
+        report_btn = dlg.addButton("Generate Report", QMessageBox.ButtonRole.ActionRole)
+        ok_btn = dlg.addButton(QMessageBox.StandardButton.Ok)
+        dlg.setDefaultButton(ok_btn)
+
+        dlg.exec()
+
+        clicked = dlg.clickedButton()
+        if clicked is review_btn:
+            # Navigate to Review & Correct via the MainWindow
+            main_win = self.window()
+            if hasattr(main_win, "navigate_to_review"):
+                main_win.navigate_to_review({
+                    "work_dir": str(self.work_dir),
+                    "results_csv": str(self.results_csv),
+                    "scored_pdf": str(self.scored_pdf),
+                    "aligned_pdf": str(self.aligned_pdf),
+                })
+        elif clicked is report_btn:
+            # Switch to the Generate Report tab
+            self.tabs.setCurrentIndex(1)
 
     def _enable_output_buttons(self):
         """Enable the output buttons based on which files actually exist."""

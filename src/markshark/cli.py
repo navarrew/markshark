@@ -54,8 +54,6 @@ def quick_grade(
     min_markers: int = typer.Option(ALIGN_DEFAULTS.min_aruco, "--min-markers", help="Min ArUco markers to accept"),
     # Scoring options (user provides integers 0-100, we convert to fractions internally)
     min_fill: Optional[int] = typer.Option(None, "--min-fill", help=f"Min fill score (0-100) to accept as filled (default: {SCORING_DEFAULTS.min_fill}). Matches the scores shown on annotated PDFs."),
-    top2_ratio: Optional[int] = typer.Option(None, "--top2-ratio", help=f"Top2 ratio as percentage (default: {SCORING_DEFAULTS.top2_ratio}). Second-best must be <= this % of best."),
-    min_top2_diff: Optional[float] = typer.Option(None, "--min-top2-diff", help=f"Min difference between top 2 bubbles (default: {SCORING_DEFAULTS.min_top2_diff}). Already in percentage points."),
     annotate_all_cells: bool = typer.Option(False, "--annotate-all-cells", help="Draw every bubble in each row"),
     label_density: bool = typer.Option(False, "--label-density", help="Overlay % fill text"),
     auto_thresh: bool = typer.Option(SCORING_DEFAULTS.auto_calibrate_thresh, "--auto-thresh/--no-auto-thresh", help="Auto-calibrate threshold"),
@@ -119,16 +117,11 @@ def quick_grade(
         rprint("[cyan]Step 2/2: Scoring sheets...[/cyan]")
         
         # Convert user-facing integers (0-100) to internal fractions (0-1)
-        # Defaults are now also integers, so always convert
         min_fill_int = min_fill if min_fill is not None else SCORING_DEFAULTS.min_fill
-        top2_ratio_int = top2_ratio if top2_ratio is not None else SCORING_DEFAULTS.top2_ratio
         min_fill_frac = min_fill_int / 100.0
-        top2_ratio_frac = top2_ratio_int / 100.0
 
         scoring = apply_scoring_overrides(
             min_fill=min_fill_frac,
-            top2_ratio=top2_ratio_frac,
-            min_top2_diff=min_top2_diff if min_top2_diff is not None else SCORING_DEFAULTS.min_top2_diff,
             auto_calibrate_thresh=auto_thresh,
         )
 
@@ -140,8 +133,6 @@ def quick_grade(
             out_pdf=out_pdf,
             dpi=dpi,
             min_fill=scoring.min_fill,
-            top2_ratio=scoring.top2_ratio,
-            min_top2_diff=scoring.min_top2_diff,
             auto_calibrate_thresh=scoring.auto_calibrate_thresh,
             calibrate_background=scoring.calibrate_background,
             background_percentile=scoring.background_percentile,
@@ -275,18 +266,6 @@ def score(
         help=f"""Minimum fill score (0-100) to consider a bubble filled (default: {SCORING_DEFAULTS.min_fill}).
         This matches the scores shown on annotated PDFs. Increase to require darker marks; decrease to accept lighter marks."""
     ),
-    top2_ratio: Optional[int] = typer.Option(
-        None,
-        "--top2-ratio",
-        help=f"""Top2 ratio as percentage (default: {SCORING_DEFAULTS.top2_ratio}).
-        Second-best bubble must be <= this percentage of best to count as single answer."""
-    ),
-    min_top2_diff: Optional[float] = typer.Option(
-        None,
-        "--min-top2-diff",
-        help=f"""Minimum difference between top 2 bubbles to not score as multi (default: {SCORING_DEFAULTS.min_top2_diff}).
-        Already in percentage points. Increase to require larger separation; decrease to accept closer scores."""
-    ),
     fixed_thresh: Optional[int] = typer.Option(None, "--fixed-thresh", help=f"default {SCORING_DEFAULTS.fixed_thresh}"),
     auto_thresh: bool = typer.Option(
         SCORING_DEFAULTS.auto_calibrate_thresh,
@@ -319,16 +298,11 @@ def score(
 
     try:
         # Convert user-facing integers (0-100) to internal fractions (0-1)
-        # Defaults are now also integers, so always convert
         min_fill_int = min_fill if min_fill is not None else SCORING_DEFAULTS.min_fill
-        top2_ratio_int = top2_ratio if top2_ratio is not None else SCORING_DEFAULTS.top2_ratio
         min_fill_frac = min_fill_int / 100.0
-        top2_ratio_frac = top2_ratio_int / 100.0
 
         scoring = apply_scoring_overrides(
             min_fill=min_fill_frac,
-            top2_ratio=top2_ratio_frac,
-            min_top2_diff=min_top2_diff if min_top2_diff is not None else SCORING_DEFAULTS.min_top2_diff,
             fixed_thresh=SCORING_DEFAULTS.fixed_thresh,
             auto_calibrate_thresh=auto_thresh,
             verbose_calibration=verbose_calibration,
@@ -343,8 +317,6 @@ def score(
             out_pdf=out_pdf,
             dpi=dpi,
             min_fill=scoring.min_fill,
-            top2_ratio=scoring.top2_ratio,
-            min_top2_diff=scoring.min_top2_diff,
             fixed_thresh=fixed_thresh if fixed_thresh is not None else scoring.fixed_thresh,
             auto_calibrate_thresh=scoring.auto_calibrate_thresh,
             verbose_calibration=scoring.verbose_calibration,
@@ -489,6 +461,12 @@ def mock_dataset(
     apply_transform: bool = typer.Option(False, "--apply-transform", help="Apply random rotation/translation"),
     blank_rate: float = typer.Option(0.02, "--blank-rate", help="Rate of blank answers"),
     multi_rate: float = typer.Option(0.02, "--multi-rate", help="Rate of multi-fill answers"),
+    num_id_errors: int = typer.Option(2, "--num-id-errors", help="Number of students with corrupted IDs"),
+    num_missing_version: int = typer.Option(2, "--num-missing-version", help="Number of students with blank version field"),
+    num_and_keys: int = typer.Option(0, "--num-and-keys", help="Number of AND key questions (e.g. B&C)"),
+    num_or_keys: int = typer.Option(0, "--num-or-keys", help="Number of OR key questions (e.g. B^C)"),
+    default_points: int = typer.Option(1, "--default-points", help="Default points per question"),
+    num_double_points: int = typer.Option(0, "--num-double-points", help="Number of questions worth double points"),
 ):
     """
     Generate a mock dataset from a template for testing.
@@ -523,6 +501,12 @@ def mock_dataset(
             apply_transform=apply_transform,
             blank_rate=blank_rate,
             multi_rate=multi_rate,
+            num_id_errors=num_id_errors,
+            num_missing_version=num_missing_version,
+            num_and_keys=num_and_keys,
+            num_or_keys=num_or_keys,
+            default_points=default_points,
+            num_double_points=num_double_points,
             verbose=True,
         )
 

@@ -187,7 +187,7 @@ class ProjectSelector(QWidget):
         projects = []
 
         for item in sorted(workdir_path.iterdir()):
-            if item.is_dir() and not item.name.startswith("."):
+            if item.is_dir() and not item.name.startswith(".") and not item.name.startswith("mock_"):
                 # Project structure
                 if (item / "input_files").exists() or (item / "score_data").exists():
                     projects.append(item.name)
@@ -314,6 +314,10 @@ class ProjectSelector(QWidget):
     def set_project(self, name: str):
         """Set the project name programmatically."""
         idx = self.project_combo.findText(name)
+        if idx < 0:
+            # Project not in combo yet — rescan directory and retry
+            self._refresh_projects()
+            idx = self.project_combo.findText(name)
         if idx >= 0:
             self.project_combo.setCurrentIndex(idx)
         else:

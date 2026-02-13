@@ -33,6 +33,11 @@ _ORPHAN_STYLE = (
     "border: 1px solid #B71C1C; border-radius: 3px; }"
     " #FlagContainer QLabel { color: white; }"
 )
+_CORRECTED_STYLE = (
+    "#FlagContainer { padding: 6px; background-color: #1565C0; "
+    "border: 1px solid #0D47A1; border-radius: 3px; }"
+    " #FlagContainer QLabel { color: white; font-weight: bold; }"
+)
 _ACCEPT_BTN = (
     "QPushButton { background-color: #28a745; color: white; "
     "font-weight: bold; border: none; border-radius: 3px; padding: 4px 12px; }"
@@ -115,6 +120,15 @@ class FlagInfoPanel(QWidget):
         """Show normal flag info (non-orphan row selected)."""
         self._container.setStyleSheet(_NORMAL_STYLE)
         self._flags_label.setText(flag_text)
+        self._flags_label.show()
+        self._orphan_header.hide()
+        self._suggestions_widget.hide()
+        self._load_roster_btn.hide()
+
+    def show_corrected(self, message: str = "CORRECTED"):
+        """Show a blue 'CORRECTED' banner (e.g. after an orphan ID fix)."""
+        self._container.setStyleSheet(_CORRECTED_STYLE)
+        self._flags_label.setText(message)
         self._flags_label.show()
         self._orphan_header.hide()
         self._suggestions_widget.hide()

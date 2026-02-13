@@ -1,35 +1,19 @@
 from __future__ import annotations
 
-from typing import Iterable, List, Tuple, TYPE_CHECKING
+from typing import List, Tuple, TYPE_CHECKING
 
 import cv2
 import numpy as np
 
-from .score_tools import grid_centers_axis_mode  # canonical implementation
+from .score_tools import grid_centers_axis_mode, centers_to_circle_rois
 
 if TYPE_CHECKING:
     # Only for type hints, avoids runtime import cost/cycles
     from ..bubblemap_io import GridLayout
 
 
-def centers_to_radius_px(
-    centers_pct: Iterable[Tuple[float, float]],
-    img_w: int,
-    img_h: int,
-    radius_pct: float,
-) -> Tuple[List[Tuple[int, int]], int]:
-    """
-    Convert normalized centers to pixel centers, and return a pixel radius.
-
-    radius_pct is interpreted as a fraction of image width (consistent with bubblemap).
-    """
-    r_px = max(1, int(round(radius_pct * img_w)))
-    pts_px: List[Tuple[int, int]] = []
-    for (x, y) in centers_pct:
-        cx = int(round(x * img_w))
-        cy = int(round(y * img_h))
-        pts_px.append((cx, cy))
-    return pts_px, r_px
+# Must match the default used by decode_layout() in score_tools.py
+SCORING_INNER_RADIUS_RATIO = 0.85
 
 
 def draw_layout_circles(
@@ -37,53 +21,70 @@ def draw_layout_circles(
     layout: "GridLayout",
     color: Tuple[int, int, int] = (0, 255, 0),
     thickness: int = 2,
+    inner_color: Tuple[int, int, int] = (0, 0, 255),
+    inner_thickness: int = 1,
+    inner_radius_ratio: float = SCORING_INNER_RADIUS_RATIO,
 ) -> None:
-    """Draw bubble shapes in-place for one GridLayout using axis-mode geometry.
+    """Draw bubble overlay using the same ROI geometry as the scoring engine.
 
-    If the grid cells are not square the bubbles are drawn as ellipses so the
-    overlay matches the actual oval bubbles on the template.
+    Draws two concentric shapes per bubble:
+
+    - **Outer** (*color*, default green): full ROI bounding circle produced by
+      :func:`centers_to_circle_rois` — the same function the scorer calls.
+    - **Inner** (*inner_color*, default red, thin): the actual scoring mask,
+      shrunk by *inner_radius_ratio* exactly as :func:`measure_fill_ratio`
+      does at scoring time.
+
+    For ``bubble_shape == "oval"`` layouts the shapes become concentric
+    ellipses whose radii are derived from the grid-cell dimensions (matching
+    the mock-dataset renderer).
     """
     h, w = img_bgr.shape[:2]
-    numrows = layout.numrows
-    numcols = layout.numcols
 
     centers = grid_centers_axis_mode(
         layout.x_topleft,
         layout.y_topleft,
         layout.x_bottomright,
         layout.y_bottomright,
-        numrows,
-        numcols,
+        layout.numrows,
+        layout.numcols,
     )
-    pts_px, r_px = centers_to_radius_px(centers, w, h, layout.radius_pct)
 
-    # Compute Y-radius by matching the aspect ratio of the grid cells.
-    # radius_pct is relative to image width; derive the Y-radius from the
-    # cell spacing ratio so oval bubbles are drawn correctly.
-    x_extent = abs(layout.x_bottomright - layout.x_topleft)
-    y_extent = abs(layout.y_bottomright - layout.y_topleft)
-    col_span = max(1, numcols - 1)
-    row_span = max(1, numrows - 1)
+    # ---- Oval path (cell-dimension based) --------------------------------
+    if getattr(layout, "bubble_shape", "circle") == "oval":
+        cell_w = abs(layout.x_bottomright - layout.x_topleft) / max(layout.numcols, 1)
+        cell_h = abs(layout.y_bottomright - layout.y_topleft) / max(layout.numrows, 1)
+        fill_frac = 0.70
+        rx = max(1, int(cell_w * w * fill_frac / 2))
+        ry = max(1, int(cell_h * h * fill_frac / 2))
+        inner_rx = max(1, int(rx * inner_radius_ratio))
+        inner_ry = max(1, int(ry * inner_radius_ratio))
 
-    if x_extent > 0 and y_extent > 0 and numrows > 1 and numcols > 1:
-        # Cell spacing in normalised coordinates
-        dx = x_extent / col_span   # horizontal spacing (fraction of width)
-        dy = y_extent / row_span   # vertical spacing   (fraction of height)
-        # Convert both to pixel units so they're comparable
-        dx_px = dx * w
-        dy_px = dy * h
-        aspect = dy_px / dx_px     # >1 → tall cells, <1 → wide cells
-        ry_px = max(1, int(round(r_px * aspect)))
-    else:
-        ry_px = r_px
+        # Still need pixel centers — derive from ROIs for consistency
+        rois = centers_to_circle_rois(centers, w, h, layout.radius_pct)
+        for (x, y, rw, rh) in rois:
+            cx = x + rw // 2
+            cy = y + rh // 2
+            cv2.ellipse(img_bgr, (cx, cy), (rx, ry), 0, 0, 360, color, thickness)
+            cv2.ellipse(img_bgr, (cx, cy), (inner_rx, inner_ry), 0, 0, 360,
+                        inner_color, inner_thickness)
+        return
 
-    if ry_px == r_px:
-        # Perfect circles — use the faster cv2.circle path
-        for (cx, cy) in pts_px:
-            cv2.circle(img_bgr, (cx, cy), r_px, color, thickness)
-    else:
-        # Ellipses — (rx, ry), angle 0, full arc
-        for (cx, cy) in pts_px:
-            cv2.ellipse(
-                img_bgr, (cx, cy), (r_px, ry_px), 0, 0, 360, color, thickness,
-            )
+    # ---- Circle path (standard) ------------------------------------------
+    # Use the scoring engine's canonical ROI function so geometry can never
+    # drift between the map viewer and the scorer.
+    rois = centers_to_circle_rois(centers, w, h, layout.radius_pct)
+
+    for (x, y, rw, rh) in rois:
+        cx = x + rw // 2
+        cy = y + rh // 2
+        outer_r = min(rw, rh) // 2
+
+        # Outer circle — full ROI boundary
+        cv2.circle(img_bgr, (cx, cy), outer_r, color, thickness)
+
+        # Inner circle — actual scoring mask
+        # Replicates measure_fill_ratio():
+        #   r = int(0.5 * min(W, H) * inner_radius_ratio)
+        inner_r = max(1, int(0.5 * min(rw, rh) * inner_radius_ratio))
+        cv2.circle(img_bgr, (cx, cy), inner_r, inner_color, inner_thickness)

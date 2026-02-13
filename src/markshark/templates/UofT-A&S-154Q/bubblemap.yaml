@@ -1,0 +1,231 @@
+metadata:
+  display_name: UToronto ArtsSci 154 Question Template
+  description: 154 questions, 5 choices (A-E)
+  pages: 2
+  total_questions: 154
+  alignment:
+    aruco:
+      enabled: false
+      dictionary: DICT_4X4_50
+      marker_ids: [0, 1, 2, 3]
+      size_mm: 6
+      margin_mm: 6
+  schema_version: 3
+  page_size: letter
+
+
+fonts:
+
+  "Archivo":
+    source: google
+    variants: [thin, extralight, light, regular, medium, semibold, bold, extrabold, black]
+
+  "Lexend":
+    source: google
+    variants: [thin, extralight, light, regular, medium, semibold, bold, extrabold, black]
+
+  "Poppins":
+    source: google
+    variants: [thin, extralight, light-italic, regular, medium, semibold-italc, bold, bold-italic, extrabold, black, italic]
+    
+
+
+styles:
+  # Base styles
+  header_text:
+    font_family: "Archivo"
+    font_size: 24
+    text_color: "#333333"
+
+  section_label:
+    font_family: "Poppins"
+    font_size: 12
+    text_color: gray
+
+    
+  standard_bubbles:
+    bubble_shape: circle
+    bubble_diameter_mm: 3.2
+    bubble_stroke_width_mm: 0.25
+    bubble_stroke_color: dark_gray
+    bubble_text_color: gray
+    bubble_fill_color: white
+    bubble_text_font_family: "Lexend"
+    label_offset_mm: 8
+    show_header_boxes: true
+    header_box_height_mm: 5
+    header_box_gap_mm: 1.5
+    alternating_row_shade: true
+    alternating_shade_color: "#E8E8E8"
+    alternating_shade_axis: col
+    alternating_shade_start: 1
+    
+  answer_bubbles:
+    extends: standard_bubbles
+    bubble_shape: circle
+    bubble_diameter_mm: 3.2
+    question_number_font_size: 10
+    question_number_color: black
+    question_number_format: "{n}."
+    question_number_font_weight: bold
+    question_number_align: right
+    show_header_boxes: false
+    alternating_shade_axis: row
+    alternating_shade_extend_left_mm: 8.5
+
+page_1:
+
+  text_zones:
+  - content: "- please fill bubbles completely -"
+    font_family: Poppins
+    font_size_pt: 8
+    font_weight: semibold
+    font_style: italic
+    text_align: center
+    x_mm: 108.0
+    y_mm: 272.0
+
+  textbox_zones:
+    - x_mm: 10
+      y_mm: 18.5
+      width_mm: 63
+      padding_mm: 2
+      border_style: none
+      line_spacing_mm: 4
+      items:
+        - type: spacer
+          height_mm: 1
+  
+        - type: labeled_line
+          label: "Name:"
+          font_size_pt: 9
+          font_family: Poppins
+          font_weight: semibold
+  
+        - type: labeled_line
+          label: "Signature:"
+          font_size_pt: 9
+          font_family: Poppins
+          font_weight: semibold
+
+        - type: labeled_line
+          label: "Date:"
+          font_size_pt: 9
+          font_family: Poppins
+          font_weight: semibold
+
+        - type: text
+          content: "DIRECTIONS"
+          font_family: Poppins
+          font_size_pt: 9
+          text_align: left
+          font_weight: bold
+          spacing_mm: 0.5
+  
+        - type: text
+          content: |
+            • Read each question carefully before answering
+            • Use a #2 pencil only
+            • Fill bubbles completely
+            • Erase changes thoroughly
+            • Do not fold or crease this form
+          font_size_pt: 7
+          font_family: Poppins
+          text_align: left
+
+  last_name_zone:
+    style: standard_bubbles
+    numrows: 26
+    numcols: 16
+    selection_axis: col
+    labels: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    x_mm: 21.5
+    y_mm: 135.2
+    width_mm: 150.3
+    height_mm: 122.6
+
+  first_name_zone:
+    style: standard_bubbles
+    numrows: 26
+    numcols: 1
+    selection_axis: col
+    labels: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    x_mm: 191.7
+    y_mm: 135.2
+    width_mm: 1
+    height_mm: 122.6
+
+  id_zone:
+    style: standard_bubbles
+    numrows: 10
+    numcols: 10
+    selection_axis: col
+    labels: 0123456789
+    x_mm: 109
+    y_mm: 60.6
+    width_mm: 90.3
+    height_mm: 43.85
+           
+  version_zone:
+    style: standard_bubbles
+    display_label: TEST VERSION
+    bubble_diameter_mm: 3.6
+    numrows: 1
+    numcols: 4
+    selection_axis: row
+    labels: ABCD
+    x_mm: 44.5
+    y_mm: 93.8
+    width_mm: 44.8
+    show_header_boxes: false
+    label_offset_mm: 1.5
+    alternating_row_shade: false
+
+
+page_2:
+  answer_zones:
+  - style: answer_bubbles
+    numrows: 38
+    numcols: 5
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 19
+    y_mm: 32.9
+    width_mm: 27.6
+    height_mm: 235.5
+    alternating_shade_extend_left_mm: 10
+   
+  - style: answer_bubbles
+    numrows: 38
+    numcols: 5
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 71
+    y_mm: 32.9
+    width_mm: 27.6
+    height_mm: 235.5
+    alternating_shade_extend_left_mm: 10
+
+  - style: answer_bubbles
+    numrows: 38
+    numcols: 5
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 122.9
+    y_mm: 32.9
+    width_mm: 27.6
+    height_mm: 235.5
+    alternating_shade_extend_left_mm: 10
+
+  - style: answer_bubbles
+    numrows: 38
+    numcols: 5
+    selection_axis: row
+    labels: ABCDE
+    x_mm: 174.3
+    y_mm: 32.9
+    width_mm: 27.6
+    height_mm: 235.5
+    alternating_shade_extend_left_mm: 10
+
+

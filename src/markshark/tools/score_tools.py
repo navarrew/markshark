@@ -410,8 +410,6 @@ def adaptive_rescore_page(
     initial_threshold: int,
     initial_answers: List[Optional[str]],
     min_fill: float,
-    top2_ratio: float,
-    min_top2_diff: float,
     calibrate_background: bool,
     background_percentile: float,
     adaptive_min_above_floor: float,
@@ -469,8 +467,6 @@ def adaptive_rescore_page(
         info, answers, backgrounds = process_page_all(
             img_bgr, bmap,
             min_fill=min_fill,
-            top2_ratio=top2_ratio,
-            min_top2_diff=min_top2_diff,
             fixed_thresh=new_threshold,
             calibrate_background=calibrate_background,
             background_percentile=background_percentile,
@@ -590,29 +586,19 @@ def subtract_column_backgrounds(
 def _pick_single_from_scores(
     scores: np.ndarray,
     min_fill: float,
-    top2_ratio: float,
-    min_top2_diff: float,
 ) -> Optional[int]:
     """Pick a single bubble index from a row/col, or None if unclear."""
     if scores.size == 0:
         return None
-    
+
     sorted_idx = np.argsort(scores)[::-1]
     best_idx = int(sorted_idx[0])
     best_val = float(scores[best_idx])
-    
+
     # Reject if too light
     if best_val < min_fill:
         return None
-    
-    # Check for ties
-    if scores.size > 1:
-        second_val = float(scores[sorted_idx[1]])
-        if second_val > top2_ratio * best_val:
-            return None  # ambiguous
-        if 100.0 * (best_val - second_val) < min_top2_diff:
-            return None  # too close
-    
+
     return best_idx
 
 
@@ -621,8 +607,6 @@ def select_per_row(
     rows: int,
     cols: int,
     min_fill: float = SCORING_DEFAULTS.min_fill,
-    top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
-    min_top2_diff: float = SCORING_DEFAULTS.min_top2_diff,
 ) -> List[Optional[int]]:
     """For each row, pick one column index or None."""
     arr = np.asarray(scores, dtype=float)
@@ -633,7 +617,7 @@ def select_per_row(
     cols_i = int(cols)
     for r in range(int(rows)):
         row_slice = arr[r * cols_i : (r + 1) * cols_i]
-        picked.append(_pick_single_from_scores(row_slice, min_fill, top2_ratio, min_top2_diff))
+        picked.append(_pick_single_from_scores(row_slice, min_fill))
     return picked
 
 
@@ -642,8 +626,6 @@ def select_per_col(
     rows: int,
     cols: int,
     min_fill: float = SCORING_DEFAULTS.min_fill,
-    top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
-    min_top2_diff: float = SCORING_DEFAULTS.min_top2_diff,
 ) -> List[Optional[int]]:
     """For each column, pick one row index or None."""
     arr = np.asarray(scores, dtype=float)
@@ -654,7 +636,7 @@ def select_per_col(
     cols_i = int(cols)
     for c in range(cols_i):
         col_slice = arr[c::cols_i]
-        picked.append(_pick_single_from_scores(col_slice, min_fill, top2_ratio, min_top2_diff))
+        picked.append(_pick_single_from_scores(col_slice, min_fill))
     return picked
 
 
@@ -669,8 +651,6 @@ def scores_to_labels_row(
     choice_labels: List[str],
     *,
     min_fill: float = SCORING_DEFAULTS.min_fill,
-    top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
-    min_top2_diff: float = SCORING_DEFAULTS.min_top2_diff,
     multi_top_k: int = 2,
     multi_delim: str = ",",
     calibrate_background: bool = SCORING_DEFAULTS.calibrate_background,
@@ -681,13 +661,8 @@ def scores_to_labels_row(
 
     Behavior:
       - Blank row (top score < min_fill): returns None
-      - Clear single mark: returns a single label (e.g., "A")
-      - Ambiguous / multi-mark row: returns the top K labels joined by multi_delim (e.g., "A,C")
-
-    The "clear single" vs "multi" decision matches _pick_single_from_scores():
-      a single winner is accepted if either:
-        - absolute separation >= min_top2_diff (in percentage points), OR
-        - ratio separation: second <= top * top2_ratio
+      - Clear single mark (only one bubble above min_fill): returns a single label (e.g., "A")
+      - Multi-mark row (two+ bubbles above min_fill): returns the top K labels joined by multi_delim (e.g., "A,C")
 
     Background calibration:
       If calibrate_background is True, per-column backgrounds are computed and subtracted
@@ -728,8 +703,7 @@ def scores_to_labels_row(
             out.append(choice_labels[best_idx] if best_idx < len(choice_labels) else None)
             continue
 
-        second_idx = int(order[1])
-        second = float(row_slice[second_idx])
+        second = float(row_slice[int(order[1])])
 
         # Check adaptive floor: winner must be significantly above the lowest bubble
         if adaptive_min_above_floor > 0:
@@ -740,23 +714,16 @@ def scores_to_labels_row(
                 out.append(None)
                 continue
 
-        # If the runner-up is below min_fill, we treat as a single mark.
+        # If the runner-up is below min_fill, it's a single mark.
         if second < float(min_fill):
             out.append(choice_labels[best_idx] if best_idx < len(choice_labels) else None)
             continue
 
-        sep_score = (top - second) * 100.0
-        sep_ratio_ok = (second <= top * float(top2_ratio))
-
-        if (sep_score >= float(min_top2_diff)) or sep_ratio_ok:
-            out.append(choice_labels[best_idx] if best_idx < len(choice_labels) else None)
-            continue
-
-        # Ambiguous: return top-K labels (default: top 2)
+        # Multi-mark: two or more bubbles above min_fill — return top-K labels
         picks = []
         for j in range(min(k, order.size)):
             idx = int(order[j])
-            if 0 <= idx < len(choice_labels):
+            if 0 <= idx < len(choice_labels) and float(row_slice[idx]) >= float(min_fill):
                 picks.append(choice_labels[idx])
         out.append(multi_delim.join(picks) if picks else None)
 
@@ -772,8 +739,6 @@ def decode_layout(
     layout: GridLayout,
     *,
     min_fill: float = SCORING_DEFAULTS.min_fill,
-    top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
-    min_top2_diff: float = SCORING_DEFAULTS.min_top2_diff,
     fixed_thresh: Optional[int] = None,
     calibrate_background: bool = False,  # Note: default False to preserve backward compat
     background_percentile: float = SCORING_DEFAULTS.background_percentile,
@@ -801,9 +766,9 @@ def decode_layout(
         scores = subtract_column_backgrounds(scores, layout.numrows, layout.numcols, backgrounds)
 
     if layout.selection_axis == "row":
-        picked = select_per_row(scores, layout.numrows, layout.numcols, min_fill, top2_ratio, min_top2_diff)
+        picked = select_per_row(scores, layout.numrows, layout.numcols, min_fill)
     else:
-        picked = select_per_col(scores, layout.numrows, layout.numcols, min_fill, top2_ratio, min_top2_diff)
+        picked = select_per_col(scores, layout.numrows, layout.numcols, min_fill)
 
     return picked, rois, scores
 
@@ -926,8 +891,6 @@ def detect_version_from_bubble(
     bmap: Bubblemap,
     *,
     min_fill: float = SCORING_DEFAULTS.min_fill,
-    top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
-    min_top2_diff: float = SCORING_DEFAULTS.min_top2_diff,
     fixed_thresh: Optional[int] = None,
 ) -> Tuple[str, bool]:
     """
@@ -948,8 +911,6 @@ def detect_version_from_bubble(
         gray,
         bmap.version_zone,
         min_fill=min_fill,
-        top2_ratio=top2_ratio,
-        min_top2_diff=min_top2_diff,
         fixed_thresh=fixed_thresh,
     )
     
@@ -969,6 +930,44 @@ def detect_version_from_bubble(
     return version_str, bool(version_str)
 
 
+def _legacy_answer_matches(ans: Optional[str], key_char: str) -> bool:
+    """Check if a student answer matches a (possibly compound) key character.
+
+    Handles:
+      - Simple keys: ``"B"`` matches ``"B"``
+      - AND keys: ``"B,E"`` matches ``"B&E"`` (set equality)
+      - OR keys: ``"B"`` matches ``"B^D"`` (any one accepted)
+      - Partial keys: ``"A,B"`` matches ``"A@B"`` or ``"A~B"`` (set equality for full credit)
+    """
+    if not ans or ans.strip() == "":
+        return False
+
+    # Normalise student answer to a set of choices
+    if "," in ans:
+        student_set = set(a.strip().upper() for a in ans.split(",") if a.strip())
+    else:
+        student_set = {ans.strip().upper()}
+
+    k = key_char.strip().upper()
+
+    if "&" in k:
+        # AND key: must select ALL answers exactly
+        key_set = set(p.strip() for p in k.split("&") if p.strip())
+        return student_set == key_set
+    if "^" in k:
+        # OR key: any single accepted answer gets credit
+        accepted = set(p.strip() for p in k.split("^") if p.strip())
+        return len(student_set) == 1 and bool(student_set & accepted)
+    if "@" in k or "~" in k:
+        # Partial credit keys: full match for legacy scoring
+        op = "@" if "@" in k else "~"
+        key_set = set(p.split(":")[0].strip() for p in k.split(op) if p.strip())
+        return student_set == key_set
+
+    # Simple single-answer key
+    return len(student_set) == 1 and ans.strip().upper() == k
+
+
 def score_against_multi_keys(
     student_answers: List[Optional[str]],
     version: str,
@@ -976,52 +975,47 @@ def score_against_multi_keys(
 ) -> Tuple[int, int, str]:
     """
     Score student answers against the appropriate version key.
-    
+
     Args:
         student_answers: List of student's answers (can contain None or multi-marks like "A,B")
         version: Version identifier ("A", "B", etc.)
         keys_dict: Dict mapping versions to answer keys
-    
+
     Returns:
         (correct_count, total_questions, version_used)
-        
+
         - version_used may differ from input version if auto-detection was used
     """
     # If version not found, try auto-detection by scoring against all versions
     if version not in keys_dict:
         if not keys_dict:
             return 0, len(student_answers), ""
-        
+
         # Try all versions and use the one with highest score
         best_version = ""
         best_score = -1
-        
+
         for ver, key in keys_dict.items():
             correct = 0
             total = min(len(student_answers), len(key))
             for ans, k in zip(student_answers[:total], key[:total]):
-                if ans and ans == k:
+                if _legacy_answer_matches(ans, k):
                     correct += 1
             if correct > best_score:
                 best_score = correct
                 best_version = ver
-        
+
         version = best_version + "*"  # Mark as auto-detected
-    
+
     # Score against the selected version
     key = keys_dict.get(version.rstrip("*"), [])
     total = min(len(student_answers), len(key))
     correct = 0
-    
+
     for ans, k in zip(student_answers[:total], key[:total]):
-        # Only count single-mark answers
-        if ans is None or ans == "":
-            continue
-        if "," in ans:  # Multi-mark
-            continue
-        if ans == k:
+        if _legacy_answer_matches(ans, k):
             correct += 1
-    
+
     return correct, total, version
 
 
@@ -1150,22 +1144,45 @@ def score_with_advanced_key(
     """
     from ..key_parser import score_student
 
-    # Get the appropriate key
-    version_key = key_set.get_key(version=version, code=code)
+    # Check if version is directly available
+    has_direct_match = version and version.upper() in key_set.keys
 
-    if version_key is None:
-        # No matching key found
+    if has_direct_match:
+        # Exact version match — score directly
+        version_key = key_set.keys[version.upper()]
+        points_earned, max_points, status_counts = score_student(student_answers, version_key)
+        return points_earned, max_points, version_key.identifier, status_counts
+
+    # Version not found or blank — try code-based lookup first
+    if code:
+        version_key = key_set.get_key(code=code)
+        if version_key is not None:
+            points_earned, max_points, status_counts = score_student(student_answers, version_key)
+            version_used = version_key.identifier
+            if not version or version.upper() != version_used.upper():
+                version_used += "*"
+            return points_earned, max_points, version_used, status_counts
+
+    # No version, no code match — auto-detect by scoring against all versions
+    if not key_set.keys:
         return 0.0, float(len(student_answers)), version or "", {}
 
-    # Score using the advanced scorer
-    points_earned, max_points, status_counts = score_student(student_answers, version_key)
+    best_key = None
+    best_points = -1.0
+    best_max = 0.0
+    best_counts: Dict[str, int] = {}
 
-    # Determine version used
-    version_used = version_key.identifier
-    if version and version.upper() != version_used.upper():
-        version_used += "*"  # Mark as auto-detected/different
+    for ver_key in key_set.keys.values():
+        pts, mx, counts = score_student(student_answers, ver_key)
+        if pts > best_points:
+            best_points = pts
+            best_max = mx
+            best_counts = counts
+            best_key = ver_key
 
-    return points_earned, max_points, version_used, status_counts
+    assert best_key is not None  # key_set.keys is non-empty
+    version_used = best_key.identifier + "*"  # Mark as auto-detected
+    return best_points, best_max, version_used, best_counts
 
 
 # ------------------------------------------------------------------------------
@@ -1177,8 +1194,6 @@ def process_page_all(
     bmap: Bubblemap,
     *,
     min_fill: float = SCORING_DEFAULTS.min_fill,
-    top2_ratio: float = SCORING_DEFAULTS.top2_ratio,
-    min_top2_diff: float = SCORING_DEFAULTS.min_top2_diff,
     fixed_thresh: Optional[int] = None,
     calibrate_background: bool = SCORING_DEFAULTS.calibrate_background,
     background_percentile: float = SCORING_DEFAULTS.background_percentile,
@@ -1204,8 +1219,6 @@ def process_page_all(
             gray,
             bmap.last_name_zone,
             min_fill=min_fill,
-            top2_ratio=top2_ratio,
-            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["last_name"] = indices_to_text_col(
@@ -1217,8 +1230,6 @@ def process_page_all(
             gray,
             bmap.first_name_zone,
             min_fill=min_fill,
-            top2_ratio=top2_ratio,
-            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["first_name"] = indices_to_text_col(
@@ -1230,8 +1241,6 @@ def process_page_all(
             gray,
             bmap.id_zone,
             min_fill=min_fill,
-            top2_ratio=top2_ratio,
-            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["student_id"] = indices_to_text_col(picked, bmap.id_zone.labels or "0123456789").strip()
@@ -1240,8 +1249,6 @@ def process_page_all(
         version_str, confident = detect_version_from_bubble(
             img_bgr, bmap,
             min_fill=min_fill,
-            top2_ratio=top2_ratio,
-            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["version"] = version_str
@@ -1255,8 +1262,6 @@ def process_page_all(
             gray,
             layout,
             min_fill=min_fill,
-            top2_ratio=top2_ratio,
-            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         choice_labels = list(layout.labels) if layout.labels else [chr(ord("A") + k) for k in range(layout.numcols)]
@@ -1279,8 +1284,6 @@ def process_page_all(
                     layout.numcols,
                     choice_labels,
                     min_fill=min_fill,
-                    top2_ratio=top2_ratio,
-                    min_top2_diff=min_top2_diff,
                     calibrate_background=calibrate_background,
                     background_percentile=background_percentile,
                     adaptive_min_above_floor=adaptive_min_above_floor,

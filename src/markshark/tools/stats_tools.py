@@ -105,11 +105,31 @@ def prepare_correctness_matrix(df: pd.DataFrame,
         for c in item_cols:
             key_val = key_letters[c]
             stud_vals = students_df[c].astype(str).str.strip().str.upper()
-            if (key_val is None) or (key_val == "") or (not re.fullmatch(r"[A-Z]", key_val)):
+            # Accept single letters AND compound keys (B&E, A^C, A@B, A~B)
+            is_valid_key = bool(key_val and key_val not in ("", "NAN", "NONE")
+                                and re.fullmatch(r"[A-Z]([&^@~][A-Z])*", key_val))
+            if not is_valid_key:
                 items_num[c] = np.nan
                 key_letters[c] = np.nan
             else:
-                eq = (stud_vals == key_val)
+                is_compound = bool(re.search(r"[&@~]", key_val))
+                if is_compound:
+                    # AND / partial keys: normalise both sides to frozensets for comparison
+                    sep = re.search(r"[&@~]", key_val).group()
+                    key_set = frozenset(p.strip() for p in key_val.split(sep) if p.strip())
+                    def _match_compound(ans: str) -> bool:
+                        ans = str(ans).strip().upper()
+                        if not ans or ans in ("", "NAN", "NONE"):
+                            return False
+                        student_set = frozenset(a.strip() for a in ans.split(",") if a.strip())
+                        return student_set == key_set
+                    eq = stud_vals.apply(_match_compound)
+                elif "^" in key_val:
+                    # OR key: any one accepted answer
+                    accepted = set(p.strip() for p in key_val.split("^") if p.strip())
+                    eq = stud_vals.isin(accepted)
+                else:
+                    eq = (stud_vals == key_val)
                 is_blank = students_df[c].isna() | (students_df[c].astype(str).str.strip() == "")
                 col = pd.Series(np.where(is_blank.to_numpy(), np.nan, np.where(eq.to_numpy(), 1.0, 0.0)),
                                 index=students_df.index)

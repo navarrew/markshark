@@ -231,18 +231,6 @@ class SettingsPage(QWidget):
         self.min_fill_spin.setValue(_dflt(SCORING_DEFAULTS, "min_fill", 45))
         f.addRow("Min fill threshold:", self.min_fill_spin)
 
-        self.top2_ratio_spin = QSpinBox()
-        self.top2_ratio_spin.setRange(0, 100)
-        self.top2_ratio_spin.setSuffix("%")
-        self.top2_ratio_spin.setValue(_dflt(SCORING_DEFAULTS, "top2_ratio", 80))
-        f.addRow("Top-2 ratio:", self.top2_ratio_spin)
-
-        self.min_top2_diff_spin = QDoubleSpinBox()
-        self.min_top2_diff_spin.setRange(0, 100)
-        self.min_top2_diff_spin.setSuffix(" pts")
-        self.min_top2_diff_spin.setValue(_dflt(SCORING_DEFAULTS, "min_top2_diff", 10))
-        f.addRow("Min top-2 difference:", self.min_top2_diff_spin)
-
         self.calibrate_bg_cb = QCheckBox("Calibrate background")
         self.calibrate_bg_cb.setChecked(_dflt(SCORING_DEFAULTS, "calibrate_background", True))
         f.addRow("", self.calibrate_bg_cb)
@@ -639,10 +627,6 @@ class SettingsPage(QWidget):
         # Scoring
         self.min_fill_spin.setValue(int(self.settings.value(
             "scoring/min_fill", _dflt(SCORING_DEFAULTS, "min_fill", 45))))
-        self.top2_ratio_spin.setValue(int(self.settings.value(
-            "scoring/top2_ratio", _dflt(SCORING_DEFAULTS, "top2_ratio", 80))))
-        self.min_top2_diff_spin.setValue(float(self.settings.value(
-            "scoring/min_top2_diff", _dflt(SCORING_DEFAULTS, "min_top2_diff", 10))))
         self.calibrate_bg_cb.setChecked(
             self.settings.value("scoring/calibrate_background",
                                 _dflt(SCORING_DEFAULTS, "calibrate_background", True), type=bool))
@@ -769,8 +753,6 @@ class SettingsPage(QWidget):
 
         # Scoring
         s.setValue("scoring/min_fill", self.min_fill_spin.value())
-        s.setValue("scoring/top2_ratio", self.top2_ratio_spin.value())
-        s.setValue("scoring/min_top2_diff", self.min_top2_diff_spin.value())
         s.setValue("scoring/calibrate_background", self.calibrate_bg_cb.isChecked())
         s.setValue("scoring/background_percentile", self.bg_percentile_spin.value())
         s.setValue("scoring/adaptive_rescoring", self.adaptive_cb.isChecked())
@@ -852,8 +834,6 @@ class SettingsPage(QWidget):
 
         # Scoring
         self.min_fill_spin.setValue(_dflt(SCORING_DEFAULTS, "min_fill", 45))
-        self.top2_ratio_spin.setValue(_dflt(SCORING_DEFAULTS, "top2_ratio", 80))
-        self.min_top2_diff_spin.setValue(_dflt(SCORING_DEFAULTS, "min_top2_diff", 10))
         self.calibrate_bg_cb.setChecked(_dflt(SCORING_DEFAULTS, "calibrate_background", True))
         self.bg_percentile_spin.setValue(_dflt(SCORING_DEFAULTS, "background_percentile", 10.0))
         self.adaptive_cb.setChecked(_dflt(SCORING_DEFAULTS, "adaptive_rescoring", True))

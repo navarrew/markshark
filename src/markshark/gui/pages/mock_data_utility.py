@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
 )
 
-from ..widgets import PageHeader, FileSelector
+from ..widgets import PageHeader, FileSelector, ProjectSelector
 
 # Template manager (best-effort import)
 try:
@@ -116,6 +116,11 @@ class MockDataPage(QWidget):
             "mock answers provided by students."
         )
         outer.addWidget(header)
+
+        # Project selector (synced with other pages via MainWindow)
+        self.project_selector = ProjectSelector()
+        self.project_selector.project_changed.connect(self._on_project_changed)
+        outer.addWidget(self.project_selector)
 
         # Scrollable body
         scroll = QScrollArea()
@@ -234,6 +239,27 @@ class MockDataPage(QWidget):
         self.multi_rate_spin.setToolTip("Fraction of wrong answers with multiple marks")
         grid.addWidget(self.multi_rate_spin, row, 1)
 
+        row += 1
+        grid.addWidget(QLabel("ID mis-entries:"), row, 0)
+        self.num_id_errors_spin = QSpinBox()
+        self.num_id_errors_spin.setRange(0, 50)
+        self.num_id_errors_spin.setValue(2)
+        self.num_id_errors_spin.setToolTip(
+            "Number of students with corrupted IDs "
+            "(typo, transposition, extra/missing digit)"
+        )
+        grid.addWidget(self.num_id_errors_spin, row, 1)
+
+        row += 1
+        grid.addWidget(QLabel("Missing version:"), row, 0)
+        self.num_missing_version_spin = QSpinBox()
+        self.num_missing_version_spin.setRange(0, 50)
+        self.num_missing_version_spin.setValue(2)
+        self.num_missing_version_spin.setToolTip(
+            "Number of students with blank version field"
+        )
+        grid.addWidget(self.num_missing_version_spin, row, 1)
+
         # ── Right column: Scan Quality ──
         row_r = 0
         right_header = QLabel("Scan Quality")
@@ -265,6 +291,60 @@ class MockDataPage(QWidget):
         self.transform_cb.setChecked(True)
         self.transform_cb.setToolTip("Simulate slightly misaligned scans")
         grid.addWidget(self.transform_cb, row_r, 2, 1, 2)
+
+        row_r += 1
+        sep_right = QFrame()
+        sep_right.setFrameShape(QFrame.Shape.HLine)
+        sep_right.setFrameShadow(QFrame.Shadow.Sunken)
+        grid.addWidget(sep_right, row_r, 2, 1, 2)
+
+        row_r += 1
+        key_header = QLabel("Answer Key")
+        key_header.setStyleSheet("font-weight: bold;")
+        grid.addWidget(key_header, row_r, 2, 1, 2)
+
+        row_r += 1
+        grid.addWidget(QLabel("AND keys:"), row_r, 2)
+        self.num_and_keys_spin = QSpinBox()
+        self.num_and_keys_spin.setRange(0, 50)
+        self.num_and_keys_spin.setValue(0)
+        self.num_and_keys_spin.setToolTip(
+            "Number of questions with AND keys (e.g. B&C).\n"
+            "Student must fill ALL specified bubbles to get credit."
+        )
+        grid.addWidget(self.num_and_keys_spin, row_r, 3)
+
+        row_r += 1
+        grid.addWidget(QLabel("OR keys:"), row_r, 2)
+        self.num_or_keys_spin = QSpinBox()
+        self.num_or_keys_spin.setRange(0, 50)
+        self.num_or_keys_spin.setValue(0)
+        self.num_or_keys_spin.setToolTip(
+            "Number of questions with OR keys (e.g. B^C).\n"
+            "Student can fill ANY one of the specified bubbles for credit."
+        )
+        grid.addWidget(self.num_or_keys_spin, row_r, 3)
+
+        row_r += 1
+        grid.addWidget(QLabel("Default points:"), row_r, 2)
+        self.default_points_spin = QSpinBox()
+        self.default_points_spin.setRange(1, 10)
+        self.default_points_spin.setValue(1)
+        self.default_points_spin.setToolTip(
+            "Default points per question (adds 'default:N' to key header)"
+        )
+        grid.addWidget(self.default_points_spin, row_r, 3)
+
+        row_r += 1
+        grid.addWidget(QLabel("Weighted questions:"), row_r, 2)
+        self.num_double_points_spin = QSpinBox()
+        self.num_double_points_spin.setRange(0, 50)
+        self.num_double_points_spin.setValue(0)
+        self.num_double_points_spin.setToolTip(
+            "Number of questions worth double the default points\n"
+            "(or 1 point if default > 1)"
+        )
+        grid.addWidget(self.num_double_points_spin, row_r, 3)
 
         layout.addWidget(settings_group)
         layout.addSpacing(8)
@@ -373,7 +453,7 @@ class MockDataPage(QWidget):
 
         # Set default output dir based on template
         if not self.output_dir_selector.path():
-            default_dir = str(Path.home() / f"mock_{t.template_id}")
+            default_dir = str(Path.cwd() / f"mock_{t.template_id}")
             self.output_dir_selector.set_path(default_dir)
 
         self.generate_btn.setEnabled(generate_mock_dataset is not None)
@@ -424,6 +504,12 @@ class MockDataPage(QWidget):
             "apply_transform": self.transform_cb.isChecked(),
             "blank_rate": self.blank_rate_spin.value(),
             "multi_rate": self.multi_rate_spin.value(),
+            "num_id_errors": self.num_id_errors_spin.value(),
+            "num_missing_version": self.num_missing_version_spin.value(),
+            "num_and_keys": self.num_and_keys_spin.value(),
+            "num_or_keys": self.num_or_keys_spin.value(),
+            "default_points": self.default_points_spin.value(),
+            "num_double_points": self.num_double_points_spin.value(),
             "verbose": False,
         }
 
@@ -505,3 +591,9 @@ class MockDataPage(QWidget):
                 subprocess.Popen(["xdg-open", folder])
         except Exception as e:
             print(f"Could not open folder: {e}")
+
+    def _on_project_changed(self, name: str):
+        """Update output directory when the active project changes."""
+        project_dir = self.project_selector.project_dir()
+        if project_dir and project_dir.exists():
+            self.output_dir_selector.set_path(str(project_dir / "input_files"))

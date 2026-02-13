@@ -182,17 +182,77 @@ def detect_format(bubblemap: Dict[str, Any]) -> Dict[str, Any]:
 # Answer key generation
 # =============================================================================
 
-def generate_answer_key(num_questions: int, labels: str) -> List[str]:
-    """Generate a random answer key."""
+def generate_answer_key(
+    num_questions: int,
+    labels: str,
+    num_and_keys: int = 0,
+    num_or_keys: int = 0,
+    default_points: int = 1,
+    num_double_points: int = 0,
+) -> List[str]:
+    """Generate a random answer key.
+
+    Args:
+        num_questions: Number of questions.
+        labels: Available answer labels (e.g. "ABCDE").
+        num_and_keys: Number of AND key questions (e.g. "B&C").
+        num_or_keys: Number of OR key questions (e.g. "B^C").
+        default_points: Default points per question.
+        num_double_points: Number of questions worth double points
+            (or 1 point if default_points > 1).
+    """
     label_list = list(labels)
-    return [random.choice(label_list) for _ in range(num_questions)]
+
+    # Pre-select which question indices get special key types
+    available = list(range(num_questions))
+    random.shuffle(available)
+
+    and_indices = set()
+    or_indices = set()
+    double_indices = set()
+
+    if num_and_keys > 0 and len(label_list) >= 2:
+        take = min(num_and_keys, len(available))
+        and_indices = set(available[:take])
+        available = available[take:]
+    if num_or_keys > 0 and len(label_list) >= 2:
+        take = min(num_or_keys, len(available))
+        or_indices = set(available[:take])
+        available = available[take:]
+    if num_double_points > 0:
+        take = min(num_double_points, len(available))
+        double_indices = set(available[:take])
+
+    # Build key
+    key = []
+    for q in range(num_questions):
+        if q in and_indices:
+            pair = sorted(random.sample(label_list, k=2))
+            entry = "&".join(pair)
+        elif q in or_indices:
+            pair = sorted(random.sample(label_list, k=2))
+            entry = "^".join(pair)
+        else:
+            entry = random.choice(label_list)
+
+        # Append point override if this question has non-default points
+        if q in double_indices:
+            pts = 1 if default_points > 1 else default_points * 2
+            entry = f"{entry}:{pts}"
+
+        key.append(entry)
+    return key
 
 
 def generate_versioned_keys(
     num_questions: int,
     labels: str,
     version_labels: str,
-    num_versions: int = 2
+    num_versions: int = 2,
+    num_and_keys: int = 0,
+    num_or_keys: int = 0,
+    default_points: int = 1,
+    num_double_points: int = 0,
 ) -> Dict[str, List[str]]:
     """
     Generate answer keys for multiple versions.
@@ -204,45 +264,54 @@ def generate_versioned_keys(
     keys = {}
 
     # Generate base key for first version
-    base_key = generate_answer_key(num_questions, labels)
+    base_key = generate_answer_key(
+        num_questions, labels,
+        num_and_keys=num_and_keys, num_or_keys=num_or_keys,
+        default_points=default_points, num_double_points=num_double_points,
+    )
     keys[versions[0]] = base_key
 
     # For subsequent versions, shuffle the key (simulating reordered questions)
     for ver in versions[1:]:
         # Create a permuted version - swap ~30% of answers
+        # Only swap simple (single-letter) answers; keep compound/pointed keys intact
         permuted = base_key.copy()
-        num_swaps = num_questions // 3
-        swap_indices = random.sample(range(num_questions), num_swaps)
-        for idx in swap_indices:
-            other_labels = [l for l in labels if l != permuted[idx]]
-            permuted[idx] = random.choice(other_labels)
+        simple_indices = [i for i, k in enumerate(base_key)
+                          if "&" not in k and "^" not in k and ":" not in k]
+        num_swaps = len(simple_indices) // 3
+        if num_swaps > 0:
+            swap_indices = random.sample(simple_indices, num_swaps)
+            for idx in swap_indices:
+                other_labels = [l for l in labels if l != permuted[idx]]
+                permuted[idx] = random.choice(other_labels)
         keys[ver] = permuted
 
     return keys
 
 
-def write_answer_key(keys: Dict[str, List[str]], output_path: str):
+def write_answer_key(
+    keys: Dict[str, List[str]],
+    output_path: str,
+    default_points: int = 1,
+):
     """
     Write answer key in modern MarkShark format.
 
     Format:
-        ver:A
+        ver:A default:2
         A
-        B
-        C
-        ...
-
-        ver:B
-        B
-        A
-        D
+        B&C
+        D:4
         ...
     """
     with open(output_path, "w", encoding="utf-8") as f:
         for i, (version, answers) in enumerate(keys.items()):
             if i > 0:
                 f.write("\n")  # Blank line between versions
-            f.write(f"ver:{version}\n")
+            header = f"ver:{version}"
+            if default_points != 1:
+                header += f" default:{default_points}"
+            f.write(header + "\n")
             for answer in answers:
                 f.write(f"{answer}\n")
 
@@ -292,6 +361,45 @@ def generate_student_id(num_digits: int) -> str:
     first = str(random.randint(1, 9))
     rest = ''.join(random.choices(string.digits, k=num_digits - 1))
     return first + rest
+
+
+def corrupt_student_id(sid: str) -> str:
+    """Corrupt a student ID to simulate a mis-entry on the bubble sheet.
+
+    Four equally-weighted error types:
+    - single-digit typo (change one digit to a different digit)
+    - adjacent transposition (swap two adjacent digits)
+    - extra digit (insert a random digit)
+    - missing digit (delete one digit)
+    """
+    error_type = random.choice(["typo", "transpose", "extra", "missing"])
+
+    if error_type == "typo":
+        pos = random.randrange(len(sid))
+        original = sid[pos]
+        replacement = random.choice([d for d in string.digits if d != original])
+        return sid[:pos] + replacement + sid[pos + 1:]
+
+    elif error_type == "transpose":
+        if len(sid) < 2:
+            return sid
+        pos = random.randrange(len(sid) - 1)
+        lst = list(sid)
+        lst[pos], lst[pos + 1] = lst[pos + 1], lst[pos]
+        # Ensure we actually changed something (adjacent digits might be same)
+        if "".join(lst) == sid:
+            return corrupt_student_id(sid)
+        return "".join(lst)
+
+    elif error_type == "extra":
+        pos = random.randrange(len(sid) + 1)
+        return sid[:pos] + random.choice(string.digits) + sid[pos:]
+
+    else:  # missing
+        if len(sid) < 2:
+            return sid
+        pos = random.randrange(len(sid))
+        return sid[:pos] + sid[pos + 1:]
 
 
 def generate_fake_students(
@@ -351,9 +459,24 @@ def generate_fake_students(
         # Generate answers
         answers = []
         for q_idx in range(num_questions):
+            raw_key = answer_key[q_idx]
+            # Strip point suffix (e.g. "A:2" -> "A", "B&C:4" -> "B&C")
+            key_ans = raw_key.split(":")[0] if ":" in raw_key else raw_key
+            is_and = "&" in key_ans
+            is_or = "^" in key_ans
+
             if q_idx in correct_indices:
                 # Correct answer
-                answers.append(answer_key[q_idx])
+                if is_and:
+                    # AND key "B&C" -> fill all required bubbles
+                    parts = sorted(key_ans.split("&"))
+                    answers.append(",".join(parts))
+                elif is_or:
+                    # OR key "B^C" -> pick one of the acceptable answers
+                    parts = key_ans.split("^")
+                    answers.append(random.choice(parts))
+                else:
+                    answers.append(key_ans)
             else:
                 # Wrong answer - possibly blank or multi
                 rand = random.random()
@@ -363,16 +486,46 @@ def generate_fake_students(
                     # Multi-fill: pick 2 different choices
                     choices = random.sample(label_list, k=2)
                     answers.append(",".join(sorted(choices)))
+                elif is_and:
+                    # Wrong for AND key: partial fill (one of the required
+                    # bubbles) or a completely wrong single bubble
+                    parts = key_ans.split("&")
+                    if random.random() < 0.6:
+                        # Partial fill — pick only one required bubble
+                        answers.append(random.choice(parts))
+                    else:
+                        # Completely wrong single bubble
+                        wrong = [l for l in label_list if l not in parts]
+                        answers.append(random.choice(wrong) if wrong else "")
+                elif is_or:
+                    # Wrong for OR key: pick a label NOT in the OR set
+                    parts = key_ans.split("^")
+                    wrong = [l for l in label_list if l not in parts]
+                    answers.append(random.choice(wrong) if wrong else "")
                 else:
                     # Single wrong answer
-                    wrong_options = [l for l in label_list if l != answer_key[q_idx]]
+                    wrong_options = [l for l in label_list if l != key_ans]
                     answers.append(random.choice(wrong_options))
 
-        # Calculate actual score (only single correct answers count)
-        actual_correct = sum(
-            1 for q_idx, ans in enumerate(answers)
-            if ans == answer_key[q_idx]
-        )
+        # Calculate actual score — check each answer against its key
+        actual_correct = 0
+        for q_idx, ans in enumerate(answers):
+            raw_key = answer_key[q_idx]
+            key_ans = raw_key.split(":")[0] if ":" in raw_key else raw_key
+            if "&" in key_ans:
+                # AND: student must fill exactly the required set
+                required = set(key_ans.split("&"))
+                filled = set(a.strip() for a in ans.split(",")) if ans else set()
+                if filled == required:
+                    actual_correct += 1
+            elif "^" in key_ans:
+                # OR: student fills one bubble, it must be in the accepted set
+                accepted = set(key_ans.split("^"))
+                if ans in accepted and "," not in ans:
+                    actual_correct += 1
+            else:
+                if ans == key_ans:
+                    actual_correct += 1
 
         students.append({
             "student_id": sid,
@@ -669,6 +822,7 @@ def render_student_sheets(
     darkness_range: Tuple[float, float] = (0.5, 1.0),
     apply_transform: bool = False,
     page_size_mm: Tuple[float, float] = (215.9, 279.4),
+    skip_version: bool = False,
 ) -> List[Image.Image]:
     """
     Render filled bubble sheets for one student (one image per template page).
@@ -732,7 +886,7 @@ def render_student_sheets(
             )
 
         # Fill version (typically page 1 only)
-        if "version_zone" in page_info:
+        if "version_zone" in page_info and not skip_version:
             layout = page_info["version_zone"]
             labels = str(layout.get("labels", "ABCD"))
             numrows = int(layout.get("numrows", 1))
@@ -824,33 +978,77 @@ def save_images_as_pdf(images: List[Image.Image], output_path: str, dpi: int = 3
     )
 
 
+def _write_student_row(writer, student: Dict[str, Any]):
+    """Write a single student row to the CSV writer."""
+    score_pct = round(student["expected_score"] * 100, 1)
+    original_id = student.get("original_id", student["student_id"])
+    bubbled_id = student["student_id"]
+    id_error = "Y" if student.get("id_error") else ""
+    missing_ver = "Y" if student.get("missing_version") else ""
+    # If student forgot to bubble version, the CSV should show blank
+    # (the scoring engine won't detect a version from the sheet)
+    version_val = "" if student.get("missing_version") else student.get("version", "")
+    row = [
+        original_id,
+        bubbled_id,
+        student["first_name"],
+        student["last_name"],
+        version_val,
+        score_pct,
+        id_error,
+        missing_ver,
+    ] + student["answers"]
+    writer.writerow(row)
+
+
 def write_students_csv(
     students: List[Dict[str, Any]],
     output_path: str,
-    answer_key: List[str],
+    keys: Dict[str, List[str]],
     num_questions: int
 ):
-    """Write student data to CSV."""
+    """Write student data to CSV.
+
+    Args:
+        students: list of student dicts (from generate loop)
+        output_path: CSV file path
+        keys: dict mapping version letter -> answer key list
+        num_questions: total questions
+    """
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         # Header
         q_headers = [f"Q{i+1}" for i in range(num_questions)]
         writer = csv.writer(f)
-        writer.writerow(["StudentID", "FirstName", "LastName", "Version", "Score"] + q_headers)
+        writer.writerow([
+            "OriginalID", "BubbledID", "FirstName", "LastName", "Version",
+            "Score", "IDError", "MissingVersion",
+        ] + q_headers)
 
-        # Answer key row
-        writer.writerow(["ANSWER_KEY", "", "", "", ""] + answer_key)
-
-        # Student rows
+        # Group by version: key row then its students, for each version
+        sorted_versions = sorted(keys.keys()) or [""]
+        # Index students by version
+        by_version: Dict[str, List[Dict[str, Any]]] = {v: [] for v in sorted_versions}
+        no_version: List[Dict[str, Any]] = []
         for student in students:
-            score_pct = round(student["expected_score"] * 100, 1)
-            row = [
-                student["student_id"],
-                student["first_name"],
-                student["last_name"],
-                student.get("version", ""),
-                score_pct,
-            ] + student["answers"]
-            writer.writerow(row)
+            sv = student.get("version", "")
+            # Missing-version students go under their assigned version
+            # but with blank version column (handled below)
+            if sv in by_version:
+                by_version[sv].append(student)
+            else:
+                no_version.append(student)
+
+        for ver in sorted_versions:
+            ver_label = ver if ver else "A"
+            writer.writerow(
+                ["ANSWER_KEY", "", "", "", ver_label, "", "", ""] + keys[ver]
+            )
+            for student in by_version[ver]:
+                _write_student_row(writer, student)
+
+        # Any students whose version wasn't in keys (shouldn't happen)
+        for student in no_version:
+            _write_student_row(writer, student)
 
 
 def generate_absent_students(
@@ -911,8 +1109,11 @@ def write_roster_csv(
         writer.writerow(["StudentID", "FirstName", "LastName"])
 
         for student in all_students:
+            # Use original (real) ID for the roster — the roster is the
+            # teacher's authoritative record, not what the student bubbled.
+            roster_id = student.get("original_id", student["student_id"])
             writer.writerow([
-                student["student_id"],
+                roster_id,
                 student["first_name"],
                 student["last_name"],
             ])
@@ -936,6 +1137,12 @@ def generate_mock_dataset(
     apply_transform: bool = False,
     blank_rate: float = 0.01,
     multi_rate: float = 0.01,
+    num_id_errors: int = 2,
+    num_missing_version: int = 2,
+    num_and_keys: int = 0,
+    num_or_keys: int = 0,
+    default_points: int = 1,
+    num_double_points: int = 0,
     verbose: bool = True,
 ) -> Dict[str, Path]:
     """
@@ -958,6 +1165,13 @@ def generate_mock_dataset(
         apply_transform: Apply slight random rotation/translation (default: False)
         blank_rate: Rate of blank answers among wrong answers (default: 0.01)
         multi_rate: Rate of multi-fill answers among wrong answers (default: 0.01)
+        num_id_errors: Number of students with corrupted IDs (default: 2)
+        num_missing_version: Number of students with blank version field (default: 2)
+        num_and_keys: Number of AND key questions in answer key (default: 0)
+        num_or_keys: Number of OR key questions in answer key (default: 0)
+        default_points: Default points per question (default: 1)
+        num_double_points: Number of questions worth double points, or
+            1 point if default_points > 1 (default: 0)
         verbose: Print progress messages (default: True)
 
     Returns:
@@ -1013,13 +1227,21 @@ def generate_mock_dataset(
             format_info['answer_labels'],
             version_labels,
             num_versions=actual_num_versions,
+            num_and_keys=num_and_keys,
+            num_or_keys=num_or_keys,
+            default_points=default_points,
+            num_double_points=num_double_points,
         )
         versions_to_use = list(keys.keys())
     else:
         # Single version
         key = generate_answer_key(
             format_info['total_questions'],
-            format_info['answer_labels']
+            format_info['answer_labels'],
+            num_and_keys=num_and_keys,
+            num_or_keys=num_or_keys,
+            default_points=default_points,
+            num_double_points=num_double_points,
         )
         keys = {"": key}
         versions_to_use = [""]
@@ -1027,7 +1249,7 @@ def generate_mock_dataset(
     # Write answer key file
     key_path = out_dir_path / "mock_answer_key.txt"
     if format_info['has_version']:
-        write_answer_key(keys, str(key_path))
+        write_answer_key(keys, str(key_path), default_points=default_points)
         if verbose:
             print(f"  Wrote versioned key to {key_path}")
             for ver, ans in keys.items():
@@ -1035,7 +1257,10 @@ def generate_mock_dataset(
     else:
         # Single version format: modern format with ver:A header
         with open(key_path, "w") as f:
-            f.write("ver:A\n")
+            header = "ver:A"
+            if default_points != 1:
+                header += f" default:{default_points}"
+            f.write(header + "\n")
             for answer in keys[""]:
                 f.write(f"{answer}\n")
         if verbose:
@@ -1046,6 +1271,18 @@ def generate_mock_dataset(
         print(f"\nGenerating {num_students} fake students...")
     all_students = []
     all_images = []
+
+    # Pre-select which students will have ID errors / missing version
+    id_error_indices = set()
+    if num_id_errors > 0:
+        id_error_indices = set(random.sample(
+            range(num_students), min(num_id_errors, num_students)
+        ))
+    missing_ver_indices = set()
+    if num_missing_version > 0:
+        missing_ver_indices = set(random.sample(
+            range(num_students), min(num_missing_version, num_students)
+        ))
 
     for i in range(num_students):
         # Assign version (alternating if multiple versions)
@@ -1063,6 +1300,19 @@ def generate_mock_dataset(
         )
         student = students[0]
         student["version"] = version
+
+        # Apply ID corruption if this student was pre-selected
+        if i in id_error_indices:
+            original_sid = student["student_id"]
+            student["original_id"] = original_sid
+            student["student_id"] = corrupt_student_id(original_sid)
+            student["id_error"] = True
+
+        # Apply missing-version error if pre-selected
+        skip_ver = i in missing_ver_indices
+        if skip_ver:
+            student["missing_version"] = True
+
         all_students.append(student)
 
         # Render sheet(s) - one per template page
@@ -1074,6 +1324,7 @@ def generate_mock_dataset(
             darkness_range=(darkness_min, darkness_max),
             apply_transform=apply_transform,
             page_size_mm=format_info.get('page_size_mm', (215.9, 279.4)),
+            skip_version=skip_ver,
         )
         all_images.extend(sheet_images)
 
@@ -1090,9 +1341,7 @@ def generate_mock_dataset(
     csv_path = out_dir_path / "mock_student_responses.csv"
     if verbose:
         print(f"Saving CSV: {csv_path}")
-    # Use first version's key for CSV (or the only key)
-    first_key = keys[versions_to_use[0]]
-    write_students_csv(all_students, str(csv_path), first_key, format_info['total_questions'])
+    write_students_csv(all_students, str(csv_path), keys, format_info['total_questions'])
 
     # Generate absent students and save roster
     roster_path = out_dir_path / "mock_roster.csv"
@@ -1129,6 +1378,27 @@ def generate_mock_dataset(
         total_answers = len(all_students) * format_info['total_questions']
         print(f"  Blank answers: {blanks} ({100*blanks/total_answers:.1f}%)")
         print(f"  Multi-fill answers: {multis} ({100*multis/total_answers:.1f}%)")
+
+        id_errors = sum(1 for s in all_students if s.get("id_error"))
+        missing_vers = sum(1 for s in all_students if s.get("missing_version"))
+        if id_errors:
+            print(f"  ID mis-entries: {id_errors} ({100*id_errors/len(all_students):.1f}%)")
+        if missing_vers:
+            print(f"  Missing version: {missing_vers} ({100*missing_vers/len(all_students):.1f}%)")
+
+        # Report compound key and points stats from first version's key
+        first_key = keys[versions_to_use[0]]
+        and_keys = sum(1 for k in first_key if "&" in k)
+        or_keys = sum(1 for k in first_key if "^" in k)
+        double_pts = sum(1 for k in first_key if ":" in k)
+        if and_keys:
+            print(f"  AND keys: {and_keys} ({100*and_keys/len(first_key):.1f}%)")
+        if or_keys:
+            print(f"  OR keys: {or_keys} ({100*or_keys/len(first_key):.1f}%)")
+        if default_points != 1:
+            print(f"  Default points: {default_points}")
+        if double_pts:
+            print(f"  Weighted questions: {double_pts}")
 
         print(f"\nOutput files:")
         print(f"  {key_path}")
@@ -1204,6 +1474,30 @@ def main():
         "--num-absent", type=int, default=2,
         help="Number of absent students to add to roster (default: 2)"
     )
+    parser.add_argument(
+        "--num-id-errors", type=int, default=2,
+        help="Number of students with corrupted IDs (default: 2)"
+    )
+    parser.add_argument(
+        "--num-missing-version", type=int, default=2,
+        help="Number of students with blank version field (default: 2)"
+    )
+    parser.add_argument(
+        "--num-and-keys", type=int, default=0,
+        help="Number of AND key questions in answer key, e.g. B&C (default: 0)"
+    )
+    parser.add_argument(
+        "--num-or-keys", type=int, default=0,
+        help="Number of OR key questions in answer key, e.g. B^C (default: 0)"
+    )
+    parser.add_argument(
+        "--default-points", type=int, default=1,
+        help="Default points per question (default: 1)"
+    )
+    parser.add_argument(
+        "--num-double-points", type=int, default=0,
+        help="Number of questions worth double points (or 1pt if default>1) (default: 0)"
+    )
 
     args = parser.parse_args()
 
@@ -1220,6 +1514,12 @@ def main():
         apply_transform=args.apply_transform,
         blank_rate=args.blank_rate,
         multi_rate=args.multi_rate,
+        num_id_errors=args.num_id_errors,
+        num_missing_version=args.num_missing_version,
+        num_and_keys=args.num_and_keys,
+        num_or_keys=args.num_or_keys,
+        default_points=args.default_points,
+        num_double_points=args.num_double_points,
     )
 
 

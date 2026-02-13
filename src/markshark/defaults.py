@@ -21,12 +21,10 @@ from typing import Optional, Literal
 # ---------------------------
 @dataclass(frozen=True)
 class ScoringDefaults:
-    # Thresholds for deciding filled area bubbles and resolving ties.
-    # min_fill and top2_ratio are stored as integers (0-100) matching the UI.
-    # They are converted to fractions (0-1) at the point of use in the scoring engine.
+    # Thresholds for deciding filled area bubbles.
+    # min_fill is stored as integer (0-100) matching the UI.
+    # It is converted to a fraction (0-1) at the point of use in the scoring engine.
     min_fill: int = 45             # minimum fill score (0-100) to accept non-blank (matches annotated PDF scores)
-    top2_ratio: int = 80           # second-best must be <= top2_ratio% of best (0-100)
-    min_top2_diff: float = 10    # minimum difference between top 2 bubbles in percentage points to not score as multi
 
     # Background subtraction calibration
     calibrate_background: bool = True     # subtract per-column background to remove letter printing bias

@@ -165,7 +165,11 @@ def suggest_matches(
     """
     Suggest possible roster matches for an orphan scan.
 
-    Uses fuzzy matching on both ID (digit transposition) and name similarity.
+    Uses a two-pass approach:
+      1. Custom digit-focused analysis (transpositions, single-digit errors)
+         that produces human-readable reasons.
+      2. rapidfuzz fallback for roster entries that the custom pass missed,
+         so the same matches available in the report are also surfaced here.
 
     Args:
         orphan_id: The student ID from the scan
@@ -174,9 +178,10 @@ def suggest_matches(
         max_suggestions: Maximum number of suggestions to return
 
     Returns:
-        List of suggestions with {student_id, name, reason}
+        List of suggestions with {student_id, name, score, reason}
     """
     suggestions = []
+    scored_ids: set = set()  # roster IDs that got a score > 0 from custom pass
     orphan_name_lower = orphan_name.lower().strip()
 
     for roster_id, roster_info in absent_roster.items():
@@ -246,15 +251,53 @@ def suggest_matches(
                 common = orphan_parts & roster_parts
                 if common:
                     score += 2 * len(common)
-                    reasons.append(f"partial name")
+                    reasons.append("partial name")
 
         if score > 0:
+            scored_ids.add(roster_id)
             suggestions.append({
                 'student_id': roster_id,
                 'name': roster_info.get('full_name', ''),
                 'score': score,
                 'reason': ', '.join(reasons),
             })
+
+    # ── Pass 2: rapidfuzz fallback for entries the custom pass missed ──
+    try:
+        from rapidfuzz import fuzz as _fuzz
+    except ImportError:
+        _fuzz = None
+
+    if _fuzz is not None:
+        for roster_id, roster_info in absent_roster.items():
+            if roster_id in scored_ids:
+                continue  # already handled by the custom pass
+
+            reasons = []
+            score = 0
+
+            # Fuzzy ID similarity (0–100 scale)
+            id_ratio = _fuzz.ratio(orphan_id, roster_id)
+            if id_ratio >= 80:
+                # Map 80→4, 90→4.5, 100→5  (keeps scores comparable to custom pass)
+                score += id_ratio / 20.0
+                reasons.append(f"fuzzy ID ({id_ratio:.0f}%)")
+
+            # Fuzzy name similarity
+            roster_name = roster_info.get('full_name', '').strip()
+            if roster_name and orphan_name_lower:
+                name_ratio = _fuzz.ratio(orphan_name_lower, roster_name.lower())
+                if name_ratio >= 85:
+                    score += name_ratio / 20.0
+                    reasons.append(f"fuzzy name ({name_ratio:.0f}%)")
+
+            if score >= 2:
+                suggestions.append({
+                    'student_id': roster_id,
+                    'name': roster_info.get('full_name', ''),
+                    'score': score,
+                    'reason': ', '.join(reasons),
+                })
 
     # Filter out very low-confidence suggestions, sort by score, take top N
     suggestions = [s for s in suggestions if s['score'] >= 2]
@@ -297,8 +340,6 @@ def _process_single_page(
     page_layout: 'PageLayout',
     *,
     min_fill: float,
-    top2_ratio: float,
-    min_top2_diff: float,
     fixed_thresh: Optional[int] = None,
 ) -> Tuple[dict, List[Optional[str]]]:
     """
@@ -317,8 +358,6 @@ def _process_single_page(
             gray,
             page_layout.last_name_zone,
             min_fill=min_fill,
-            top2_ratio=top2_ratio,
-            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["last_name"] = indices_to_text_col(
@@ -330,8 +369,6 @@ def _process_single_page(
             gray,
             page_layout.first_name_zone,
             min_fill=min_fill,
-            top2_ratio=top2_ratio,
-            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["first_name"] = indices_to_text_col(
@@ -343,8 +380,6 @@ def _process_single_page(
             gray,
             page_layout.id_zone,
             min_fill=min_fill,
-            top2_ratio=top2_ratio,
-            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         info["student_id"] = indices_to_text_col(
@@ -357,8 +392,6 @@ def _process_single_page(
             gray,
             page_layout.version_zone,
             min_fill=min_fill,
-            top2_ratio=top2_ratio,
-            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         if picked and len(picked) > 0 and picked[0] is not None:
@@ -372,8 +405,6 @@ def _process_single_page(
             gray,
             layout,
             min_fill=min_fill,
-            top2_ratio=top2_ratio,
-            min_top2_diff=min_top2_diff,
             fixed_thresh=fixed_thresh,
         )
         choice_labels = list(layout.labels) if layout.labels else [chr(ord("A") + k) for k in range(layout.numcols)]
@@ -386,8 +417,6 @@ def _process_single_page(
                     layout.numcols,
                     choice_labels,
                     min_fill=min_fill,
-                    top2_ratio=top2_ratio,
-                    min_top2_diff=min_top2_diff,
                 )
             )
         else:
@@ -468,8 +497,6 @@ key_letters: Optional[List[str]],
 label_density: bool,
 annotate_all_cells: bool,
 min_fill: float,
-top2_ratio: float,
-min_top2_diff: float,
 answers_for_annotation: Optional[List[Optional[str]]] = None,
 fixed_thresh: Optional[int] = None,
 calibrate_background: bool = False,
@@ -583,7 +610,7 @@ box_top_extra: Optional[int] = None,
             best_val = float(row_scores[best])
             second_val = float(row_scores[order[1]]) if layout.numcols > 1 else 0.0
             is_blank = best_val < min_fill
-            is_multi = (not is_blank) and (layout.numcols > 1) and (second_val > top2_ratio * best_val)
+            is_multi = (not is_blank) and (layout.numcols > 1) and (second_val >= min_fill)
 
             # If available, drive annotation from the same scoring decisions used for the CSV.
             # This prevents borderline cases being labeled blank in the CSV but shown as selected in the PDF overlay.
@@ -616,6 +643,16 @@ box_top_extra: Optional[int] = None,
 
 
             key_char = key_seq[q_global] if key_seq and q_global < len(key_seq) else None
+
+            # For compound keys (AND "A&C", partial "A@B" / "A~B"), multiple
+            # bubbles are the EXPECTED answer.  Don't flag them with the
+            # orange multi box — colour each bubble correct/incorrect instead.
+            is_and_key = bool(key_char and "&" in key_char)
+            is_partial_key = bool(key_char and ("@" in key_char or "~" in key_char))
+            expects_multi = is_and_key or is_partial_key
+            if expects_multi and is_multi:
+                is_multi = False  # suppress orange box; per-bubble colouring below
+
             answer_row_blank = bool(is_blank and key_char and (key_char in choice_labels))
 
             # Optional row-level boxes, draw these before circles and text
@@ -654,16 +691,51 @@ box_top_extra: Optional[int] = None,
                     if key_char:
                         is_selected = c in selected_idx
 
-                        selected_single = None
-                        if selected_labels and len(selected_labels) == 1:
-                            selected_single = selected_labels[0]
-                        elif (not selected_labels) and (not is_blank) and (not is_multi) and len(selected_idx) == 1:
-                            only_idx = next(iter(selected_idx))
-                            selected_single = str(choice_labels[only_idx]).strip().upper()
+                        if is_and_key:
+                            # AND key: compare student's label set vs key's required set
+                            required = set(p.strip().upper() for p in key_char.split("&"))
+                            student_set = set(lab.upper() for lab in selected_labels) if selected_labels else set()
+                            and_correct = (student_set == required)
+                            col = color_correct if (is_selected and and_correct) else (
+                                color_incorrect if is_selected else (200, 200, 200)
+                            )
+                        elif is_partial_key:
+                            # Partial credit (@/~): each bubble green if in correct set, red if not
+                            op = "@" if "@" in key_char else "~"
+                            correct_set = set(
+                                p.split(":")[0].strip().upper()
+                                for p in key_char.split(op)
+                                if p.strip()
+                            )
+                            bubble_label = str(choice_labels[c]).strip().upper() if c < len(choice_labels) else ""
+                            if is_selected:
+                                col = color_correct if bubble_label in correct_set else color_incorrect
+                            else:
+                                col = (200, 200, 200)
+                        elif "^" in key_char:
+                            # OR key: any one of the accepted answers is correct
+                            accepted = set(p.strip().upper() for p in key_char.split("^"))
+                            selected_single = None
+                            if selected_labels and len(selected_labels) == 1:
+                                selected_single = selected_labels[0]
+                            elif (not selected_labels) and (not is_blank) and (not is_multi) and len(selected_idx) == 1:
+                                only_idx = next(iter(selected_idx))
+                                selected_single = str(choice_labels[only_idx]).strip().upper()
+                            or_correct = bool(selected_single and selected_single in accepted)
+                            col = color_correct if (is_selected and or_correct) else (
+                                color_incorrect if is_selected else (200, 200, 200)
+                            )
+                        else:
+                            selected_single = None
+                            if selected_labels and len(selected_labels) == 1:
+                                selected_single = selected_labels[0]
+                            elif (not selected_labels) and (not is_blank) and (not is_multi) and len(selected_idx) == 1:
+                                only_idx = next(iter(selected_idx))
+                                selected_single = str(choice_labels[only_idx]).strip().upper()
 
-                        col = color_correct if (is_selected and selected_single == key_char) else (
-                            color_incorrect if is_selected else (200, 200, 200)
-                        )
+                            col = color_correct if (is_selected and selected_single == key_char) else (
+                                color_incorrect if is_selected else (200, 200, 200)
+                            )
                     else:
                         col = (0, 200, 200) if (c in selected_idx) else (200, 200, 200)
 
@@ -710,8 +782,6 @@ def score_pdf(
     bublmap_path: str,
     out_csv: str,
     min_fill: float,
-    top2_ratio: float,
-    min_top2_diff: float,
     fixed_thresh: Optional[int] = None,
     key_txt: Optional[str] = None,
     out_annotated_dir: Optional[str] = None,
@@ -861,27 +931,53 @@ def score_pdf(
             pdf_writer = None
     
     # ==================== FLAGGING HELPERS ====================
+
+    def _expects_multi(key_letters: Optional[List[str]], q_idx: int) -> bool:
+        """Return True if the key for question *q_idx* expects multiple bubbles.
+
+        AND (&), partial-lenient (@) and partial-strict (~) keys all require
+        the student to fill more than one bubble, so a comma-containing answer
+        is *expected* and should not be flagged.
+        """
+        if not key_letters or q_idx >= len(key_letters):
+            return False
+        k = key_letters[q_idx]
+        return bool(k and any(op in k for op in ("&", "@", "~")))
+
     # Helper to check if a student has any flagged answers
-    def _has_flags(answers: List[Optional[str]]) -> bool:
-        for a in answers:
+    def _has_flags(answers: List[Optional[str]],
+                   key_letters: Optional[List[str]] = None,
+                   version_used: str = "") -> bool:
+        if version_used.endswith("*"):
+            return True
+        for q_idx, a in enumerate(answers):
             if a is None or a == "":  # blank
                 return True
             if isinstance(a, str) and "," in a:  # multi
-                return True
+                if not _expects_multi(key_letters, q_idx):
+                    return True
         return False
 
     # Helper to build FlagDetails string for a student
-    def _build_flag_details(answers: List[Optional[str]], is_orphan: bool = False) -> str:
+    def _build_flag_details(answers: List[Optional[str]],
+                            key_letters: Optional[List[str]] = None,
+                            is_orphan: bool = False,
+                            version_used: str = "") -> str:
         """
         Build a pipe-separated flag details string.
-        Format: Q5:blank|Q10:multi|ID:orphan
+        Format: Version:blank|Q5:blank|Q10:multi|ID:orphan
+
+        Multi-marks that are *expected* by the key (AND, partial) are not flagged.
         """
         flags = []
+        if version_used.endswith("*"):
+            flags.append("Version:blank")
         for q_idx, ans in enumerate(answers):
             if ans is None or ans == "":
                 flags.append(f"Q{q_idx + 1}:blank")
             elif isinstance(ans, str) and "," in ans:
-                flags.append(f"Q{q_idx + 1}:multi")
+                if not _expects_multi(key_letters, q_idx):
+                    flags.append(f"Q{q_idx + 1}:multi")
 
         if is_orphan:
             flags.append("ID:orphan")
@@ -970,8 +1066,6 @@ def score_pdf(
                     info, answers = _process_single_page(
                         img_bgr, page_layout,
                         min_fill=min_fill,
-                        top2_ratio=top2_ratio,
-                        min_top2_diff=min_top2_diff,
                         fixed_thresh=page_fixed_thresh,
                     )
                     
@@ -1030,8 +1124,8 @@ def score_pdf(
                     score = correct  # Legacy: 1 point per question
 
                     # Count incorrect
-                    answered_single = sum(1 for a in answers_out if a and "," not in a)
-                    incorrect = answered_single - correct
+                    answered = sum(1 for a in answers_out if a is not None and a != "")
+                    incorrect = answered - correct
 
                     percent = (100.0 * correct / max(1, total_scored))
 
@@ -1045,8 +1139,8 @@ def score_pdf(
                 page_range = f"{start_page_idx + 1}-{start_page_idx + pages_per_student}" if pages_per_student > 1 else str(start_page_idx + 1)
 
                 # Build flag details for this student
-                has_flags = _has_flags(answers_out)
-                flag_details = _build_flag_details(answers_out) if has_flags else ""
+                has_flags = _has_flags(answers_out, key_out, version_used=version_used)
+                flag_details = _build_flag_details(answers_out, key_out, version_used=version_used) if has_flags else ""
 
                 row = [
                     page_range,
@@ -1078,6 +1172,8 @@ def score_pdf(
                     "csv_row": row,
                     "student_id": student_info.get("student_id", ""),
                     "student_name": f"{student_info.get('last_name', '')} {student_info.get('first_name', '')}".strip(),
+                    "key_letters": key_out,
+                    "version_used": version_used,
                 })
 
                 # Annotate all pages for this student
@@ -1150,14 +1246,12 @@ def score_pdf(
                             label_density=label_density,
                             annotate_all_cells=annotate_all_cells,
                             min_fill=min_fill,
-                            top2_ratio=top2_ratio,
-                            min_top2_diff=min_top2_diff,
                             fixed_thresh=page_fixed_thresh,
                             calibrate_background=calibrate_background,
                             background_percentile=background_percentile,
                             annotation_defaults=ANNOTATION_DEFAULTS,
                         )
-                        
+
                         # Save annotated page
                         if out_annotated_dir:
                             actual_page_num = start_page_idx + page_num
@@ -1189,8 +1283,6 @@ def score_pdf(
                 info, answers, backgrounds = process_page_all(
                     img_bgr, bmap,
                     min_fill=min_fill,
-                    top2_ratio=top2_ratio,
-                    min_top2_diff=min_top2_diff,
                     fixed_thresh=page_fixed_thresh,
                     calibrate_background=calibrate_background,
                     background_percentile=background_percentile,
@@ -1207,8 +1299,6 @@ def score_pdf(
                         initial_threshold=page_fixed_thresh,
                         initial_answers=answers,
                         min_fill=min_fill,
-                        top2_ratio=top2_ratio,
-                        min_top2_diff=min_top2_diff,
                         calibrate_background=calibrate_background,
                         background_percentile=background_percentile,
                         adaptive_min_above_floor=adaptive_min_above_floor,
@@ -1266,8 +1356,8 @@ def score_pdf(
                     score = correct  # Legacy: 1 point per question
 
                     # Count incorrect (total scored - blanks - multi - correct)
-                    answered_single = sum(1 for a in answers_out if a and "," not in a)
-                    incorrect = answered_single - correct
+                    answered = sum(1 for a in answers_out if a is not None and a != "")
+                    incorrect = answered - correct
 
                     percent = (100.0 * correct / max(1, total_scored))
 
@@ -1279,8 +1369,8 @@ def score_pdf(
                 # Format: Page, Version, LastName, FirstName, StudentID, Score, Correct, Incorrect, Blank, Multi, Percent, Flagged, FlagDetails, Q1...
 
                 # Build flag details for this student
-                has_flags = _has_flags(answers_out)
-                flag_details = _build_flag_details(answers_out) if has_flags else ""
+                has_flags = _has_flags(answers_out, key_out, version_used=version_used)
+                flag_details = _build_flag_details(answers_out, key_out, version_used=version_used) if has_flags else ""
 
                 row = [
                     str(page_idx),  # Page number for lookup in annotated PDF
@@ -1312,6 +1402,8 @@ def score_pdf(
                     "csv_row": row,
                     "student_id": info.get("student_id", ""),
                     "student_name": f"{info.get('last_name', '')} {info.get('first_name', '')}".strip(),
+                    "key_letters": key_out,
+                    "version_used": version_used,
                 })
 
                 # Annotated image: names/IDs in blue (with optional %), then answers overlay
@@ -1330,8 +1422,6 @@ def score_pdf(
                         label_density=label_density,
                         annotate_all_cells=annotate_all_cells,
                         min_fill=min_fill,
-                        top2_ratio=top2_ratio,
-                        min_top2_diff=min_top2_diff,
                         fixed_thresh=page_fixed_thresh,
                         calibrate_background=calibrate_background,
                         background_percentile=background_percentile,
@@ -1393,7 +1483,7 @@ def score_pdf(
         # Write header
         writer.writerow(csv_header)
 
-        # Write KEY row(s) - one per version
+        # Write KEY row(s) and VALUE row(s) - one pair per version
         if keys_dict:
             for ver in sorted(keys_dict.keys()):
                 key_answers = keys_dict[ver][:q_out]
@@ -1406,6 +1496,27 @@ def score_pdf(
                 key_row += ["", ""]  # Flagged, FlagDetails (empty for KEY)
                 key_row += key_answers
                 writer.writerow(key_row)
+
+                # VALUE row: max points per question
+                value_row = ["VALUE", ver, "VALUE", "VALUE", "VALUE"]
+                if keys_dict:
+                    value_row += ["", "", "", "", "", ""]
+                else:
+                    value_row += [""]
+                value_row += ["", ""]  # Flagged, FlagDetails (empty for VALUE)
+                # Get per-question point values from advanced key, default 1
+                if advanced_key_set and ver in advanced_key_set.keys:
+                    vk = advanced_key_set.keys[ver]
+                    pts = []
+                    for qi in range(q_out):
+                        if qi < len(vk.answers):
+                            pts.append(vk.answers[qi].total_points)
+                        else:
+                            pts.append(vk.default_points)
+                    value_row += [p if p != int(p) else int(p) for p in pts]
+                else:
+                    value_row += [1] * q_out
+                writer.writerow(value_row)
 
         # Write student rows
         for student_data in all_student_data:
@@ -1432,7 +1543,7 @@ def score_pdf(
 
     # Print summary
     n_students = len(all_student_data)
-    n_flagged = sum(1 for d in all_student_data if _has_flags(d.get("answers", [])))
+    n_flagged = sum(1 for d in all_student_data if _has_flags(d.get("answers", []), d.get("key_letters"), version_used=d.get("version_used", "")))
     print(f"[info] Wrote {n_students} students to {out_csv} ({n_flagged} with flags)", file=sys.stderr)
     # =================================================================
 
@@ -1451,8 +1562,6 @@ def score_pdf(
             "total_questions": bmap.total_questions,
         },
         "min_fill": round(min_fill * 100, 1),       # back to 0-100 for display
-        "top2_ratio": round(top2_ratio * 100, 1),   # back to 0-100 for display
-        "min_top2_diff": min_top2_diff,
         "fixed_thresh": fixed_thresh if fixed_thresh is not None else "auto",
         "auto_calibrate_thresh": auto_calibrate_thresh,
         "calibrate_background": calibrate_background,

@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 
 from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QPixmap, QImage
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -38,6 +38,63 @@ try:
     from markshark.template_manager import TemplateManager
 except ImportError:
     TemplateManager = None
+
+
+# ---------------------------------------------------------------------------
+# Drop-enabled combo box
+# ---------------------------------------------------------------------------
+
+class _DropComboBox(QComboBox):
+    """QComboBox that also accepts file drops from the system file manager.
+
+    Dropped files are added as a "(Custom: name)" entry and auto-selected,
+    identical to what the Browse button does.
+    """
+
+    file_dropped = Signal(str)  # emits the dropped file path
+
+    def __init__(self, extensions: tuple = (), parent=None):
+        super().__init__(parent)
+        self._extensions = tuple(e.lower() for e in extensions)
+        self.setAcceptDrops(True)
+
+    # -- drag & drop overrides ------------------------------------------
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event: QDropEvent):
+        urls = event.mimeData().urls()
+        if not urls:
+            return
+        path = urls[0].toLocalFile()
+        if not path:
+            return
+
+        # Validate extension (if filter was given)
+        if self._extensions:
+            suffix = Path(path).suffix.lower()
+            if suffix not in self._extensions:
+                return  # silently ignore wrong file types
+
+        name = Path(path).name
+        label = f"(Custom: {name})"
+        self.blockSignals(True)
+        self.addItem(label, path)
+        self.setCurrentIndex(self.count() - 1)
+        self.blockSignals(False)
+
+        self.file_dropped.emit(path)
+        event.acceptProposedAction()
 
 # Overlay function (best-effort import)
 try:
@@ -141,11 +198,14 @@ class MapViewerPage(QWidget):
         # Bubblemap YAML selector
         yaml_row = QHBoxLayout()
         yaml_row.addWidget(QLabel("Select Bubblemap:"))
-        self.yaml_combo = QComboBox()
+        self.yaml_combo = _DropComboBox(extensions=(".yaml", ".yml"))
         self.yaml_combo.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
         self.yaml_combo.currentIndexChanged.connect(self._on_yaml_combo_changed)
+        self.yaml_combo.file_dropped.connect(
+            lambda p: self.info_label.setText(f"Custom bubblemap: {Path(p).name}")
+        )
         yaml_row.addWidget(self.yaml_combo, 1)
 
         yaml_browse_btn = QPushButton("Browse...")
@@ -157,11 +217,14 @@ class MapViewerPage(QWidget):
         # PDF selector
         pdf_row = QHBoxLayout()
         pdf_row.addWidget(QLabel("Select PDF:"))
-        self.pdf_combo = QComboBox()
+        self.pdf_combo = _DropComboBox(extensions=(".pdf",))
         self.pdf_combo.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
         self.pdf_combo.currentIndexChanged.connect(self._on_pdf_combo_changed)
+        self.pdf_combo.file_dropped.connect(
+            lambda p: self.info_label.setText(f"Custom PDF: {Path(p).name}")
+        )
         pdf_row.addWidget(self.pdf_combo, 1)
 
         pdf_browse_btn = QPushButton("Browse...")
@@ -263,9 +326,20 @@ class MapViewerPage(QWidget):
         self.prev_btn.setEnabled(False)
         bottom_layout.addWidget(self.prev_btn)
 
-        self.page_label = QLabel("")
-        self.page_label.setStyleSheet("font-weight: bold; padding: 0 12px;")
-        bottom_layout.addWidget(self.page_label)
+        page_nav_label = QLabel("Page")
+        page_nav_label.setStyleSheet("font-weight: bold; padding-left: 12px;")
+        bottom_layout.addWidget(page_nav_label)
+
+        self.page_spin = QSpinBox()
+        self.page_spin.setRange(1, 1)
+        self.page_spin.setFixedWidth(70)
+        self.page_spin.setEnabled(False)
+        self.page_spin.valueChanged.connect(self._on_page_spin_changed)
+        bottom_layout.addWidget(self.page_spin)
+
+        self.page_total_label = QLabel("/ 0")
+        self.page_total_label.setStyleSheet("font-weight: bold; padding-right: 12px;")
+        bottom_layout.addWidget(self.page_total_label)
 
         self.next_btn = QPushButton("Next \u25b6")
         self.next_btn.clicked.connect(self._on_next_page)
@@ -479,7 +553,15 @@ class MapViewerPage(QWidget):
         self._apply_zoom()
 
         n = len(self._overlaid_pages)
-        self.page_label.setText(f"Page {idx + 1} / {n}")
+
+        # Update spinbox without triggering valueChanged
+        self.page_spin.blockSignals(True)
+        self.page_spin.setRange(1, n)
+        self.page_spin.setValue(idx + 1)
+        self.page_spin.setEnabled(n > 1)
+        self.page_spin.blockSignals(False)
+
+        self.page_total_label.setText(f"/ {n}")
         self.prev_btn.setEnabled(idx > 0)
         self.next_btn.setEnabled(idx < n - 1)
 
@@ -491,6 +573,13 @@ class MapViewerPage(QWidget):
     def _on_next_page(self):
         if self._current_page_idx < len(self._overlaid_pages) - 1:
             self._current_page_idx += 1
+            self._update_page_display()
+
+    def _on_page_spin_changed(self, value: int):
+        """Handle direct page number entry via the spinbox."""
+        idx = value - 1  # 1-indexed to 0-indexed
+        if 0 <= idx < len(self._overlaid_pages):
+            self._current_page_idx = idx
             self._update_page_display()
 
     # -------------------------------------------------------------------

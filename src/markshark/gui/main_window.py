@@ -290,6 +290,7 @@ class MainWindow(QMainWindow):
                 self.align_only_page,
                 self.score_only_page,
                 self.report_only_page,
+                self.mock_data_page,
             )
             if hasattr(page, 'project_selector')
         ]
@@ -324,6 +325,45 @@ class MainWindow(QMainWindow):
         finally:
             self._syncing_project = False
 
+    def _sync_visible_page(self):
+        """Ensure the newly-visible page's ProjectSelector matches the others.
+
+        Called on every page switch so the project header bar is always
+        up-to-date, even if a signal-based sync was missed.
+        """
+        if not hasattr(self, "_project_selector_pages"):
+            return  # called before _connect_project_selectors()
+
+        current_widget = self.pages.currentWidget()
+        if not hasattr(current_widget, "project_selector"):
+            return
+
+        # Find a reference selector (the first OTHER page with a project set)
+        ref = None
+        for page in self._project_selector_pages:
+            if page is current_widget:
+                continue
+            ps = page.project_selector
+            if ps.working_dir():
+                ref = ps
+                break
+
+        if ref is None:
+            return
+
+        target = current_widget.project_selector
+        workdir = ref.working_dir()
+        project = ref.project_name()
+
+        self._syncing_project = True
+        try:
+            if workdir and target.working_dir() != workdir:
+                target.set_working_dir(str(workdir))
+            if target.project_name() != project:
+                target.set_project(project)
+        finally:
+            self._syncing_project = False
+
     # ---- Navigation ----
 
     def _on_nav_changed(self, row: int):
@@ -331,6 +371,7 @@ class MainWindow(QMainWindow):
         page_idx = self._row_to_page.get(row)
         if page_idx is not None:
             self.pages.setCurrentIndex(page_idx)
+            self._sync_visible_page()
 
     def _on_open_scans(self):
         """Handle File > Open Scans action."""

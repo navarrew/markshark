@@ -196,32 +196,12 @@ class ScoreOnlyPage(QWidget):
         )
         thresh_layout.addWidget(self.min_fill_spin, 0, 1)
 
-        thresh_layout.addWidget(QLabel("Top-2 ratio (%):"), 1, 0)
-        self.top2_ratio_spin = QSpinBox()
-        self.top2_ratio_spin.setRange(0, 100)
-        self.top2_ratio_spin.setSuffix("%")
-        self.top2_ratio_spin.setValue(_dflt(SCORING_DEFAULTS, "top2_ratio", 80))
-        self.top2_ratio_spin.setToolTip(
-            "Second-best bubble must be <= this % of best to count as single answer."
-        )
-        thresh_layout.addWidget(self.top2_ratio_spin, 1, 1)
-
-        thresh_layout.addWidget(QLabel("Min top-2 diff:"), 2, 0)
-        self.min_top2_diff_spin = QDoubleSpinBox()
-        self.min_top2_diff_spin.setRange(0, 100)
-        self.min_top2_diff_spin.setSuffix(" pts")
-        self.min_top2_diff_spin.setValue(_dflt(SCORING_DEFAULTS, "min_top2_diff", 10))
-        self.min_top2_diff_spin.setToolTip(
-            "Minimum difference between top 2 bubbles to not flag as multi."
-        )
-        thresh_layout.addWidget(self.min_top2_diff_spin, 2, 1)
-
-        thresh_layout.addWidget(QLabel("Fixed threshold (gray):"), 3, 0)
+        thresh_layout.addWidget(QLabel("Fixed threshold (gray):"), 1, 0)
         self.fixed_thresh_spin = QSpinBox()
         self.fixed_thresh_spin.setRange(0, 255)
         self.fixed_thresh_spin.setValue(_dflt(SCORING_DEFAULTS, "fixed_thresh", 180))
         self.fixed_thresh_spin.setToolTip("Global binarization threshold for gray pixels.")
-        thresh_layout.addWidget(self.fixed_thresh_spin, 3, 1)
+        thresh_layout.addWidget(self.fixed_thresh_spin, 1, 1)
 
         scroll_layout.addWidget(thresh_group)
         scroll_layout.addSpacing(8)
@@ -441,8 +421,6 @@ class ScoreOnlyPage(QWidget):
             "--out-pdf", str(self.scored_pdf),
             "--dpi", str(self.dpi_spin.value()),
             "--min-fill", str(self.min_fill_spin.value()),
-            "--top2-ratio", str(self.top2_ratio_spin.value()),
-            "--min-top2-diff", str(self.min_top2_diff_spin.value()),
             "--fixed-thresh", str(self.fixed_thresh_spin.value()),
         ]
 

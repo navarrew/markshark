@@ -246,6 +246,29 @@ class Bubblemap:
 
 # ---------------------------------------------------------------------------
 
+
+def _resolve_style(section: Dict[str, Any], styles: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge style defaults under the zone's own keys (zone-level wins on conflict).
+
+    Handles one level of ``extends`` inheritance (e.g. answer_bubbles extends
+    standard_bubbles).
+    """
+    style_name = section.get("style")
+    if not style_name or not styles:
+        return section
+    style = styles.get(style_name, {})
+    # If this style extends another, merge the base first
+    base_name = style.get("extends")
+    if base_name and base_name in styles:
+        merged = dict(styles[base_name])
+        merged.update(style)
+    else:
+        merged = dict(style)
+    # Zone-level keys override style keys
+    merged.update(section)
+    return merged
+
+
 def _parse_layout(name: str, section: Dict[str, Any], page_size_mm: tuple = (215.9, 279.4)) -> GridLayout:
     """
     Parse a layout section, supporting both v1 (percentage) and v3 (mm) coordinate formats.
@@ -334,12 +357,16 @@ def _parse_layout(name: str, section: Dict[str, Any], page_size_mm: tuple = (215
 
 
 def _parse_page_layouts(page_num: int, page_data: Dict[str, Any],
-                        page_size_mm: tuple = (215.9, 279.4)) -> PageLayout:
+                        page_size_mm: tuple = (215.9, 279.4),
+                        styles: Dict[str, Any] | None = None) -> PageLayout:
     """Parse layouts for a single page."""
+    styles = styles or {}
+
     # Parse answer zones
     answer_zones_data = page_data.get("answer_zones", [])
     answer_zones: List[GridLayout] = []
     for i, block in enumerate(answer_zones_data):
+        block = _resolve_style(block, styles)
         # Default labels for answers if omitted
         if "labels" not in block and "numcols" in block:
             ch = int(block["numcols"])
@@ -353,7 +380,7 @@ def _parse_page_layouts(page_num: int, page_data: Dict[str, Any],
     version_zone_data = page_data.get("version_zone")
 
     if version_zone_data:
-        layout_dict = dict(version_zone_data)
+        layout_dict = _resolve_style(dict(version_zone_data), styles)
         layout_dict.setdefault("selection_axis", "row")
         if "labels" not in layout_dict and "numcols" in layout_dict:
             ch = int(layout_dict["numcols"])
@@ -372,7 +399,7 @@ def _parse_page_layouts(page_num: int, page_data: Dict[str, Any],
     for zone_name in zone_names:
         zone_data = page_data.get(zone_name)
         if zone_data:
-            layout_dict = dict(zone_data)  # Shallow copy
+            layout_dict = _resolve_style(dict(zone_data), styles)
             # Sensible defaults if omitted
             if zone_name in ("last_name_zone", "first_name_zone"):
                 layout_dict.setdefault("selection_axis", "col")
@@ -490,6 +517,9 @@ def load_bublmap(path: str) -> Bubblemap:
     # Parse registration config (NEW)
     registration = _parse_registration_config(data)
 
+    # Parse styles (used by zones via "style: <name>" references)
+    styles = data.get("styles", {})
+
     # Parse pages
     pages: List[PageLayout] = []
 
@@ -500,7 +530,7 @@ def load_bublmap(path: str) -> Bubblemap:
             raise ValueError(f"Missing '{page_key}' section in YAML (metadata says {num_pages} pages)")
 
         page_data = data[page_key]
-        page_layout = _parse_page_layouts(page_num, page_data, page_size_mm)
+        page_layout = _parse_page_layouts(page_num, page_data, page_size_mm, styles=styles)
         pages.append(page_layout)
 
     bmap = Bubblemap(

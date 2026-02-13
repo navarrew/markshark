@@ -768,10 +768,12 @@ def score_student(
 
 def to_legacy_keys_dict(key_set: AnswerKeySet) -> Dict[str, List[str]]:
     """
-    Convert AnswerKeySet to legacy format (Dict[version, List[letter]]).
+    Convert AnswerKeySet to legacy format (Dict[version, List[str]]).
 
     Used for backward compatibility with existing scoring code.
-    Only works for simple single-answer keys.
+    Compound answers are reconstructed with their separator:
+      AND -> "B&C",  OR -> "B^C",
+      PARTIAL_LENIENT -> "A@B",  PARTIAL_STRICT -> "A~B"
     """
     result = {}
 
@@ -783,8 +785,21 @@ def to_legacy_keys_dict(key_set: AnswerKeySet) -> Dict[str, List[str]]:
             elif spec.mode == ScoringMode.FREEBIE:
                 letters.append("*")
             elif spec.correct_answers:
-                # Take first correct answer
-                letters.append(list(spec.correct_answers.keys())[0])
+                # Reconstruct the separator-delimited key string
+                # so downstream code (annotation, CSV KEY row) sees
+                # the full compound answer, not just the first letter.
+                keys_sorted = sorted(spec.correct_answers.keys())
+                if spec.mode == ScoringMode.AND:
+                    letters.append("&".join(keys_sorted))
+                elif spec.mode == ScoringMode.OR:
+                    letters.append("^".join(keys_sorted))
+                elif spec.mode == ScoringMode.PARTIAL_LENIENT:
+                    letters.append("@".join(keys_sorted))
+                elif spec.mode == ScoringMode.PARTIAL_STRICT:
+                    letters.append("~".join(keys_sorted))
+                else:
+                    # SINGLE mode — just the one letter
+                    letters.append(keys_sorted[0])
             else:
                 letters.append("")
         result[identifier] = letters

@@ -3,7 +3,8 @@ Review & Correct page - review grading results and apply corrections.
 
 Features:
 - Full spreadsheet view of scored CSV data (all columns)
-- Inline editing: dropdown for Q cells, text edit for name/ID cells
+- Inline editing: free-text entry for Q cells (supports multi-answer like A,C),
+  text edit for name/ID cells.  Warns on unexpected characters.
 - PDF scan preview with zoom toggle and multi-page support
 - Flag info panel showing issues for selected student
 - Corrections saved to append-only log
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QSplitter,
     QTableWidget,
@@ -29,6 +31,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QMessageBox,
+    QStyle,
     QStyledItemDelegate,
     QMenu,
     QFrame,
@@ -75,56 +78,125 @@ _NUMERIC_COLUMNS = frozenset({
 _SMART_SORT_COLUMNS = frozenset({"Version"})
 
 # Cell background colours
-_COLOR_CORRECTED = QColor("#BBDEFB")  # blue — has a correction
+_COLOR_CORRECTED = QColor("#42A5F5")  # medium-bright blue — has a correction
 _COLOR_BLANK_Q = QColor("#F9C8F5")   # pink — blank answer
 _COLOR_MULTI_Q = QColor("#FFB366")   # orange — multi-mark
 _COLOR_ORPHAN_ID = QColor("#FFCDD2") # light red — orphan ID warning
 
+# Custom data role: stores the flag QColor on flagged cells so the selection
+# delegate can preserve it instead of painting solid blue.
+_ROLE_FLAG_COLOR = Qt.ItemDataRole.UserRole + 10
+
+# Selection highlight for non-flagged cells in a selected row
+_COLOR_ROW_SELECTED = QColor("#90CAF9")  # medium blue (Material Blue 200)
+
+
+def _flag_cell(item: QTableWidgetItem, color: QColor):
+    """Set background AND store flag role so selection delegate can see it."""
+    item.setBackground(QBrush(color))
+    item.setData(_ROLE_FLAG_COLOR, color)
+
+
+def _unflag_cell(item: QTableWidgetItem):
+    """Clear flag colour — restore to plain white."""
+    item.setBackground(QBrush(QColor("white")))
+    item.setData(_ROLE_FLAG_COLOR, None)
+
 
 # ---------------------------------------------------------------------------
-# Delegate: dropdown editor for Q cells
+# Delegate: text editor for Q cells
 # ---------------------------------------------------------------------------
 
-class AnswerChoiceDelegate(QStyledItemDelegate):
+_COLOR_WARNING_Q = QColor("#FFF9C4")  # light yellow — unexpected input
+
+
+class _FlagPreservingDelegate(QStyledItemDelegate):
+    """Delegate that keeps flagged-cell backgrounds visible when the row
+    is selected, instead of painting them solid blue.
+
+    Non-flagged cells in a selected row get a light blue tint.
+    Flagged cells keep their flag colour with a slightly darkened tint
+    so the user can still tell the row is selected.
     """
-    Item delegate that presents a QComboBox with answer choices
-    when the user double-clicks a Q column cell.
 
-    The choices are set dynamically from the loaded CSV data (KEY rows
-    + student answers) so they match the template — e.g. A-E for a
-    five-choice sheet, T/F for true-false, A-J for ten-choice, etc.
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        flag_color = index.data(_ROLE_FLAG_COLOR)
+        sel_flag = QStyle.StateFlag.State_Selected
+        if option.state & sel_flag:
+            if flag_color and isinstance(flag_color, QColor):
+                # Darken the flag colour slightly to hint at selection
+                darker = flag_color.darker(115)
+                option.backgroundBrush = QBrush(darker)
+                # Remove the Selected state so Qt doesn't paint over it
+                option.state &= ~sel_flag
+            else:
+                # Normal (non-flagged) cell in a selected row
+                option.backgroundBrush = QBrush(_COLOR_ROW_SELECTED)
+                option.state &= ~sel_flag
+
+
+class AnswerTextDelegate(_FlagPreservingDelegate):
+    """
+    Item delegate that presents a QLineEdit for answer cells.
+
+    Teachers can type anything: single letters (A), multi-answers (A,C or AC),
+    or blank.  Input is normalized on commit (uppercased, sorted, comma-
+    separated).  If the entry contains characters not in the known answer
+    labels the cell gets a yellow warning background.
+
+    Inherits from _FlagPreservingDelegate so flagged Q-cells keep their
+    background colour when the row is selected.
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._choices: List[str] = ["", "A", "B", "C", "D", "E"]  # fallback
+        self._known_labels: set = set("ABCDE")  # fallback
 
-    def set_choices(self, choices: List[str]):
-        """Set the answer choices (blank is always prepended)."""
-        self._choices = [""] + [c for c in choices if c]
+    def set_known_labels(self, labels: List[str]):
+        """Set the known answer labels for validation warnings."""
+        self._known_labels = set(l.upper() for l in labels if l)
 
     def createEditor(self, parent, option, index):
-        combo = QComboBox(parent)
-        combo.addItems(self._choices)
-        # Commit data immediately when user picks from the dropdown,
-        # rather than waiting for focus loss.
-        combo.activated.connect(self._on_activated)
-        return combo
+        editor = QLineEdit(parent)
+        editor.setMaxLength(20)
+        return editor
 
-    def _on_activated(self, _idx):
-        """Called when user picks a value. Commit and close the editor."""
-        editor = self.sender()
-        if editor:
-            self.commitData.emit(editor)
-            self.closeEditor.emit(editor)
-
-    def setEditorData(self, editor: QComboBox, index):
+    def setEditorData(self, editor: QLineEdit, index):
         value = index.data(Qt.ItemDataRole.DisplayRole) or ""
-        idx = editor.findText(value)
-        editor.setCurrentIndex(max(0, idx))
+        editor.setText(value)
+        editor.selectAll()
 
-    def setModelData(self, editor: QComboBox, model, index):
-        model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
+    def setModelData(self, editor: QLineEdit, model, index):
+        raw = editor.text().strip().upper()
+        normalized = self._normalize_answer(raw)
+        model.setData(index, normalized, Qt.ItemDataRole.EditRole)
+
+    @staticmethod
+    def _normalize_answer(raw: str) -> str:
+        """Normalize free-text answer input.
+
+        - Strips whitespace, uppercases
+        - 'AC' or 'A,C' or 'A, C' all become 'A,C'
+        - Single letter stays as-is
+        - Blank stays blank
+        """
+        if not raw:
+            return ""
+        # Split on commas first, then split remaining multi-char tokens
+        # into individual characters
+        parts = []
+        for chunk in raw.split(","):
+            chunk = chunk.strip()
+            if len(chunk) <= 1:
+                if chunk:
+                    parts.append(chunk)
+            else:
+                # "AC" -> ["A", "C"]
+                parts.extend(list(chunk))
+        # Deduplicate and sort
+        unique = sorted(set(parts))
+        return ",".join(unique)
 
 
 class _NumericTableItem(QTableWidgetItem):
@@ -199,8 +271,13 @@ class ReviewPanelPage(QWidget):
         self._zoom_mode: str = "fit"             # "fit" or "scroll"
         self._current_dpi: int = 72
 
-        self._answer_delegate = AnswerChoiceDelegate(self)
+        self._answer_delegate = AnswerTextDelegate(self)
+        self._known_answer_labels: set = set("ABCDE")  # updated after CSV load
         self._last_correction_key: str = ""  # debounce: "row:col:value"
+
+        # Compound-key lookup: {version: {Q-col-name: key_value}}
+        # Used to suppress orange multi-mark colouring for expected compound answers.
+        self._compound_keys: Dict[str, Dict[str, str]] = {}
 
         # Roster for orphan ID resolution
         self._roster: Optional[Dict[str, Dict[str, str]]] = None
@@ -353,6 +430,8 @@ class ReviewPanelPage(QWidget):
         self.spreadsheet = QTableWidget()
         self.spreadsheet.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.spreadsheet.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self._flag_delegate = _FlagPreservingDelegate(self.spreadsheet)
+        self.spreadsheet.setItemDelegate(self._flag_delegate)
         self.spreadsheet.setEditTriggers(
             QTableWidget.EditTrigger.DoubleClicked
             | QTableWidget.EditTrigger.EditKeyPressed
@@ -464,13 +543,12 @@ class ReviewPanelPage(QWidget):
 
     def _discover_answer_choices(self, key_rows: List[Dict[str, str]]):
         """
-        Discover the valid answer choices from KEY rows and student data,
-        then configure the AnswerChoiceDelegate.
+        Discover the valid answer labels from KEY rows and student data,
+        then configure the AnswerTextDelegate for validation warnings.
 
         Scans all Q-column values to find every distinct single-letter answer
-        that appears, and sorts them alphabetically.  This means the dropdown
-        automatically matches the template: A-E for 5-choice, T/F for
-        true-false, A-J for 10-choice, etc.
+        that appears.  These are stored so the delegate can warn (yellow
+        background) if a teacher types something unexpected.
         """
         found: set = set()
 
@@ -491,12 +569,13 @@ class ReviewPanelPage(QWidget):
                         found.add(v.upper())
 
         if found:
-            choices = sorted(found)
+            labels = sorted(found)
         else:
             # Fallback to A-E if we couldn't discover any
-            choices = ["A", "B", "C", "D", "E"]
+            labels = ["A", "B", "C", "D", "E"]
 
-        self._answer_delegate.set_choices(choices)
+        self._known_answer_labels = set(labels)
+        self._answer_delegate.set_known_labels(labels)
 
     # =====================================================================
     # Loading Data
@@ -560,11 +639,23 @@ class ReviewPanelPage(QWidget):
                     key_rows.append(row)
                     continue
 
-                if not student_id:
+                # Skip VALUE rows (per-question point values, one per version)
+                is_value = (
+                    (page_val and page_val.upper() == "VALUE")
+                    or (version_val and version_val.upper() == "VALUE")
+                    or (student_id and student_id.upper() == "VALUE")
+                )
+                if is_value:
                     continue
-                if student_id.lower() in (
+
+                # Skip stats/summary rows
+                if student_id and student_id.lower() in (
                     "mean", "stdev", "high", "low", "n", "kr-20", "item stats",
                 ):
+                    continue
+                # Accept the row if it has a StudentID OR a Page number
+                # (mock data / un-rostered scans may lack StudentID)
+                if not student_id and not page_val:
                     continue
                 self._scored_data.append(row)
 
@@ -574,6 +665,19 @@ class ReviewPanelPage(QWidget):
 
             # Discover valid answer choices from KEY rows + student data
             self._discover_answer_choices(key_rows)
+
+            # Build compound-key lookup so cell colouring can suppress
+            # orange multi-mark warnings for AND / partial keys.
+            self._compound_keys = {}
+            for kr in key_rows:
+                ver = kr.get("Version", kr.get("version", "A")).strip().upper()
+                keys_for_ver: Dict[str, str] = {}
+                for col_name, val in kr.items():
+                    if self._is_q_column(col_name) and val:
+                        v = val.strip()
+                        if any(op in v for op in ("&", "@", "~")):
+                            keys_for_ver[col_name] = v
+                self._compound_keys[ver] = keys_for_ver
 
             # Corrections file — always "corrections.csv" next to the scored CSV
             corrections_path = csv_path.parent / "corrections.csv"
@@ -713,19 +817,32 @@ class ReviewPanelPage(QWidget):
 
                 # Cell colouring
                 if correction_key in student_corrections:
-                    item.setBackground(QBrush(_COLOR_CORRECTED))
+                    _flag_cell(item, _COLOR_CORRECTED)
                 elif col_name == "StudentID" and is_orphan and not orphan_corrected:
-                    item.setBackground(QBrush(_COLOR_ORPHAN_ID))
+                    _flag_cell(item, _COLOR_ORPHAN_ID)
                     item.setForeground(QBrush(QColor("#B71C1C")))  # dark red text
                     item.setToolTip(
                         "Orphan ID \u2014 not found in roster. "
                         "Select row to see suggested matches."
                     )
+                elif col_name == "Version" and display_value.strip().endswith("*"):
+                    _flag_cell(item, _COLOR_MULTI_Q)  # orange
+                    item.setToolTip(
+                        "Version bubble was blank \u2014 auto-detected "
+                        "from best key match"
+                    )
                 elif self._is_q_column(col_name):
                     if not display_value.strip():
-                        item.setBackground(QBrush(_COLOR_BLANK_Q))
+                        _flag_cell(item, _COLOR_BLANK_Q)
                     elif "," in display_value:
-                        item.setBackground(QBrush(_COLOR_MULTI_Q))
+                        # Only flag as multi if this column does NOT expect
+                        # a compound answer (AND/partial key).
+                        student_ver = row_data.get(
+                            "Version", row_data.get("version", "")
+                        ).strip().upper()
+                        compound_cols = self._compound_keys.get(student_ver, {})
+                        if col_name not in compound_cols:
+                            _flag_cell(item, _COLOR_MULTI_Q)
 
                 # Read-only?
                 if col_name in _READ_ONLY_COLUMNS:
@@ -824,20 +941,47 @@ class ReviewPanelPage(QWidget):
         )
 
         if has_correction:
-            item.setBackground(QBrush(_COLOR_CORRECTED))
+            _flag_cell(item, _COLOR_CORRECTED)
             item.setForeground(QBrush(QColor("black")))
             # Clear orphan tooltip if this was a corrected orphan
             if col_name == "StudentID":
                 item.setToolTip("")
         elif self._is_q_column(col_name):
-            if not value.strip():
-                item.setBackground(QBrush(_COLOR_BLANK_Q))
+            # Check for unexpected characters (validation warning)
+            known = getattr(self, "_known_answer_labels", set("ABCDE"))
+            entered_chars = set(c for c in value.upper().replace(",", "") if c.strip())
+            unexpected = entered_chars - known
+            if unexpected and value.strip():
+                _flag_cell(item, _COLOR_WARNING_Q)
+                item.setToolTip(
+                    f"Unexpected: {', '.join(sorted(unexpected))}  "
+                    f"(expected {', '.join(sorted(known))})"
+                )
+            elif not value.strip():
+                _flag_cell(item, _COLOR_BLANK_Q)
+                item.setToolTip("")
             elif "," in value:
-                item.setBackground(QBrush(_COLOR_MULTI_Q))
+                # Check if compound answer expected for this student's version
+                version = ""
+                first_item = self.spreadsheet.item(row, 0)
+                if first_item:
+                    rd = first_item.data(Qt.ItemDataRole.UserRole)
+                    if rd:
+                        version = rd.get(
+                            "Version", rd.get("version", "")
+                        ).strip().upper()
+                compound_cols = self._compound_keys.get(version, {})
+                if col_name not in compound_cols:
+                    _flag_cell(item, _COLOR_MULTI_Q)
+                    item.setToolTip("")
+                else:
+                    _unflag_cell(item)
+                    item.setToolTip("")
             else:
-                item.setBackground(QBrush(QColor("white")))
+                _unflag_cell(item)
+                item.setToolTip("")
         else:
-            item.setBackground(QBrush(QColor("white")))
+            _unflag_cell(item)
 
     def _sync_corrections_to_logs(self):
         """Copy the corrections log file to the project's logs/ folder.
@@ -923,7 +1067,16 @@ class ReviewPanelPage(QWidget):
         # Update flag info / orphan suggestions
         flag_details = _get_field(row_data, "FlagDetails", "flagdetails")
         if "ID:orphan" in (flag_details or ""):
-            self._show_orphan_suggestions(row_data)
+            # Check if the orphan ID has already been corrected
+            student_id = _get_field(row_data, "StudentID", "student_id", "ID") or ""
+            orphan_corrected = (
+                self._correction_log is not None
+                and self._correction_log.has_correction(student_id, "student_id")
+            )
+            if orphan_corrected:
+                self.flag_panel.show_corrected("CORRECTED")
+            else:
+                self._show_orphan_suggestions(row_data)
         else:
             self.flag_panel.show_regular_flags(self._parse_flag_details(flag_details))
 
@@ -952,6 +1105,8 @@ class ReviewPanelPage(QWidget):
                     readable.append(f"{flag_type} at {field}")
                 elif field == "ID":
                     readable.append("orphan ID")
+                elif field == "Version":
+                    readable.append("version bubble blank (auto-detected)")
                 else:
                     readable.append(part)
             else:

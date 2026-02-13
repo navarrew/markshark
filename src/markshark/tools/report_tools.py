@@ -313,6 +313,36 @@ def merge_corrections(
     # Get the key values for recalculating scores
     key_row = df.iloc[key_row_idx]
 
+    # Find VALUE rows for point values per question.
+    # Build a lookup: version → {col: points}
+    _value_mask = df.apply(
+        lambda row: any(str(cell).strip().upper() == 'VALUE' for cell in row), axis=1
+    )
+    _version_col = _find_col(df, ['version', 'Version'])
+    _version_point_values: Dict[str, Dict[str, float]] = {}
+    for vidx in df[_value_mask].index:
+        vrow = df.iloc[vidx]
+        ver = str(vrow.get(_version_col, '')).strip() if _version_col else ''
+        pv: Dict[str, float] = {}
+        for col in item_cols:
+            try:
+                pv[col] = float(vrow.get(col, 1))
+            except (ValueError, TypeError):
+                pv[col] = 1.0
+        _version_point_values[ver] = pv
+
+    # For single-version CSVs, also try using the VALUE row right after key_row_idx
+    if not _version_point_values and key_row_idx + 1 < len(df):
+        maybe_val = df.iloc[key_row_idx + 1]
+        if any(str(cell).strip().upper() == 'VALUE' for cell in maybe_val):
+            pv = {}
+            for col in item_cols:
+                try:
+                    pv[col] = float(maybe_val.get(col, 1))
+                except (ValueError, TypeError):
+                    pv[col] = 1.0
+            _version_point_values[''] = pv
+
     # Find the student ID column
     id_col = _find_col(df, ['studentid', 'StudentID', 'Student_ID', 'student_id', 'ID', 'id'])
     if id_col is None:
@@ -338,7 +368,9 @@ def merge_corrections(
 
             # Find the student row by their ORIGINAL (wrong) ID
             student_mask = df_ids_normalized == student_id_normalized
-            student_indices = [i for i in df[student_mask].index.tolist() if i != key_row_idx]
+            _value_indices = set(df[_value_mask].index.tolist())
+            student_indices = [i for i in df[student_mask].index.tolist()
+                              if i != key_row_idx and i not in _value_indices]
 
             if not student_indices:
                 sample_ids = df_ids_normalized[df_ids_normalized != 'KEY'].head(5).tolist()
@@ -380,9 +412,11 @@ def merge_corrections(
                   f"(available: {item_cols[:5]}...)", file=sys.stderr)
             continue
 
-        # Find matching student rows (excluding KEY row)
+        # Find matching student rows (excluding KEY and VALUE rows)
         student_mask = df_ids_normalized == student_id_normalized
-        student_indices = [i for i in df[student_mask].index.tolist() if i != key_row_idx]
+        _value_indices = set(df[_value_mask].index.tolist())
+        student_indices = [i for i in df[student_mask].index.tolist()
+                          if i != key_row_idx and i not in _value_indices]
 
         if not student_indices:
             sample_ids = df_ids_normalized[df_ids_normalized != 'KEY'].head(5).tolist()
@@ -398,9 +432,44 @@ def merge_corrections(
             print(f"[corrections] Applied: Student {student_id_normalized}, "
                   f"{q_col}: '{old_answer}' -> '{new_answer}'", file=sys.stderr)
 
-            _recalculate_student_scores(df, idx, item_cols, key_row)
+            # Look up point values for this student's version
+            student_ver = ''
+            if _version_col:
+                student_ver = str(df.at[idx, _version_col]).strip().rstrip("*")
+            pv = _version_point_values.get(student_ver) or _version_point_values.get('') or None
+            _recalculate_student_scores(df, idx, item_cols, key_row, point_values=pv)
 
     return df, corrections_applied
+
+
+def _answer_matches_key(answer: str, key_answer: str) -> bool:
+    """Check if *answer* matches *key_answer*, handling compound keys.
+
+    Compound key formats: AND ``B&E``, OR ``B^D``, partial ``A@B`` / ``A~B``.
+    Student multi-mark answers use commas: ``B,E``.
+    """
+    import re as _re
+    a = answer.strip().upper()
+    k = key_answer.strip().upper()
+    if not a or not k or a in ("NAN", "NONE") or k in ("NAN", "NONE"):
+        return False
+
+    # Normalise student answer to a set
+    student_set = frozenset(p.strip() for p in a.split(",") if p.strip())
+
+    if "&" in k:
+        key_set = frozenset(p.strip() for p in k.split("&") if p.strip())
+        return student_set == key_set
+    if _re.search(r"[@~]", k):
+        sep = _re.search(r"[@~]", k).group()
+        key_set = frozenset(p.split(":")[0].strip() for p in k.split(sep) if p.strip())
+        return student_set == key_set
+    if "^" in k:
+        accepted = frozenset(p.strip() for p in k.split("^") if p.strip())
+        return len(student_set) == 1 and bool(student_set & accepted)
+
+    # Simple single-answer key
+    return len(student_set) == 1 and a == k
 
 
 def _recalculate_student_scores(
@@ -408,40 +477,52 @@ def _recalculate_student_scores(
     student_idx: int,
     item_cols: List[str],
     key_row: pd.Series,
+    point_values: Optional[Dict[str, float]] = None,
 ):
     """
-    Recalculate correct/incorrect/blank/multi/percent for a student after corrections.
+    Recalculate correct/incorrect/blank/multi/percent/score for a student
+    after corrections.
+
+    Args:
+        point_values: Optional dict mapping column name → max points for that
+            question (from the VALUE row in the CSV).  When provided, *score*
+            is the sum of earned points (correct × per-question value), and
+            *percent* is score / max_points × 100.  When ``None``, every
+            question is worth 1 point (legacy behaviour).
     """
     correct = 0
     incorrect = 0
     blank = 0
     multi = 0
+    score = 0.0
+    max_points = 0.0
 
     for col in item_cols:
         answer = str(df.at[student_idx, col]).upper().strip()
         key_answer = str(key_row[col]).upper().strip()
+        pts = (point_values or {}).get(col, 1.0)
+        max_points += pts
 
         if not answer or answer in ('', 'NAN', 'NONE', 'BLANK', '-'):
             blank += 1
-        elif ',' in answer:
-            multi += 1
-        elif answer == key_answer:
+        elif _answer_matches_key(answer, key_answer):
             correct += 1
+            score += pts
+        elif ',' in answer:
+            # Multi-mark that did NOT match a compound key → unexpected multi
+            multi += 1
         else:
             incorrect += 1
 
-    total = len(item_cols)
-    percent = (correct / total * 100) if total > 0 else 0
+    percent = (score / max_points * 100) if max_points > 0 else 0
 
     # Update the score columns (handle all case variants from CSV normalization)
-    # NOTE: This simple recalc treats every question as 1 point (score == correct).
-    # For advanced scoring with weighted points, score would need recalculating
-    # using the key's point values, but corrections are rare in that context.
-    for name, value in [('score', correct), ('correct', correct), ('incorrect', incorrect),
+    score_val = score if score != int(score) else int(score)
+    for name, value in [('score', score_val), ('correct', correct), ('incorrect', incorrect),
                         ('blank', blank), ('multi', multi), ('percent', round(percent, 2))]:
-        col = _find_col(df, [name, name.capitalize(), name.upper()])
-        if col is not None:
-            df.at[student_idx, col] = value
+        col_name = _find_col(df, [name, name.capitalize(), name.upper()])
+        if col_name is not None:
+            df.at[student_idx, col_name] = value
 
 
 def apply_corrections_to_csv(
@@ -683,6 +764,18 @@ def match_students_to_roster(
     _last_col = _find_col(students_df, ['LastName', 'lastname', 'Last', 'last', 'Surname', 'last_name'])
     _first_col = _find_col(students_df, ['FirstName', 'firstname', 'First', 'first', 'first_name'])
 
+    # Build absent_roster dict for suggest_matches() — initially all roster
+    # entries; we'll remove exact matches as we find them.
+    _absent_for_suggest: Dict[str, Dict[str, str]] = {}
+    for _, rrow in roster_df.iterrows():
+        rid = _normalize_id(rrow['StudentID'])
+        _absent_for_suggest[rid] = {
+            'full_name': f"{rrow.get('LastName', '')}, {rrow.get('FirstName', '')}".strip(", "),
+        }
+
+    # Import the unified suggest_matches from score_core
+    from ..score_core import suggest_matches as _suggest_matches
+
     for idx, row in students_df.iterrows():
         scanned_id = _normalize_id(row.get(_sid_col, '')) if _sid_col else ''
         scanned_last = str(row.get(_last_col, '')).strip() if _last_col else ''
@@ -694,16 +787,23 @@ def match_students_to_roster(
             students_df.at[idx, 'MatchConfidence'] = 100.0
             students_df.at[idx, 'MatchType'] = 'exact'
             matched_roster_ids.add(scanned_id)
+            # Remove from absent pool so it isn't suggested for other orphans
+            _absent_for_suggest.pop(scanned_id, None)
             continue
 
-        # No exact match → orphan.  Run fuzzy match for hint info only.
+        # No exact match → orphan.  Run unified fuzzy match for hint info only.
         if scanned_id or scanned_last:
-            matched_id, confidence, match_type = fuzzy_match_student(
-                scanned_id, scanned_last, scanned_first, roster_df
+            orphan_name = f"{scanned_last}, {scanned_first}".strip(", ")
+            matches = _suggest_matches(
+                orphan_id=scanned_id,
+                orphan_name=orphan_name,
+                absent_roster=_absent_for_suggest,
+                max_suggestions=1,
             )
-            if matched_id:
-                students_df.at[idx, 'RosterID'] = matched_id
-                students_df.at[idx, 'MatchConfidence'] = confidence
+            if matches:
+                top = matches[0]
+                students_df.at[idx, 'RosterID'] = top['student_id']
+                students_df.at[idx, 'MatchConfidence'] = float(top['score'])
                 # Override type — regardless of fuzzy confidence this is
                 # still an orphan; the hint is stored but does not promote
                 # the scan to "matched".
@@ -974,9 +1074,9 @@ def generate_report(
 
     if roster_csv:
         roster_df = load_roster(roster_csv)
-        # Remove all KEY rows before matching (multi-version CSVs have one per version)
+        # Remove all KEY/VALUE rows before matching (multi-version CSVs have one per version)
         key_mask = df.apply(
-            lambda row: any(str(cell).strip().upper() == 'KEY' for cell in row), axis=1
+            lambda row: any(str(cell).strip().upper() in ('KEY', 'VALUE') for cell in row), axis=1
         )
         students_only = df[~key_mask].reset_index(drop=True)
         students_only, orphan_scans, absent_students = match_students_to_roster(
@@ -991,11 +1091,15 @@ def generate_report(
         version_col = 'Version'
 
     if version_col:
-        # Get unique versions, filtering out invalid values
+        # Get unique versions, filtering out invalid values.
+        # Strip the auto-detect marker (*) so "B*" maps to base version "B".
         all_versions = df[version_col].dropna().astype(str).str.strip().unique()
-        # Filter out "VERSION" and other non-single-letter values
-        versions = sorted([v for v in all_versions
-                          if v and len(v) <= 2 and v.upper() != 'VERSION' and v != 'KEY'])
+        base_versions: set = set()
+        for v in all_versions:
+            v_clean = v.rstrip("*")
+            if v_clean and len(v_clean) <= 2 and v_clean.upper() not in ('VERSION', 'KEY'):
+                base_versions.add(v_clean)
+        versions = sorted(base_versions)
     else:
         versions = ['A']  # Default single version
 
@@ -1008,12 +1112,30 @@ def generate_report(
     total_n_students = 0
 
     for version in versions:
-        # Filter to only students who took this version
+        # Filter to only students who took this version.
+        # Match both "B" and "B*" (auto-detected) against base version "B".
         if version_col:
-            version_mask = df[version_col].astype(str).str.strip() == str(version).strip()
+            version_mask = df[version_col].astype(str).str.strip().str.rstrip("*") == str(version).strip()
             df_version = df[version_mask].copy()
         else:
             df_version = df.copy()
+
+        # Extract VALUE row data before dropping (for total points calculation)
+        value_mask_v = df_version.apply(
+            lambda row: any(str(cell).strip().upper() == 'VALUE' for cell in row), axis=1
+        )
+        total_pts = float(k)  # default: k questions × 1 point each
+        if value_mask_v.any():
+            val_row = df_version[value_mask_v].iloc[0]
+            total_pts = 0.0
+            for col in item_cols:
+                try:
+                    total_pts += float(val_row.get(col, 1))
+                except (ValueError, TypeError):
+                    total_pts += 1.0
+
+        # Drop VALUE rows before stats (prepare_correctness_matrix only drops KEY)
+        df_version = df_version[~value_mask_v].reset_index(drop=True)
 
         # Find KEY row for this version
         key_row_idx_version = detect_key_row_index(df_version, item_cols, key_label="KEY")
@@ -1052,6 +1174,7 @@ def generate_report(
             'std': std_v,
             'kr20': kr20_v,
             'kr21': kr21_v,
+            'total_points': total_pts,
         }
 
         # Accumulate for pooled stats
@@ -1113,6 +1236,57 @@ def generate_report(
         except Exception:
             corrections_detail = None
 
+    # ---- Collect students with auto-detected versions (Version:blank) ----
+    auto_detected_students: List[Dict] = []
+    if version_col and len(versions) > 1:
+        _id_col = _find_col(df, ['studentid', 'StudentID', 'Student_ID', 'student_id', 'ID', 'id'])
+        _last_col = _find_col(df, ['lastname', 'LastName', 'Last_Name', 'last_name', 'Last'])
+        _first_col = _find_col(df, ['firstname', 'FirstName', 'First_Name', 'first_name', 'First'])
+
+        star_mask = df[version_col].astype(str).str.strip().str.endswith("*")
+        non_student_mask_ad = df.apply(
+            lambda r: any(str(c).strip().upper() in ('KEY', 'VALUE') for c in r), axis=1
+        )
+        key_only_mask_ad = df.apply(
+            lambda r: any(str(c).strip().upper() == 'KEY' for c in r), axis=1
+        )
+        star_students = df[star_mask & ~non_student_mask_ad]
+
+        # Build per-version KEY answer lookup
+        version_keys: Dict[str, Dict[str, str]] = {}
+        for ver in versions:
+            ver_mask = df[version_col].astype(str).str.strip() == ver
+            key_rows = df[ver_mask & key_only_mask_ad]
+            if not key_rows.empty:
+                kr = key_rows.iloc[0]
+                version_keys[ver] = {
+                    col: str(kr[col]).strip().upper()
+                    for col in item_cols
+                    if pd.notna(kr.get(col))
+                }
+
+        for _, srow in star_students.iterrows():
+            auto_ver = str(srow[version_col]).strip().rstrip("*")
+            scores_by_ver: Dict[str, int] = {}
+            for ver, keys in version_keys.items():
+                correct = sum(
+                    1 for col in item_cols
+                    if _answer_matches_key(
+                        str(srow[col]).strip() if pd.notna(srow.get(col)) else "",
+                        keys.get(col, ""),
+                    )
+                )
+                scores_by_ver[ver] = correct
+
+            auto_detected_students.append({
+                'student_id': _normalize_id(srow.get(_id_col, '')) if _id_col else '',
+                'last_name': str(srow.get(_last_col, '')).strip() if _last_col else '',
+                'first_name': str(srow.get(_first_col, '')).strip() if _first_col else '',
+                'auto_version': auto_ver,
+                'scores': scores_by_ver,
+                'total': len(item_cols),
+            })
+
     # Create Excel workbook
     wb = Workbook()
     wb.remove(wb.active)  # Remove default sheet
@@ -1125,6 +1299,7 @@ def generate_report(
         corrections_applied, corrections_detail,
         df=df, item_cols=item_cols, input_csv_path=input_csv,
         scoring_params=scoring_params,
+        auto_detected_students=auto_detected_students,
     )
 
     # ========== PER-VERSION TABS ==========
@@ -1154,6 +1329,7 @@ def create_summary_tab(
     corrections_applied=0, corrections_detail=None,
     df=None, item_cols=None, input_csv_path=None,
     scoring_params=None,
+    auto_detected_students=None,
 ):
     """Create summary tab with statistics, flagged items, and scoring parameters.
 
@@ -1215,8 +1391,8 @@ def create_summary_tab(
         ws[f'A{row}'].font = Font(size=13, bold=True)
         row += 1
 
-        ver_headers = ["", "N Students", "Mean Score", "Mean %", "Std Dev",
-                        "KR-20", "KR-21"]
+        ver_headers = ["", "N Students", "Total Points", "Mean Score", "Mean %",
+                        "Std Dev", "KR-20", "KR-21"]
         for col_idx, hdr in enumerate(ver_headers, start=1):
             ws.cell(row=row, column=col_idx, value=hdr)
         format_header_row(ws, row)
@@ -1225,6 +1401,7 @@ def create_summary_tab(
         for ver in versions:
             vs = version_stats[ver]
             ver_mean = vs['mean']
+            total_pts = vs.get('total_points', k)
             ver_pct = (ver_mean / k * 100) if k > 0 else 0.0
             ver_kr20 = vs['kr20']
             ver_kr21 = vs['kr21']
@@ -1232,11 +1409,12 @@ def create_summary_tab(
             ws.cell(row=row, column=1, value=f"Version {ver}")
             ws.cell(row=row, column=1).font = FONT_BOLD
             ws.cell(row=row, column=2, value=vs['n_students'])
-            ws.cell(row=row, column=3, value=f"{ver_mean:.2f}")
-            ws.cell(row=row, column=4, value=f"{ver_pct:.1f}%")
-            ws.cell(row=row, column=5, value=f"{vs['std']:.2f}")
-            ws.cell(row=row, column=6, value=f"{ver_kr20:.3f}" if not np.isnan(ver_kr20) else "N/A")
-            ws.cell(row=row, column=7, value=f"{ver_kr21:.3f}" if not np.isnan(ver_kr21) else "N/A")
+            ws.cell(row=row, column=3, value=int(total_pts) if total_pts == int(total_pts) else total_pts)
+            ws.cell(row=row, column=4, value=f"{ver_mean:.2f}")
+            ws.cell(row=row, column=5, value=f"{ver_pct:.1f}%")
+            ws.cell(row=row, column=6, value=f"{vs['std']:.2f}")
+            ws.cell(row=row, column=7, value=f"{ver_kr20:.3f}" if not np.isnan(ver_kr20) else "N/A")
+            ws.cell(row=row, column=8, value=f"{ver_kr21:.3f}" if not np.isnan(ver_kr21) else "N/A")
 
             for col_idx in range(1, len(ver_headers) + 1):
                 ws.cell(row=row, column=col_idx).border = BORDER_THIN
@@ -1252,9 +1430,15 @@ def create_summary_tab(
     ws[f'A{row}'].font = Font(size=13, bold=True)
     row += 1
 
+    max_total_pts = max(
+        (vs.get('total_points', k) for vs in version_stats.values()), default=float(k)
+    )
+    max_pts_display = int(max_total_pts) if max_total_pts == int(max_total_pts) else max_total_pts
+
     stats = [
         ("Number of Students", n_students),
         ("Number of Questions", k),
+        ("Total Points Possible", max_pts_display),
         ("Number of Versions", n_versions),
         ("Mean Score", f"{mean_total:.2f}"),
         ("Mean Percentage", f"{mean_total/k*100:.1f}%" if k > 0 else "N/A"),
@@ -1298,6 +1482,8 @@ def create_summary_tab(
         ws, row, df, item_cols,
         orphan_scans, absent_students,
         corrections_detail, corrections_applied,
+        auto_detected_students=auto_detected_students or [],
+        versions=versions,
     )
 
     # ------------------------------------------------------------------ #
@@ -1321,8 +1507,6 @@ def create_summary_tab(
         # Display-friendly names for common scoring params
         _labels = {
             'min_fill': 'Min Fill %',
-            'top2_ratio': 'Top-2 Ratio %',
-            'min_top2_diff': 'Min Top-2 Diff',
             'fixed_thresh': 'Fixed Threshold',
             'auto_calibrate_thresh': 'Auto Calibrate Threshold',
             'calibrate_background': 'Background Calibration',
@@ -1347,6 +1531,8 @@ def _write_flagged_items_section(
     ws, start_row, df, item_cols,
     orphan_scans, absent_students,
     corrections_detail, corrections_applied,
+    auto_detected_students=None,
+    versions=None,
 ):
     """Write the inline flagged-items section on the Summary tab.
 
@@ -1413,11 +1599,11 @@ def _write_flagged_items_section(
             if oid:
                 orphan_lookup[oid] = o
 
-    # ---- Filter to student rows only ----
-    key_mask = df.apply(
-        lambda r: any(str(cell).strip().upper() == 'KEY' for cell in r), axis=1
+    # ---- Filter to student rows only (exclude KEY and VALUE rows) ----
+    non_student_mask = df.apply(
+        lambda r: any(str(cell).strip().upper() in ('KEY', 'VALUE') for cell in r), axis=1
     )
-    students = df[~key_mask].copy()
+    students = df[~non_student_mask].copy()
 
     # ---- Collect flagged rows ----
     flagged_rows = []
@@ -1440,6 +1626,12 @@ def _write_flagged_items_section(
             issues.append(f"{blank_n} blank")
         if multi_n > 0:
             issues.append(f"{multi_n} multi")
+
+        # Check for auto-detected version
+        if version_col:
+            raw_ver = str(srow.get(version_col, '')).strip()
+            if raw_ver.endswith("*"):
+                issues.append("version auto-detected")
 
         sid = _normalize_id(srow.get(id_col, '')) if id_col else ''
 
@@ -1508,6 +1700,48 @@ def _write_flagged_items_section(
 
         row += 1  # spacer after absent students
 
+    # ---- Version Not Marked (auto-detected) ----
+    if auto_detected_students and versions and len(versions) > 1:
+        n_auto = len(auto_detected_students)
+        ws.cell(
+            row=row, column=1,
+            value=f"\u26a0 {n_auto} student(s) did not mark a version "
+                  f"(assigned by best score match)",
+        )
+        ws.cell(row=row, column=1).fill = COLOR_WARNING
+        ws.cell(row=row, column=1).font = FONT_BOLD
+        row += 1
+
+        # Header: Student ID | Last Name | First Name | Assigned | Version A | Version B | ...
+        auto_headers = ["Student ID", "Last Name", "First Name", "Assigned"]
+        for ver in versions:
+            auto_headers.append(f"Version {ver}")
+        for col_idx, hdr in enumerate(auto_headers, start=1):
+            ws.cell(row=row, column=col_idx, value=hdr)
+        format_header_row(ws, row)
+        row += 1
+
+        total_q = auto_detected_students[0]['total'] if auto_detected_students else 0
+        for student in auto_detected_students:
+            cell = ws.cell(row=row, column=1, value=student['student_id'])
+            cell.number_format = '@'
+            ws.cell(row=row, column=2, value=student['last_name'])
+            ws.cell(row=row, column=3, value=student['first_name'])
+            ws.cell(row=row, column=4, value=student['auto_version'])
+            ws.cell(row=row, column=4).font = FONT_BOLD
+
+            for v_idx, ver in enumerate(versions):
+                score = student['scores'].get(ver, 0)
+                col_num = 5 + v_idx
+                ws.cell(row=row, column=col_num, value=f"{score}/{total_q}")
+                # Highlight the assigned version's score in green
+                if ver == student['auto_version']:
+                    ws.cell(row=row, column=col_num).fill = COLOR_GOOD
+                    ws.cell(row=row, column=col_num).font = FONT_BOLD
+            row += 1
+
+        row += 1  # spacer
+
     # ---- Write flagged items table ----
     headers = ['Student ID', 'Last Name', 'First Name', 'Version', 'Issues',
                'Problem Questions', 'Corrections Applied']
@@ -1566,7 +1800,8 @@ def create_version_tab(
     version_col = 'version' if 'version' in df_full.columns else 'Version' if 'Version' in df_full.columns else None
 
     if version_col:
-        version_mask = df_full[version_col].astype(str).str.strip() == str(version).strip()
+        # Match both "B" and "B*" (auto-detected) against base version "B"
+        version_mask = df_full[version_col].astype(str).str.strip().str.rstrip("*") == str(version).strip()
         df_version = df_full[version_mask].copy()
     else:
         df_version = df_full.copy()
@@ -1576,10 +1811,16 @@ def create_version_tab(
         lambda row: any(str(cell).strip().upper() == 'KEY' for cell in row), axis=1
     )]
 
-    # Get student rows
-    student_rows = df_version[~df_version.apply(
-        lambda row: any(str(cell).strip().upper() == 'KEY' for cell in row), axis=1
+    # Get VALUE row for this version (point values per question)
+    value_row_data = df_version[df_version.apply(
+        lambda row: any(str(cell).strip().upper() == 'VALUE' for cell in row), axis=1
     )]
+
+    # Get student rows (exclude KEY and VALUE rows)
+    non_student_mask = df_version.apply(
+        lambda row: any(str(cell).strip().upper() in ('KEY', 'VALUE') for cell in row), axis=1
+    )
+    student_rows = df_version[~non_student_mask]
 
     # Determine columns to display in the desired order:
     # LastName, FirstName, StudentID, Issue, correct, incorrect, blank, multi, percent, Version, Q1, Q2, ...
@@ -1614,17 +1855,36 @@ def create_version_tab(
     # Build column index map for quick lookup
     col_idx_map = {col: idx + 1 for idx, col in enumerate(display_cols)}
 
-    # Write header
-    for col_idx, col_name in enumerate(display_cols, start=1):
-        ws.cell(row=1, column=col_idx, value=col_name)
-    format_header_row(ws, 1)
-
     # Get KEY answers for this version
     key_answers = {}
     if not key_row_data.empty:
         key_row = key_row_data.iloc[0]
         for col in item_cols:
             key_answers[col] = str(key_row.get(col, '')).strip().upper()
+
+    # Get point values per question from VALUE row (default 1)
+    point_values: Dict[str, float] = {}
+    if not value_row_data.empty:
+        val_row = value_row_data.iloc[0]
+        for col in item_cols:
+            try:
+                point_values[col] = float(val_row.get(col, 1))
+            except (ValueError, TypeError):
+                point_values[col] = 1.0
+    else:
+        for col in item_cols:
+            point_values[col] = 1.0
+
+    total_pts = sum(point_values.values())
+    total_pts_display = int(total_pts) if total_pts == int(total_pts) else total_pts
+
+    # Write header (with enriched Score column name)
+    for col_idx, col_name in enumerate(display_cols, start=1):
+        header_text = col_name
+        if col_name.lower() == 'score':
+            header_text = f"Score (out of {total_pts_display})"
+        ws.cell(row=1, column=col_idx, value=header_text)
+    format_header_row(ws, 1)
 
     # Write student rows
     row_num = 2
@@ -1639,6 +1899,12 @@ def create_version_tab(
             issues.append(f"{blank_count} blank")
         if multi_count > 0:
             issues.append(f"{multi_count} multi")
+
+        # Check for auto-detected version (version bubble blank)
+        if version_col:
+            raw_ver = str(student_row.get(version_col, '')).strip()
+            if raw_ver.endswith("*"):
+                issues.append("version auto-detected")
 
         # Check roster matching (if available)
         if roster_df is not None:
@@ -1694,15 +1960,19 @@ def create_version_tab(
                         cell.alignment = Alignment(horizontal='center')
                     elif is_multi:
                         cell = ws.cell(row=row_num, column=col_idx, value=value)
-                        cell.fill = COLOR_MULTI
                         cell.alignment = Alignment(horizontal='center')
+                        # Only colour multi-mark orange if it does NOT match
+                        # a compound key (e.g. B&E).  Correct multis stay plain.
+                        key_ans = key_answers.get(col_name, '')
+                        if not key_ans or not _answer_matches_key(student_answer, key_ans):
+                            cell.fill = COLOR_MULTI
                     else:
                         cell = ws.cell(row=row_num, column=col_idx, value=value)
                         cell.alignment = Alignment(horizontal='center')
                         # Highlight incorrect answers in light red (only if not blank/multi)
                         if key_answers.get(col_name):
                             correct_answer = key_answers[col_name]
-                            if student_answer and student_answer != correct_answer:
+                            if student_answer and not _answer_matches_key(student_answer, correct_answer):
                                 cell.fill = PatternFill(start_color="FFD7D7", end_color="FFD7D7", fill_type="solid")
                 else:
                     # Non-question columns - just write the value
@@ -1720,7 +1990,22 @@ def create_version_tab(
     for col_name in item_cols:
         col_idx = col_idx_map.get(col_name)
         if col_idx and col_name in key_answers:
-            ws.cell(row=row_num, column=col_idx, value=key_answers[col_name])
+            cell = ws.cell(row=row_num, column=col_idx, value=key_answers[col_name])
+            cell.alignment = Alignment(horizontal='center')
+    format_key_row(ws, row_num)
+    row_num += 1
+
+    # Add VALUE row (max points per question)
+    has_non_default = any(v != 1.0 for v in point_values.values())
+    # Always write the VALUE row so teachers see it, even if all 1s
+    ws.cell(row=row_num, column=1, value=f"Question Value (total points possible {total_pts_display})")
+    ws.cell(row=row_num, column=1).font = FONT_BOLD
+    for col_name in item_cols:
+        col_idx = col_idx_map.get(col_name)
+        if col_idx:
+            pv = point_values.get(col_name, 1.0)
+            cell = ws.cell(row=row_num, column=col_idx, value=int(pv) if pv == int(pv) else pv)
+            cell.alignment = Alignment(horizontal='center')
     format_key_row(ws, row_num)
     row_num += 1
 
@@ -1731,7 +2016,8 @@ def create_version_tab(
         col_idx = col_idx_map.get(col_name)
         if col_idx:
             pct = difficulty[col_name] * 100 if not np.isnan(difficulty[col_name]) else 0
-            ws.cell(row=row_num, column=col_idx, value=f"{pct:.1f}%")
+            cell = ws.cell(row=row_num, column=col_idx, value=f"{pct:.1f}%")
+            cell.alignment = Alignment(horizontal='center')
     row_num += 1
 
     ws.cell(row=row_num, column=1, value="Point-Biserial")
@@ -1742,6 +2028,7 @@ def create_version_tab(
             pb = pb_vals[col_name]
             if not np.isnan(pb):
                 cell = ws.cell(row=row_num, column=col_idx, value=f"{pb:.3f}")
+                cell.alignment = Alignment(horizontal='center')
                 # Color code based on quality
                 if pb >= 0.20:
                     cell.fill = COLOR_GOOD
@@ -1769,6 +2056,7 @@ def create_version_tab(
                     fill = COLOR_PROBLEM
                 cell = ws.cell(row=row_num, column=col_idx, value=quality)
                 cell.fill = fill
+                cell.alignment = Alignment(horizontal='center')
     row_num += 1
 
     # ---- Per-version Response Summary ----
@@ -1817,15 +2105,23 @@ def create_version_tab(
         correct_count = 0
         correct_answer = correct_answers.get(col_name, '')
 
+        # Determine if this key expects multiple bubbles (AND/partial)
+        _is_compound_key = bool(correct_answer and any(op in correct_answer for op in ('&', '@', '~')))
+
         for answer in answers:
             if not answer or answer in ('', 'NAN', 'NONE', 'BLANK', '?', '-'):
                 blank_count += 1
+            elif _answer_matches_key(answer, correct_answer):
+                correct_count += 1
+                # For compound keys, bucket under the key representation
+                if _is_compound_key:
+                    counts[correct_answer] = counts.get(correct_answer, 0) + 1
+                else:
+                    counts[answer] = counts.get(answer, 0) + 1
             elif ',' in answer or answer == 'MULTI' or (len(answer) > 1 and answer not in sorted_options):
                 multi_count += 1
             else:
                 counts[answer] = counts.get(answer, 0) + 1
-                if answer == correct_answer:
-                    correct_count += 1
 
         pct_correct = (correct_count / n_ver_students * 100) if n_ver_students > 0 else 0
 
@@ -2068,11 +2364,11 @@ def create_flagged_items_tab(
                 if sid and q:
                     corr_lookup.setdefault(sid, []).append(f"{q}→{a}")
 
-    # Filter to KEY-excluded rows
-    key_mask = df.apply(
-        lambda row: any(str(cell).strip().upper() == 'KEY' for cell in row), axis=1
+    # Filter to student rows only (exclude KEY and VALUE rows)
+    non_student_mask = df.apply(
+        lambda row: any(str(cell).strip().upper() in ('KEY', 'VALUE') for cell in row), axis=1
     )
-    students = df[~key_mask].copy()
+    students = df[~non_student_mask].copy()
 
     # Determine which students are flagged
     flagged_rows = []
