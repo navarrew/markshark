@@ -35,6 +35,7 @@ from .pages.score_only import ScoreOnlyPage
 from .pages.report_only import ReportOnlyPage
 from .pages.pdf_tools import PdfToolsPage
 from .pages.lms_integration import LmsIntegrationPage
+from .pages.welcome_page import WelcomePage
 
 #import the dialog that will be used in the main window and the menu bar
 from .dialogs.about import AboutDialog
@@ -196,6 +197,7 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
 
         # Create pages
+        self.welcome_page = WelcomePage(main_window=self)
         self.quick_grade_page = QuickGradePage()
         self.review_page = ReviewPanelPage()
         self.template_manager_page = TemplateManagerPage()
@@ -213,6 +215,10 @@ class MainWindow(QMainWindow):
         # Define sidebar structure: (label, key, widget)
         # Use _DIVIDER as a separator between groups.
         nav_entries = [
+            # --- Welcome ---
+            ("Welcome",           "welcome",          self.welcome_page),
+            # --- Divider ---
+            _DIVIDER,
             # --- Main ---
             ("Grader",            "quick_grade",      self.quick_grade_page),
             ("Review & Correct",  "review",           self.review_page),
