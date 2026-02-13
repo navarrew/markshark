@@ -212,3 +212,6 @@ marimo/_lsp/
 __marimo__/
 
 .DS_Store
+
+# Git worktrees (local only)
+.worktrees/
