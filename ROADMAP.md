@@ -4,27 +4,14 @@ Planned features and improvements, roughly ordered by priority.
 
 ---
 
-## Near-Term
+- **1.1.3** - add a welcome page that helps novices navigate options and prompts them for key steps.  Improve documentation.  Add tutorial and mock dataset.
+- **1.1.4** - add a 'light' scoring/reporting mode that doesn't require student IDs and generates a simplified report and score sheet
+- **1.1.5** - improve template downloadability and include QR codes and a template registry so the scans can be autoidentified and the map applied.  Include an area for pdf annotation tow write out the answers and student ID on the pdf so teacher can easily summarize.
+- **1.1.6** - improve key management and making with a dedicated utility
+- **1.1.7** - PDF page corrector and alignment compare modes - add to PDF utilities to allow teachers to flip and manually rotate/tweak poorlyscanned pages.  Maybe also do gray correction or some other adjustments as well.  Clean up PDFs before alignments to improve them.
 
-### Mock Dataset: AND/OR Answer Keys
-- Generate compound answer keys (`B&C` for AND, `B^C` for OR) at configurable rates
-- Produce realistic student errors: partial fills for AND, multi-fills for OR
-- Scoring engine already supports these modes — this is mock-data-only work
-- **Status:** Implemented (claude/ecstatic-swartz branch)
-
-### Mock Dataset: ID Mis-entry & Missing Version Errors
-- Corrupt student IDs (typo, transposition, extra/missing digit)
-- Skip version zone filling to simulate blank version fields
-- Ground-truth CSV tracks OriginalID vs BubbledID
-- **Status:** Implemented (claude/ecstatic-swartz branch)
-
-### Map Viewer: Go-to-Page Spinbox
-- Direct page jump via QSpinBox instead of sequential Prev/Next only
-- **Status:** Implemented (claude/ecstatic-swartz branch)
 
 ---
-
-## Medium-Term — New Modules
 
 ### Key Helper / Key Maker Utility
 A dedicated GUI page to make it easy for teachers to create, import, and edit answer keys in MarkShark format. Two main workflows:
