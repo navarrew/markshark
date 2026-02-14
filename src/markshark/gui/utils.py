@@ -138,7 +138,7 @@ def create_new_project(parent_widget=None) -> Path | None:
     if not workdir or not Path(workdir).is_dir():
         workdir = QFileDialog.getExistingDirectory(
             parent_widget,
-            "Select Working Directory",
+            "Select Course Folder",
             str(Path.home()),
         )
         if not workdir:
@@ -149,8 +149,8 @@ def create_new_project(parent_widget=None) -> Path | None:
     # Prompt for project name
     name, ok = QInputDialog.getText(
         parent_widget,
-        "New Project",
-        f"Enter project name:\n(will be created in {workdir})",
+        "New Assessment",
+        f"Enter assessment name:\n(will be created in {workdir})",
     )
     if not ok or not name:
         return None
@@ -162,7 +162,7 @@ def create_new_project(parent_widget=None) -> Path | None:
     if not safe_name:
         QMessageBox.warning(
             parent_widget, "Invalid Name",
-            "Please enter a valid project name.",
+            "Please enter a valid assessment name.",
         )
         return None
 
@@ -176,7 +176,7 @@ def create_new_project(parent_widget=None) -> Path | None:
     except Exception as e:
         QMessageBox.warning(
             parent_widget, "Error",
-            f"Could not create project: {e}",
+            f"Could not create assessment: {e}",
         )
         return None
 

@@ -418,57 +418,12 @@ class WelcomePage(QWidget):
 
         content_layout.addLayout(top_tiles)
 
-        # --- "Where MarkShark keeps your files" tile ---
+        # --- "Set Up Your Courses!" tile ---
         content_layout.addSpacing(16)
 
-        workdir_tile = QFrame()
-        workdir_tile.setObjectName("workdir_tile")
-        workdir_tile.setStyleSheet(
-            "QFrame#workdir_tile { background-color: #f8f8f8; "
-            "border: 1px solid #ddd; border-radius: 10px; }"
-        )
-        wd_layout = QVBoxLayout(workdir_tile)
-        wd_layout.setContentsMargins(20, 16, 20, 16)
-        wd_layout.setSpacing(8)
-
-        wd_title = QLabel("Where MarkShark Keeps Your Files")
-        wd_title.setStyleSheet(
-            "font-size: 15px; font-weight: bold; color: #1a1a1a; "
-            "background: transparent; border: none;"
-        )
-        wd_layout.addWidget(wd_title)
-
-        wd_desc = QLabel(
-            "Set a <b>working directory</b> for each course you teach "
-            "(e.g. <i>Biology 101</i> or <i>AP History</i>). "
-            "Inside that folder, each <b>project</b> is one test — "
-            "like <i>Midterm 1</i> or <i>Final Exam 2025</i>. "
-            "MarkShark creates the sub-folders automatically."
-        )
-        wd_desc.setWordWrap(True)
-        wd_desc.setStyleSheet(
-            "font-size: 12px; color: #555; background: transparent; border: none;"
-        )
-        wd_layout.addWidget(wd_desc)
-
-        # Current working directory readout
-        wd_current_row = QHBoxLayout()
-        wd_current_label = QLabel("Your current working directory:")
-        wd_current_label.setStyleSheet(
-            "font-size: 12px; font-weight: bold; color: #333; "
-            "background: transparent; border: none;"
-        )
-        wd_current_row.addWidget(wd_current_label)
-
-        self.wd_path_label = QLabel()
-        self.wd_path_label.setStyleSheet(
-            "font-size: 12px; color: #777; font-style: italic; "
-            "background: transparent; border: none;"
-        )
-        wd_current_row.addWidget(self.wd_path_label, 1)
-        wd_layout.addLayout(wd_current_row)
-
-        content_layout.addWidget(workdir_tile)
+        self.courses_tile_container = QVBoxLayout()
+        self.courses_tile_container.setSpacing(0)
+        content_layout.addLayout(self.courses_tile_container)
 
         # --- Recent Projects section ---
         content_layout.addSpacing(16)
@@ -477,29 +432,224 @@ class WelcomePage(QWidget):
         content_layout.addLayout(self.projects_container)
 
         self._populate_recent_projects()
-        self._refresh_working_dir_label()
+        self._refresh_course_list()
 
         content_layout.addStretch()
 
-    # ----- Working directory -----
+    # ----- Course folders -----
 
-    def _refresh_working_dir_label(self):
-        """Update the working-directory readout from SettingsStore."""
-        from ..models.settings_store import SettingsStore
-        settings = SettingsStore()
-        workdir = settings.value("project/working_dir", "")
-        if workdir and Path(workdir).is_dir():
-            self.wd_path_label.setText(str(workdir))
-            self.wd_path_label.setStyleSheet(
-                "font-size: 12px; color: #1a1a1a; font-style: normal; "
-                "background: transparent; border: none;"
+    def _refresh_course_list(self):
+        """Build the courses tile from scratch each time."""
+        # Clear existing tile
+        while self.courses_tile_container.count():
+            item = self.courses_tile_container.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if ProjectRegistry is None:
+            return
+
+        try:
+            registry = ProjectRegistry()
+            courses = registry.list_courses()
+        except Exception:
+            courses = []
+
+        # Build the tile frame (same pattern as Recent Assessments)
+        tile = QFrame()
+        tile.setObjectName("courses_tile")
+        tile.setStyleSheet(
+            "QFrame#courses_tile { background-color: #ffffff; "
+            "border: 1px solid #e0e0e0; border-radius: 10px; }"
+        )
+        tile_layout = QVBoxLayout(tile)
+        tile_layout.setContentsMargins(0, 0, 0, 0)
+        tile_layout.setSpacing(0)
+
+        # ── Header bar ──
+        header_widget = QWidget()
+        header_widget.setStyleSheet(
+            f"background-color: {_BLUE}; "
+            "border-top-left-radius: 10px; border-top-right-radius: 10px;"
+        )
+        header_row = QHBoxLayout(header_widget)
+        header_row.setContentsMargins(14, 8, 10, 8)
+
+        header_label = QLabel("Set Up Your Courses!")
+        header_label.setStyleSheet(
+            "font-size: 14px; font-weight: bold; color: white; background: transparent;"
+        )
+        header_row.addWidget(header_label)
+
+        header_row.addStretch()
+
+        _GHOST_BTN = (
+            "QPushButton { background-color: rgba(255,255,255,0.2); color: white; "
+            "padding: 4px 12px; border-radius: 4px; font-size: 11px; "
+            "border: 1px solid rgba(255,255,255,0.4); }"
+            "QPushButton:hover { background-color: rgba(255,255,255,0.35); }"
+        )
+
+        new_course_btn = QPushButton("+ New Course")
+        new_course_btn.setStyleSheet(_GHOST_BTN)
+        new_course_btn.clicked.connect(self._on_new_course)
+        header_row.addWidget(new_course_btn)
+
+        manage_btn = QPushButton("Course Manager")
+        manage_btn.setStyleSheet(_GHOST_BTN)
+        manage_btn.clicked.connect(self._on_manage_projects)
+        header_row.addWidget(manage_btn)
+
+        tile_layout.addWidget(header_widget)
+
+        # ── Helpful description text ──
+        desc_widget = QWidget()
+        desc_widget.setStyleSheet("background: transparent;")
+        desc_layout = QVBoxLayout(desc_widget)
+        desc_layout.setContentsMargins(14, 10, 14, 6)
+
+        desc = QLabel(
+            "Create a <b>course folder</b> for each class you teach "
+            "(e.g. <i>Biology 101</i> or <i>AP History</i>). "
+            "Inside that folder, each <b>assessment</b> is one test — "
+            "like <i>Midterm 1</i> or <i>Final Exam 2025</i>. "
+            "MarkShark creates the sub-folders automatically."
+        )
+        desc.setWordWrap(True)
+        desc.setStyleSheet(
+            "font-size: 12px; color: #555; background: transparent; border: none;"
+        )
+        desc_layout.addWidget(desc)
+
+        tile_layout.addWidget(desc_widget)
+
+        # ── Course rows ──
+        if not courses:
+            empty_widget = QWidget()
+            empty_widget.setStyleSheet("background: transparent;")
+            empty_layout = QHBoxLayout(empty_widget)
+            empty_layout.setContentsMargins(14, 8, 14, 12)
+
+            empty_label = QLabel(
+                "No courses yet — click <b>+ New Course</b> above to get started!"
             )
-        else:
-            self.wd_path_label.setText("(none currently selected)")
-            self.wd_path_label.setStyleSheet(
+            empty_label.setWordWrap(True)
+            empty_label.setStyleSheet(
                 "font-size: 12px; color: #999; font-style: italic; "
                 "background: transparent; border: none;"
             )
+            empty_layout.addWidget(empty_label)
+            tile_layout.addWidget(empty_widget)
+        else:
+            # Separator between description and first row
+            sep = QFrame()
+            sep.setFrameShape(QFrame.Shape.HLine)
+            sep.setStyleSheet("color: #e9ecef;")
+            sep.setFixedHeight(1)
+            tile_layout.addWidget(sep)
+
+            display = courses[:6]
+            for i, course in enumerate(display):
+                row = self._make_course_row(course)
+                tile_layout.addWidget(row)
+                if i < len(display) - 1:
+                    sep = QFrame()
+                    sep.setFrameShape(QFrame.Shape.HLine)
+                    sep.setStyleSheet("color: #e9ecef;")
+                    sep.setFixedHeight(1)
+                    tile_layout.addWidget(sep)
+
+            if len(courses) > 6:
+                more_widget = QWidget()
+                more_widget.setStyleSheet("background: transparent;")
+                more_layout = QHBoxLayout(more_widget)
+                more_layout.setContentsMargins(14, 4, 14, 8)
+                more_label = QLabel(
+                    f"…and {len(courses) - 6} more — open the "
+                    "<b>Course Manager</b> to see all."
+                )
+                more_label.setStyleSheet(
+                    "font-size: 11px; color: #999; font-style: italic; "
+                    "background: transparent; border: none;"
+                )
+                more_layout.addWidget(more_label)
+                tile_layout.addWidget(more_widget)
+
+        self.courses_tile_container.addWidget(tile)
+
+    def _make_course_row(self, course: dict) -> QWidget:
+        """Create a compact row for one course inside the courses tile."""
+        course_path = course.get("path", "")
+        missing = not Path(course_path).is_dir() if course_path else True
+
+        row = QWidget()
+        row.setStyleSheet(
+            "QWidget { background: transparent; }"
+            "QWidget:hover { background-color: #eff6ff; }"
+        )
+        if not missing:
+            row.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(14, 8, 14, 8)
+        row_layout.setSpacing(16)
+
+        # Course name
+        name = course.get("name", "Unnamed")
+        if missing:
+            name_label = QLabel(f"\u26A0 <b>{name}</b>")
+            name_label.setToolTip(
+                "Course folder not found — it may have been moved or renamed."
+            )
+            name_label.setStyleSheet("font-size: 13px; color: #b91c1c;")
+        else:
+            name_label = QLabel(f"<b>{name}</b>")
+            name_label.setStyleSheet("font-size: 13px; color: #1a1a1a;")
+        name_label.setFixedWidth(170)
+        row_layout.addWidget(name_label)
+
+        # Path
+        path_label = QLabel(course_path)
+        if missing:
+            path_label.setStyleSheet("font-size: 11px; color: #b91c1c;")
+        else:
+            path_label.setStyleSheet("font-size: 11px; color: #777;")
+        path_label.setWordWrap(False)
+        row_layout.addWidget(path_label, 1)
+
+        # Assessment count
+        try:
+            registry = ProjectRegistry()
+            grouped = registry.list_by_course()
+            count = len(grouped.get(course_path, []))
+        except Exception:
+            count = 0
+        count_label = QLabel(
+            f"{count} assessment{'s' if count != 1 else ''}"
+        )
+        count_label.setStyleSheet("font-size: 11px; color: #999;")
+        count_label.setFixedWidth(100)
+        row_layout.addWidget(count_label)
+
+        # Open Folder button
+        folder_btn = QPushButton("Open Folder")
+        folder_btn.setStyleSheet(
+            "QPushButton { background-color: #e9ecef; color: #333; "
+            "padding: 4px 14px; border-radius: 4px; font-size: 11px; }"
+            "QPushButton:hover { background-color: #dee2e6; }"
+            "QPushButton:disabled { background-color: #f5f5f5; color: #bbb; }"
+        )
+        folder_btn.setEnabled(not missing)
+        folder_btn.clicked.connect(
+            lambda checked, p=course_path: self._open_folder(p)
+        )
+        row_layout.addWidget(folder_btn)
+
+        # Make the whole row clickable → go to Course Manager
+        if not missing:
+            row.mousePressEvent = lambda event: self._on_manage_projects()
+
+        return row
 
     # ----- Recent projects -----
 
@@ -513,7 +663,7 @@ class WelcomePage(QWidget):
                 widget.deleteLater()
 
         if ProjectRegistry is None:
-            empty = QLabel("Project registry not available.")
+            empty = QLabel("Assessment registry not available.")
             empty.setStyleSheet("color: #888; font-size: 13px; padding: 12px;")
             self.projects_container.addWidget(empty)
             return
@@ -526,8 +676,8 @@ class WelcomePage(QWidget):
 
         if not projects:
             empty = QLabel(
-                "No recent projects yet. Use the Grader to create your first project, "
-                "or open the Project Manager to set up a new one."
+                "No recent assessments yet. Use the Grader to create your first assessment, "
+                "or open the Course Manager to set up a new one."
             )
             empty.setWordWrap(True)
             empty.setStyleSheet(
@@ -563,7 +713,7 @@ class WelcomePage(QWidget):
         header_row = QHBoxLayout(header_widget)
         header_row.setContentsMargins(14, 8, 10, 8)
 
-        header_label = QLabel("Recent Projects")
+        header_label = QLabel("Recent Assessments")
         header_label.setStyleSheet(
             "font-size: 14px; font-weight: bold; color: white; background: transparent;"
         )
@@ -571,7 +721,7 @@ class WelcomePage(QWidget):
 
         header_row.addStretch()
 
-        new_proj_btn = QPushButton("+ New Project")
+        new_proj_btn = QPushButton("+ New Assessment")
         new_proj_btn.setStyleSheet(
             "QPushButton { background-color: rgba(255,255,255,0.2); color: white; "
             "padding: 4px 12px; border-radius: 4px; font-size: 11px; border: 1px solid rgba(255,255,255,0.4); }"
@@ -580,7 +730,7 @@ class WelcomePage(QWidget):
         new_proj_btn.clicked.connect(self._on_new_project)
         header_row.addWidget(new_proj_btn)
 
-        manage_btn = QPushButton("Manage All Projects")
+        manage_btn = QPushButton("Course Manager")
         manage_btn.setStyleSheet(
             "QPushButton { background-color: rgba(255,255,255,0.2); color: white; "
             "padding: 4px 12px; border-radius: 4px; font-size: 11px; border: 1px solid rgba(255,255,255,0.4); }"
@@ -627,7 +777,7 @@ class WelcomePage(QWidget):
         name = proj.get("name", "Unnamed")
         if missing:
             name_label = QLabel(f"\u26A0 <b>{name}</b>")
-            name_label.setToolTip("Project folder not found — it may have been moved or deleted.")
+            name_label.setToolTip("Assessment folder not found — it may have been moved or deleted.")
             name_label.setStyleSheet("font-size: 13px; color: #b91c1c;")
         else:
             name_label = QLabel(f"<b>{name}</b>")
@@ -726,6 +876,31 @@ class WelcomePage(QWidget):
             self._main_window.navigate_to_grader(str(project_path))
             self._populate_recent_projects()
 
+    def _on_new_course(self):
+        """Create a new course via the CourseDialog and refresh the tile."""
+        from ..dialogs import CourseDialog
+
+        dlg = CourseDialog(
+            self,
+            title="Create New Course",
+            confirm_label="Create Course",
+        )
+        if dlg.exec() != CourseDialog.DialogCode.Accepted:
+            return
+
+        data = dlg.result_data()
+        if not data:
+            return
+
+        course_path = Path(data["course_path"])
+        try:
+            course_path.mkdir(parents=True, exist_ok=True)
+            registry = ProjectRegistry()
+            registry.register_course(course_path, data["name"])
+            self._refresh_course_list()
+        except Exception:
+            pass
+
     def _on_manage_projects(self):
         """Navigate to the Project Manager page."""
         if self._main_window:
@@ -735,4 +910,4 @@ class WelcomePage(QWidget):
         """Refresh recent projects and working dir when the page becomes visible."""
         super().showEvent(event)
         self._populate_recent_projects()
-        self._refresh_working_dir_label()
+        self._refresh_course_list()

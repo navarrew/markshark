@@ -8,18 +8,18 @@ MarkShark is an optical mark recognition (OMR) system for bubble sheet grading.
 ### Typical Workflow
 1. **Scan** your bubble sheets to a single PDF (use a document scanner or scanning app).
 2. **Open MarkShark** and go to the **Grader** page.
-3. **Select your project folder** (or create a new one).
+3. **Select your assessment** (or create a new one).
 4. **Load your scans**, answer key, and optionally a roster.
 5. Click **Grade** - MarkShark will align, score, and generate results.
 6. **Review & Correct** flagged items on the Review page.
 7. **Generate a report** with statistics, item analysis, and per-student details.
 
-### File Structure and MarkShark Projects
-MarkShark groups files together into projects.  Typically a 'project' is a single test (like 'BIO101 2025 midterm 1').  You can have a main working directory for a class (like BIO101) with multiple projects inside (midterm 1, midterm 2, final exam, etc.).
-When you launch a new project you typically upload your scanned student bubblesheets, your test key, and (optionally) a class roster.  
+### File Structure and Assessments
+MarkShark groups files together into assessments.  Typically an assessment is a single test (like 'BIO101 2025 midterm 1').  You can have a course folder for a class (like BIO101) with multiple assessments inside (midterm 1, midterm 2, final exam, etc.).
+When you create a new assessment you typically upload your scanned student bubblesheets, your test key, and (optionally) a class roster.
 
 ```
-my_project/             # example 'BIO101 midterm 1'
+my_assessment/          # example 'BIO101 midterm 1'
   input/                # where your original uploads are stored
     raw_scans.pdf       #
   runs/
@@ -43,8 +43,8 @@ View scored results in a spreadsheet with the scanned PDF side-by-side. Click co
 ### Template Manager
 Browse, preview, favourite, and reorder your installed bubble sheet templates. Each template includes a PDF master and a bubblemap YAML that defines bubble positions.
 
-### Project Manager
-*(Coming soon)* Manage project folders, view run history, and organise your grading data.
+### Course Manager
+Manage your courses and assessments, view contents, and open assessments directly in the Grader.
 
 ---
 

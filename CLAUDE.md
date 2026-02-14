@@ -41,18 +41,19 @@ gui/
 │   ├── lms_integration.py  # LMS gradebook import/export
 │   ├── map_viewer.py       # Bubblemap overlay viewer
 │   ├── mock_data_utility.py# Synthetic dataset generator
-│   ├── project_manager_page.py # Project browser
+│   ├── project_manager_page.py # Course Manager (browse/manage courses & assessments)
 │   ├── settings.py         # App settings
 │   └── help_page.py        # Help & documentation
 ├── dialogs/
-│   └── about.py            # About dialog
+│   ├── about.py            # About dialog
+│   └── course_dialog.py    # Create / edit / relocate course dialog
 ├── widgets/
 │   ├── page_header.py
 │   ├── pdf_preview.py      # PDF page display widget
 │   └── project_selector.py
 └── models/
     ├── project.py           # ProjectManager for directory/state
-    ├── project_registry.py  # JSON-backed project registry (~/.markshark/)
+    ├── project_registry.py  # JSON-backed project + course registry (~/.markshark/)
     ├── corrections.py       # CorrectionLog append-only log
     └── lms_filter_registry.py
 ```
@@ -71,7 +72,7 @@ gui/
 | `RUN_BUTTON_STYLE` | Blue QPushButton stylesheet for prominent action buttons. Import as `from ..utils import RUN_BUTTON_STYLE`. |
 | `TEAL`, `TEAL_HOVER`, `BLUE`, `BLUE_HOVER`, `GRAY_DISABLED` | Brand colour hex strings. Reference these instead of hard-coding hex values. |
 | `template_display_label(template, tm)` | Returns display name with `★` prefix for favorites. Use when populating template combo boxes instead of raw `t.display_name`. |
-| `create_new_project(parent_widget)` | Prompts for project name, creates directory structure (`input_files/`, `score_data/`, `logs/`), registers in `ProjectRegistry`. Returns `Path` or `None`. Use instead of duplicating the new-project flow. |
+| `create_new_project(parent_widget)` | Prompts for assessment name, creates directory structure (`input_files/`, `score_data/`, `logs/`), registers in `ProjectRegistry`. Returns `Path` or `None`. Use instead of duplicating the new-assessment flow. |
 
 ### Rules
 
@@ -81,6 +82,28 @@ gui/
 4. **When copying bundled files** (templates, assets) always use `safe_copy_file()` so macOS hidden-flag issues don't resurface.
 5. **If a new pattern appears in 2+ pages**, extract it to `utils.py` proactively rather than leaving the duplication for later.
 6. **Import style**: Use lazy (in-method) imports for functions like `from ..utils import open_file_or_folder` to avoid circular-import risk. Use module-level imports for constants like `RUN_BUTTON_STYLE`.
+
+## Terminology: UI vs Code
+
+The UI uses teacher-friendly terms; internal code keeps programmer-friendly names:
+
+| Teacher sees | Code uses | Meaning |
+|---|---|---|
+| **Course folder** | `working_dir`, `workdir` | Top-level directory for a class (e.g. `BIO101/`) |
+| **Assessment** | `project`, `project_dir` | One test within a course (e.g. `midterm_1/`) |
+| **Course Manager** | `ProjectManagerPage` | Page that browses/manages courses and assessments |
+
+Settings keys (`"project/working_dir"`, `"project/last_project"`) and registry files (`projects.json`) keep their original names for backward compatibility.
+
+### Registry Schema (v2)
+`~/.markshark/projects.json` stores both **courses** (course folders) and **projects** (assessments) as sibling lists. v1 files are auto-migrated on first load. Key methods on `ProjectRegistry`:
+- `register_course(path, name)` / `list_courses()` — manage known course folders
+- `list_courses()` — returns courses sorted most-recently-active first (max of course + child assessment timestamps)
+- `set_course_name(path, name)` — rename a course (display name only)
+- `update_course_path(old, new)` — re-point a course + child assessments to a new folder
+- `update_course_last_opened(path)` — touch a course's last_opened timestamp
+- `list_by_course()` — group projects by parent course folder (orphans under `"__orphan__"`)
+- `register(project_path)` — auto-registers the parent as a course
 
 ## Key Patterns
 

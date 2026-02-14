@@ -132,7 +132,7 @@ class MainWindow(QMainWindow):
         template_action.triggered.connect(lambda: self._navigate_to_key("template_manager"))
         util_menu.addAction(template_action)
 
-        project_action = QAction("&Project Manager", self)
+        project_action = QAction("&Course Manager", self)
         project_action.triggered.connect(lambda: self._navigate_to_key("project_manager"))
         util_menu.addAction(project_action)
 
@@ -237,7 +237,7 @@ class MainWindow(QMainWindow):
             # --- Divider ---
             _DIVIDER,
             # --- Utilities ---
-            ("Project Manager",   "project_manager",  self.project_manager_page),
+            ("Course Manager",     "project_manager",  self.project_manager_page),
             ("Template Manager",  "template_manager", self.template_manager_page),
             ("LMS Integration",   "lms_integration",  self.lms_integration_page),
             # --- Divider ---

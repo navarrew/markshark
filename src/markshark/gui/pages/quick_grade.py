@@ -206,7 +206,7 @@ class QuickGradePage(QWidget):
         output_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         output_btn_panel.addWidget(output_label)
 
-        self.open_folder_btn = QPushButton("Open\n Project Folder")
+        self.open_folder_btn = QPushButton("Open\n Assessment Folder")
         self.open_folder_btn.setEnabled(False)
         self.open_folder_btn.setFixedWidth(100)
         self.open_folder_btn.clicked.connect(lambda: self._open_file(self.work_dir))
@@ -397,7 +397,7 @@ class QuickGradePage(QWidget):
         self.results_selector = FileSelector(
             "Results CSV:",
             "CSV files (*.csv)",
-            "Auto-populated from project score_data/...",
+            "Auto-populated from assessment score_data/...",
         )
         self.results_selector.file_selected.connect(self._on_results_loaded)
         files_layout.addWidget(self.results_selector)
@@ -405,14 +405,14 @@ class QuickGradePage(QWidget):
         self.corrections_selector = FileSelector(
             "Corrections (optional):",
             "CSV files (*.csv);;Excel files (*.xlsx)",
-            "Auto-populated from project score_data/...",
+            "Auto-populated from assessment score_data/...",
         )
         files_layout.addWidget(self.corrections_selector)
 
         self.report_roster_selector = FileSelector(
             "Class roster (optional):",
             "CSV files (*.csv)",
-            "Auto-populated from project input_files/...",
+            "Auto-populated from assessment input_files/...",
         )
         files_layout.addWidget(self.report_roster_selector)
 
@@ -688,7 +688,7 @@ class QuickGradePage(QWidget):
             msg.setIcon(QMessageBox.Icon.Question)
             msg.setWindowTitle("Existing Results Found")
             msg.setText(
-                "This project already has scoring results.\n"
+                "This assessment already has scoring results.\n"
                 "Would you like to archive them before re-running?"
             )
             archive_btn = msg.addButton("Archive && Continue", QMessageBox.ButtonRole.AcceptRole)
@@ -710,7 +710,7 @@ class QuickGradePage(QWidget):
         # Update status with project info
         project_name = self.project_selector.project_name()
         if project_name:
-            self.log.append_line(f"Project: {project_name}")
+            self.log.append_line(f"Assessment: {project_name}")
         self.log.append_line(f"Output directory: {self.work_dir}\n")
 
         # Get template

@@ -566,7 +566,7 @@ class AlignOnlyPage(QWidget):
 
         project_name = self.project_selector.project_name()
         if project_name:
-            self.log.append_line(f"Project: {project_name}")
+            self.log.append_line(f"Assessment: {project_name}")
         self.log.append_line(f"Output directory: {self.work_dir}")
         self.log.append_line(f"Command: markshark {' '.join(args)}\n")
         self.runner.run(args, "align")
