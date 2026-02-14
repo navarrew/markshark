@@ -74,8 +74,10 @@ class ScoreOnlyPage(QWidget):
 
         self._setup_ui()
         self._load_templates()
+        self._restore_template_for_current_project()
 
-        self.project_selector.project_changed.connect(self._update_browse_dirs)
+        self.template_combo.currentIndexChanged.connect(self._save_template_choice)
+        self.project_selector.project_changed.connect(self._on_project_changed)
         self.project_selector.working_dir_changed.connect(
             lambda _: self._update_browse_dirs()
         )
@@ -325,16 +327,58 @@ class ScoreOnlyPage(QWidget):
             self.template_combo.addItem("(TemplateManager not available)", None)
             return
         try:
+            from ..utils import template_display_label
             tm = TemplateManager()
             for t in tm.scan_templates():
-                self.template_combo.addItem(t.display_name, t)
+                self.template_combo.addItem(template_display_label(t, tm), t)
         except Exception as e:
             self.template_combo.addItem(f"(Error: {e})", None)
 
     def showEvent(self, event):
-        """Re-populate file selectors when the page becomes visible."""
+        """Re-populate file selectors and template list when the page becomes visible."""
         super().showEvent(event)
+        self._reload_templates_preserving_selection()
         self._auto_populate_from_project()
+
+    def _reload_templates_preserving_selection(self):
+        """Reload template dropdown while keeping the current selection."""
+        current = self.template_combo.currentData()
+        current_id = getattr(current, "template_id", None) if current else None
+        self._load_templates()
+        if current_id:
+            self._select_template_by_id(current_id)
+
+    def _save_template_choice(self):
+        """Persist the current template selection to the project registry."""
+        t = self.template_combo.currentData()
+        tid = getattr(t, "template_id", None) if t else None
+        project_dir = self.project_selector.project_dir()
+        if tid and project_dir:
+            from ..models.project_registry import ProjectRegistry
+            ProjectRegistry().set_template_id(project_dir, tid)
+
+    def _restore_template_for_current_project(self):
+        """Restore the saved template selection for the active project."""
+        project_dir = self.project_selector.project_dir()
+        if not project_dir:
+            return
+        from ..models.project_registry import ProjectRegistry
+        tid = ProjectRegistry().get_template_id(project_dir)
+        if tid:
+            self._select_template_by_id(tid)
+
+    def _select_template_by_id(self, template_id: str):
+        """Set the template combo to the item matching *template_id*."""
+        for i in range(self.template_combo.count()):
+            t = self.template_combo.itemData(i)
+            if t and getattr(t, "template_id", None) == template_id:
+                self.template_combo.setCurrentIndex(i)
+                return
+
+    def _on_project_changed(self, _name: str = ""):
+        """Handle project change: update browse dirs and restore template."""
+        self._update_browse_dirs()
+        self._restore_template_for_current_project()
 
     def _update_browse_dirs(self, _name: str = ""):
         project_dir = self.project_selector.project_dir()
@@ -509,13 +553,8 @@ class ScoreOnlyPage(QWidget):
         if path is None or not path.exists():
             QMessageBox.warning(self, "Not Found", f"File not found: {path}")
             return
-        import subprocess, platform, os
+        from ..utils import open_file_or_folder
         try:
-            if platform.system() == "Darwin":
-                subprocess.run(["open", str(path)])
-            elif platform.system() == "Windows":
-                os.startfile(str(path))
-            else:
-                subprocess.run(["xdg-open", str(path)])
+            open_file_or_folder(path)
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Could not open: {e}")

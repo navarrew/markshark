@@ -6,8 +6,6 @@ bubblemap to any PDF (template, aligned scans, raw scans, etc.).
 Supports multi-page PDFs with page-by-page navigation.
 """
 
-import platform
-import subprocess
 from pathlib import Path
 from typing import Optional, List
 
@@ -351,6 +349,11 @@ class MapViewerPage(QWidget):
         # Populate template dropdowns
         self._refresh_templates()
 
+    def showEvent(self, event):
+        """Reload templates when the page becomes visible."""
+        super().showEvent(event)
+        self._refresh_templates()
+
     # -------------------------------------------------------------------
     # Template management
     # -------------------------------------------------------------------
@@ -375,18 +378,18 @@ class MapViewerPage(QWidget):
             except Exception as e:
                 print(f"Error scanning templates: {e}")
 
+            from ..utils import template_display_label
             for t in self._templates:
+                label = template_display_label(t, self._template_manager)
                 # YAML dropdown
                 yaml_path = t.bubblemap_yaml_path
                 if yaml_path and yaml_path.exists():
-                    self.yaml_combo.addItem(
-                        t.display_name, str(yaml_path)
-                    )
+                    self.yaml_combo.addItem(label, str(yaml_path))
                 # PDF dropdown
                 pdf_path = t.template_pdf_path
                 if pdf_path and pdf_path.exists():
                     self.pdf_combo.addItem(
-                        f"{t.display_name} (template PDF)", str(pdf_path)
+                        f"{label} (template PDF)", str(pdf_path)
                     )
 
         self.yaml_combo.blockSignals(False)
@@ -649,13 +652,5 @@ class MapViewerPage(QWidget):
         if not Path(folder).exists():
             return
 
-        system = platform.system()
-        try:
-            if system == "Darwin":
-                subprocess.Popen(["open", folder])
-            elif system == "Windows":
-                subprocess.Popen(["explorer", folder])
-            else:
-                subprocess.Popen(["xdg-open", folder])
-        except Exception as e:
-            print(f"Could not open folder: {e}")
+        from ..utils import open_file_or_folder
+        open_file_or_folder(folder)

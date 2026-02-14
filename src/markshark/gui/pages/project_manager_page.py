@@ -5,8 +5,6 @@ Maintains a persistent JSON registry of known project directories and
 displays their run history, disk usage, and status.
 """
 
-import platform
-import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QSize
@@ -72,16 +70,8 @@ def _folder_size(path: Path) -> int:
 
 def _open_folder(folder: str):
     """Open a folder in the system file manager."""
-    system = platform.system()
-    try:
-        if system == "Darwin":
-            subprocess.Popen(["open", folder])
-        elif system == "Windows":
-            subprocess.Popen(["explorer", folder])
-        else:
-            subprocess.Popen(["xdg-open", folder])
-    except Exception as e:
-        print(f"Could not open folder: {e}")
+    from ..utils import open_file_or_folder
+    open_file_or_folder(folder)
 
 
 class ProjectManagerPage(QWidget):
@@ -116,7 +106,12 @@ class ProjectManagerPage(QWidget):
         # ── Toolbar ──
         toolbar = QHBoxLayout()
 
-        add_btn = QPushButton("Add Project...")
+        new_btn = QPushButton("+ New Project")
+        new_btn.setToolTip("Create a new project in your working directory")
+        new_btn.clicked.connect(self._on_new_project)
+        toolbar.addWidget(new_btn)
+
+        add_btn = QPushButton("Add Existing...")
         add_btn.setToolTip("Register an existing project folder")
         add_btn.clicked.connect(self._on_add_project)
         toolbar.addWidget(add_btn)
@@ -252,7 +247,7 @@ class ProjectManagerPage(QWidget):
         self.empty_label = QLabel(
             "No projects registered yet.\n\n"
             "Projects are automatically added when you use the Grader,\n"
-            "or you can click \"Add Project...\" to register one manually."
+            "or click \"+ New Project\" to create one, or \"Add Existing...\" to register a folder."
         )
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_label.setStyleSheet("color: #888; font-size: 14px;")
@@ -490,6 +485,14 @@ class ProjectManagerPage(QWidget):
     # ------------------------------------------------------------------
     # Actions
     # ------------------------------------------------------------------
+
+    def _on_new_project(self):
+        """Create a new project via the shared helper and refresh the list."""
+        from ..utils import create_new_project
+
+        project_path = create_new_project(parent_widget=self)
+        if project_path:
+            self._load_projects()
 
     def _on_add_project(self):
         """Browse for an existing project folder and register it."""

@@ -137,6 +137,27 @@ class ProjectRegistry:
                 self._save()
                 return
 
+    def set_template_id(self, project_path: Path, template_id: str):
+        """Save the last-used template for a project."""
+        resolved = self._normalize(project_path)
+        if resolved is None:
+            return
+        for entry in self._data["projects"]:
+            if entry["path"] == str(resolved):
+                entry["template_id"] = template_id
+                self._save()
+                return
+
+    def get_template_id(self, project_path: Path) -> str:
+        """Return the last-used template_id for a project, or empty string."""
+        resolved = self._normalize(project_path)
+        if resolved is None:
+            return ""
+        for entry in self._data["projects"]:
+            if entry["path"] == str(resolved):
+                return entry.get("template_id", "")
+        return ""
+
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------

@@ -414,13 +414,8 @@ class ReportOnlyPage(QWidget):
         if path is None or not path.exists():
             QMessageBox.warning(self, "Not Found", f"File not found: {path}")
             return
-        import subprocess, platform, os
+        from ..utils import open_file_or_folder
         try:
-            if platform.system() == "Darwin":
-                subprocess.run(["open", str(path)])
-            elif platform.system() == "Windows":
-                os.startfile(str(path))
-            else:
-                subprocess.run(["xdg-open", str(path)])
+            open_file_or_folder(path)
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Could not open: {e}")

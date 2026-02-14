@@ -837,9 +837,11 @@ class ReviewPanelPage(QWidget):
                     elif "," in display_value:
                         # Only flag as multi if this column does NOT expect
                         # a compound answer (AND/partial key).
+                        # Strip trailing * from auto-detected versions (e.g. "A*" → "A")
+                        # so the lookup matches the KEY row's clean version letter.
                         student_ver = row_data.get(
                             "Version", row_data.get("version", "")
-                        ).strip().upper()
+                        ).strip().upper().rstrip("*")
                         compound_cols = self._compound_keys.get(student_ver, {})
                         if col_name not in compound_cols:
                             _flag_cell(item, _COLOR_MULTI_Q)
@@ -961,7 +963,9 @@ class ReviewPanelPage(QWidget):
                 _flag_cell(item, _COLOR_BLANK_Q)
                 item.setToolTip("")
             elif "," in value:
-                # Check if compound answer expected for this student's version
+                # Check if compound answer expected for this student's version.
+                # Strip trailing * from auto-detected versions (e.g. "A*" → "A")
+                # so the lookup matches the KEY row's clean version letter.
                 version = ""
                 first_item = self.spreadsheet.item(row, 0)
                 if first_item:
@@ -969,7 +973,7 @@ class ReviewPanelPage(QWidget):
                     if rd:
                         version = rd.get(
                             "Version", rd.get("version", "")
-                        ).strip().upper()
+                        ).strip().upper().rstrip("*")
                 compound_cols = self._compound_keys.get(version, {})
                 if col_name not in compound_cols:
                     _flag_cell(item, _COLOR_MULTI_Q)

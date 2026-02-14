@@ -91,6 +91,10 @@ class QuickGradePage(QWidget):
 
         self._setup_ui()
         self._load_templates()
+        self._restore_template_for_current_project()
+
+        # Save template choice whenever the user changes it
+        self.template_combo.currentIndexChanged.connect(self._save_template_choice)
 
         # When the project changes, clear stale paths and re-populate
         self.project_selector.project_changed.connect(self._on_project_changed)
@@ -105,14 +109,51 @@ class QuickGradePage(QWidget):
     # ------------------------------------------------------------------
 
     def showEvent(self, event):
-        """Re-populate file selectors when the page becomes visible.
+        """Re-populate file selectors and template list when the page becomes visible.
 
         Files created by other pages (e.g. corrections from Review & Correct,
         results from a previous run) need to appear in the Report tab selectors.
+        Templates are reloaded to reflect any reorder/add/remove in the Template Manager.
         """
         super().showEvent(event)
+        self._reload_templates_preserving_selection()
         self._auto_populate_input_files()
         self._auto_populate_report_files()
+
+    def _reload_templates_preserving_selection(self):
+        """Reload template dropdown while keeping the current selection."""
+        current = self.template_combo.currentData()
+        current_id = getattr(current, "template_id", None) if current else None
+        self._load_templates()
+        if current_id:
+            self._select_template_by_id(current_id)
+
+    def _save_template_choice(self):
+        """Persist the current template selection to the project registry."""
+        t = self.template_combo.currentData()
+        tid = getattr(t, "template_id", None) if t else None
+        project_dir = self.project_selector.project_dir()
+        if tid and project_dir:
+            from ..models.project_registry import ProjectRegistry
+            ProjectRegistry().set_template_id(project_dir, tid)
+
+    def _restore_template_for_current_project(self):
+        """Restore the saved template selection for the active project."""
+        project_dir = self.project_selector.project_dir()
+        if not project_dir:
+            return
+        from ..models.project_registry import ProjectRegistry
+        tid = ProjectRegistry().get_template_id(project_dir)
+        if tid:
+            self._select_template_by_id(tid)
+
+    def _select_template_by_id(self, template_id: str):
+        """Set the template combo to the item matching *template_id*."""
+        for i in range(self.template_combo.count()):
+            t = self.template_combo.itemData(i)
+            if t and getattr(t, "template_id", None) == template_id:
+                self.template_combo.setCurrentIndex(i)
+                return
 
     def _setup_ui(self):
         """Build the page UI."""
@@ -199,6 +240,7 @@ class QuickGradePage(QWidget):
         layout = QVBoxLayout(widget)
 
         # Template selection
+        layout.addSpacing(20)
         template_group = QGroupBox("Choose your template bubblesheet")
         template_layout = QHBoxLayout(template_group)
         template_layout.addWidget(QLabel("Select template:"))
@@ -206,7 +248,7 @@ class QuickGradePage(QWidget):
         self.template_combo.setMinimumWidth(300)
         template_layout.addWidget(self.template_combo, 1)
         layout.addWidget(template_group)
-        layout.addSpacing(8)
+        layout.addSpacing(20)
 
         # File inputs
         files_group = QGroupBox("Upload Scanned Bubblesheets, Key, and Class Roster Files")
@@ -240,12 +282,8 @@ class QuickGradePage(QWidget):
         # Run button at the bottom of this tab
         self.align_score_btn = QPushButton("Run")
         self.align_score_btn.setMinimumHeight(36)
-        self.align_score_btn.setStyleSheet(
-            "QPushButton { background-color: #0d6efd; color: white; "
-            "font-weight: bold; font-size: 14px; border-radius: 4px; padding: 6px 20px; }"
-            "QPushButton:hover { background-color: #0b5ed7; }"
-            "QPushButton:disabled { background-color: #6c757d; }"
-        )
+        from ..utils import RUN_BUTTON_STYLE
+        self.align_score_btn.setStyleSheet(RUN_BUTTON_STYLE)
         self.align_score_btn.clicked.connect(self._run_align_and_score)
         layout.addWidget(self.align_score_btn)
 
@@ -256,6 +294,7 @@ class QuickGradePage(QWidget):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
+        layout.addSpacing(20)
         settings_group = QGroupBox("Grader Settings")
         grid = QGridLayout(settings_group)
         grid.setColumnStretch(0, 0)  # labels
@@ -297,6 +336,17 @@ class QuickGradePage(QWidget):
             "Increase to require darker marks; decrease to accept lighter marks."
         )
         grid.addWidget(self.min_fill_spin, row, 1)
+
+        row += 1
+        grid.addWidget(QLabel("Fixed threshold (gray):"), row, 0)
+        self.fixed_thresh_spin = QSpinBox()
+        self.fixed_thresh_spin.setRange(0, 255)
+        self.fixed_thresh_spin.setValue(_dflt(SCORING_DEFAULTS, "fixed_thresh", 180))
+        self.fixed_thresh_spin.setToolTip(
+            "Global binarization threshold (0-255) for gray pixels.\n"
+            "Pixels darker than this value are treated as ink."
+        )
+        grid.addWidget(self.fixed_thresh_spin, row, 1)
 
         # ── Right column: Annotation options ──
         row_r = 0
@@ -340,6 +390,7 @@ class QuickGradePage(QWidget):
         layout = QVBoxLayout(widget)
 
         # Single group box for all report input files
+        layout.addSpacing(20)
         files_group = QGroupBox("Upload Files to Generate Report")
         files_layout = QVBoxLayout(files_group)
 
@@ -366,6 +417,7 @@ class QuickGradePage(QWidget):
         files_layout.addWidget(self.report_roster_selector)
 
         layout.addWidget(files_group)
+        layout.addSpacing(20)
 
         layout.addStretch()
 
@@ -472,9 +524,10 @@ class QuickGradePage(QWidget):
             return
 
         try:
+            from ..utils import template_display_label
             tm = TemplateManager()
             for t in tm.scan_templates():
-                self.template_combo.addItem(t.display_name, t)
+                self.template_combo.addItem(template_display_label(t, tm), t)
         except Exception as e:
             self.template_combo.addItem(f"(Error: {e})", None)
 
@@ -535,6 +588,9 @@ class QuickGradePage(QWidget):
 
         # Update browse dirs and auto-populate from new project
         self._update_browse_dirs()
+
+        # Restore saved template for the newly selected project
+        self._restore_template_for_current_project()
 
     def _update_browse_dirs(self, _name: str = ""):
         """Point all file-browse dialogs at the current project folder,
@@ -710,6 +766,7 @@ class QuickGradePage(QWidget):
 
         # Scoring parameters
         args += ["--min-fill", str(self.min_fill_spin.value())]
+        args += ["--fixed-thresh", str(self.fixed_thresh_spin.value())]
 
         # Options
         if self.annotate_all_cb.isChecked():
@@ -883,17 +940,8 @@ class QuickGradePage(QWidget):
         if path is None or not path.exists():
             QMessageBox.warning(self, "Not Found", f"File not found: {path}")
             return
-
-        import subprocess
-        import platform
-        import os
-
+        from ..utils import open_file_or_folder
         try:
-            if platform.system() == "Darwin":
-                subprocess.run(["open", str(path)])
-            elif platform.system() == "Windows":
-                os.startfile(str(path))
-            else:
-                subprocess.run(["xdg-open", str(path)])
+            open_file_or_folder(path)
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Could not open: {e}")
