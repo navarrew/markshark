@@ -276,13 +276,8 @@ class HelpPage(QWidget):
         toolbar = QHBoxLayout()
 
         # Version info
-        try:
-            from markshark import __version__
-            version = __version__
-        except ImportError:
-            version = "development"
-
-        self.version_label = QLabel(f"Version: {version}")
+        from ..utils import get_app_version
+        self.version_label = QLabel(f"Version: {get_app_version()}")
         self.version_label.setStyleSheet("color: #666; font-size: 12px;")
         toolbar.addWidget(self.version_label)
 

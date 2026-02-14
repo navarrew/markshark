@@ -13,8 +13,11 @@ from .report_only import ReportOnlyPage
 from .pdf_tools import PdfToolsPage
 from .lms_integration import LmsIntegrationPage
 from .map_viewer import MapViewerPage
+from .key_builder import KeyBuilderPage
+from .welcome_page import WelcomePage
 
 __all__ = [
+    "WelcomePage",
     "QuickGradePage",
     "ReviewPanelPage",
     "TemplateManagerPage",
@@ -26,4 +29,5 @@ __all__ = [
     "PdfToolsPage",
     "LmsIntegrationPage",
     "MapViewerPage",
+    "KeyBuilderPage",
 ]

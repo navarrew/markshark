@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
 )
 
-from ..widgets import FileSelector, PageHeader
+from ..widgets import PageHeader
 
 # Best-effort import of defaults ------------------------------------------------
 try:
@@ -181,44 +181,38 @@ class SettingsPage(QWidget):
         layout = QVBoxLayout(container)
         scroll.setWidget(container)
 
-        # === Default Paths (always visible) ===
-        paths_group = QGroupBox("Default Paths")
-        paths_layout = QVBoxLayout(paths_group)
+        # === General Preferences (always visible) ===
+        prefs_group = QGroupBox("General Preferences")
+        prefs_layout = QVBoxLayout(prefs_group)
 
         self.auto_open_results = QCheckBox("Automatically open results after grading")
         self.auto_open_results.setChecked(True)
-        paths_layout.addWidget(self.auto_open_results)
+        prefs_layout.addWidget(self.auto_open_results)
 
+        prefs_layout.addSpacing(8)
 
-        self.templates_dir = FileSelector(
-            "Templates directory:",
-            "",
-            "Where to find bubble sheet templates...",
-            directory_mode=True,
-        )
-        paths_layout.addWidget(self.templates_dir)
+        # Read-only display of key paths
+        paths_header = QLabel("<b>Application Paths</b>")
+        paths_header.setTextFormat(Qt.TextFormat.RichText)
+        prefs_layout.addWidget(paths_header)
 
-        # Show the resolved path so users know where templates actually live
         try:
             from markshark.template_manager import TemplateManager
-            self._auto_templates_dir = str(TemplateManager.get_default_templates_dir())
+            templates_path = str(TemplateManager.get_default_templates_dir())
         except Exception:
-            self._auto_templates_dir = "(could not detect)"
-        self._templates_hint = QLabel()
-        self._templates_hint.setTextFormat(Qt.TextFormat.RichText)
-        self._templates_hint.setStyleSheet("color: #fff; font-size: 11px; padding: 0 0 2px 0;")
-        self._update_templates_hint()
-        self.templates_dir.file_selected.connect(self._update_templates_hint)
-        paths_layout.addWidget(self._templates_hint)
+            templates_path = "(could not detect)"
+        templates_label = QLabel(f"Templates directory:  <code>{templates_path}</code>")
+        templates_label.setTextFormat(Qt.TextFormat.RichText)
+        templates_label.setStyleSheet("color: #fff; font-size: 11px; padding: 2px 0;")
+        prefs_layout.addWidget(templates_label)
 
-        # Read-only display of where MarkShark stores config data
         config_dir = Path.home() / ".markshark"
         config_label = QLabel(f"Config data location:  <code>{config_dir}</code>")
         config_label.setTextFormat(Qt.TextFormat.RichText)
         config_label.setStyleSheet("color: #fff; font-size: 11px; padding: 2px 0;")
-        paths_layout.addWidget(config_label)
+        prefs_layout.addWidget(config_label)
 
-        layout.addWidget(paths_group)
+        layout.addWidget(prefs_group)
         layout.addSpacing(8)
 
         # === Scoring Settings (collapsible) ===
@@ -585,20 +579,6 @@ class SettingsPage(QWidget):
         outer.addLayout(btn_layout)
 
     # ---------------------------------------------------------------
-    # Helpers
-    # ---------------------------------------------------------------
-    def _update_templates_hint(self):
-        """Refresh the hint label showing the resolved templates path."""
-        custom = self.templates_dir.path()
-        if custom:
-            display = custom
-        else:
-            display = self._auto_templates_dir
-        self._templates_hint.setText(
-            f"Current location:  <code>{display}</code>"
-        )
-
-    # ---------------------------------------------------------------
     # Persistence
     # ---------------------------------------------------------------
     def _load_bgr(self, key: str, widget, default):
@@ -617,9 +597,7 @@ class SettingsPage(QWidget):
 
     def _load_settings(self):
         """Load settings from SettingsStore."""
-        # Paths
-        self.templates_dir.set_path(self.settings.value("paths/templates_dir", ""))
-        self._update_templates_hint()
+        # General
         self.auto_open_results.setChecked(
             self.settings.value("defaults/auto_open", True, type=bool)
         )
@@ -747,8 +725,7 @@ class SettingsPage(QWidget):
         """Save all settings to SettingsStore."""
         s = self.settings
 
-        # Paths
-        s.setValue("paths/templates_dir", self.templates_dir.path())
+        # General
         s.setValue("defaults/auto_open", self.auto_open_results.isChecked())
 
         # Scoring
@@ -828,8 +805,7 @@ class SettingsPage(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        # Paths
-        self.templates_dir.clear()
+        # General
         self.auto_open_results.setChecked(True)
 
         # Scoring

@@ -10,9 +10,6 @@ Features:
 - Validate templates
 """
 
-import platform
-import shutil
-import subprocess
 from pathlib import Path
 from typing import Optional, List
 
@@ -266,10 +263,10 @@ class TemplateManagerPage(QWidget):
             self._archived_templates = self._template_manager.scan_archived_templates(force_refresh=True)
 
             # Populate active list
+            from ..utils import template_display_label
             for template in self._templates:
-                is_fav = self._template_manager.is_favorite(template.template_id)
-                icon = "* " if is_fav else "  "
-                item = QListWidgetItem(f"{icon}{template.display_name}")
+                label = template_display_label(template, self._template_manager)
+                item = QListWidgetItem(f"  {label}")
                 item.setData(Qt.ItemDataRole.UserRole, template)
                 self.template_list.addItem(item)
 
@@ -317,14 +314,9 @@ class TemplateManagerPage(QWidget):
             return
 
         folder_str = str(folder)
-        system = platform.system()
+        from ..utils import open_file_or_folder
         try:
-            if system == "Darwin":
-                subprocess.Popen(["open", folder_str])
-            elif system == "Windows":
-                subprocess.Popen(["explorer", folder_str])
-            else:
-                subprocess.Popen(["xdg-open", folder_str])
+            open_file_or_folder(folder_str)
             self.status_label.setText(f"Opened: {folder_str}")
         except Exception as e:
             QMessageBox.warning(
@@ -579,8 +571,9 @@ class TemplateManagerPage(QWidget):
         )
 
         if dest_path:
+            from ..utils import safe_copy_file
             try:
-                shutil.copy2(src_path, dest_path)
+                safe_copy_file(src_path, dest_path)
                 self.status_label.setText(f"PDF saved to: {dest_path}")
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Failed to save PDF: {e}")
@@ -604,8 +597,9 @@ class TemplateManagerPage(QWidget):
         )
 
         if dest_path:
+            from ..utils import safe_copy_file
             try:
-                shutil.copy2(src_path, dest_path)
+                safe_copy_file(src_path, dest_path)
                 self.status_label.setText(f"YAML saved to: {dest_path}")
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Failed to save YAML: {e}")

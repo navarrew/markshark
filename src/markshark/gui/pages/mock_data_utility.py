@@ -7,8 +7,6 @@ configurable parameters (students, DPI, darkness, blank/multi rates),
 threaded generation, and results display.
 """
 
-import platform
-import subprocess
 from pathlib import Path
 from typing import Optional, List, Dict
 
@@ -401,6 +399,11 @@ class MockDataPage(QWidget):
         # Populate templates
         self._refresh_templates()
 
+    def showEvent(self, event):
+        """Reload templates when the page becomes visible."""
+        super().showEvent(event)
+        self._refresh_templates()
+
     # -------------------------------------------------------------------
     # Template management
     # -------------------------------------------------------------------
@@ -421,9 +424,12 @@ class MockDataPage(QWidget):
         except Exception as e:
             print(f"Error scanning templates: {e}")
 
+        from ..utils import template_display_label
         self.template_combo.addItem("(select a template)")
         for t in self._templates:
-            self.template_combo.addItem(t.display_name)
+            self.template_combo.addItem(
+                template_display_label(t, self._template_manager)
+            )
 
         self.template_combo.blockSignals(False)
         self.template_combo.setCurrentIndex(0)
@@ -581,16 +587,8 @@ class MockDataPage(QWidget):
         if not folder or not Path(folder).exists():
             return
 
-        system = platform.system()
-        try:
-            if system == "Darwin":
-                subprocess.Popen(["open", folder])
-            elif system == "Windows":
-                subprocess.Popen(["explorer", folder])
-            else:
-                subprocess.Popen(["xdg-open", folder])
-        except Exception as e:
-            print(f"Could not open folder: {e}")
+        from ..utils import open_file_or_folder
+        open_file_or_folder(folder)
 
     def _on_project_changed(self, name: str):
         """Update output directory when the active project changes."""

@@ -125,7 +125,7 @@ class ReportOnlyPage(QWidget):
         load_recent_btn = QPushButton("Load Recent")
         load_recent_btn.setMaximumWidth(90)
         load_recent_btn.setToolTip(
-            "Load results.csv from this project's score_data/ folder."
+            "Load results.csv from this assessment's score_data/ folder."
         )
         load_recent_btn.clicked.connect(self._load_most_recent_results)
         results_row.addWidget(load_recent_btn)
@@ -149,7 +149,7 @@ class ReportOnlyPage(QWidget):
         load_recent_corrections_btn = QPushButton("Load Recent")
         load_recent_corrections_btn.setMaximumWidth(90)
         load_recent_corrections_btn.setToolTip(
-            "Load corrections.csv from this project's score_data/ folder."
+            "Load corrections.csv from this assessment's score_data/ folder."
         )
         load_recent_corrections_btn.clicked.connect(self._load_most_recent_corrections)
         corrections_row.addWidget(load_recent_corrections_btn)
@@ -162,7 +162,7 @@ class ReportOnlyPage(QWidget):
         options_group = QGroupBox("Report Options")
         options_layout = QGridLayout(options_group)
 
-        options_layout.addWidget(QLabel("Project name (optional):"), 0, 0)
+        options_layout.addWidget(QLabel("Assessment name (optional):"), 0, 0)
         self.project_name_edit = QLineEdit()
         self.project_name_edit.setPlaceholderText("Included in report header...")
         self.project_name_edit.setToolTip("Optional label included at the top of the Excel report.")
@@ -262,8 +262,8 @@ class ReportOnlyPage(QWidget):
         project_dir = self.project_selector.project_dir()
         if not project_dir:
             QMessageBox.warning(
-                self, "No Project",
-                "Please select a project first."
+                self, "No Assessment",
+                "Please select an assessment first."
             )
             return
 
@@ -271,7 +271,7 @@ class ReportOnlyPage(QWidget):
         if not results_csv.exists():
             QMessageBox.information(
                 self, "No Results Found",
-                "No results.csv found in this project's score_data/ folder."
+                "No results.csv found in this assessment's score_data/ folder."
             )
             return
 
@@ -283,8 +283,8 @@ class ReportOnlyPage(QWidget):
         project_dir = self.project_selector.project_dir()
         if not project_dir:
             QMessageBox.warning(
-                self, "No Project",
-                "Please select a project first."
+                self, "No Assessment",
+                "Please select an assessment first."
             )
             return
 
@@ -292,7 +292,7 @@ class ReportOnlyPage(QWidget):
         if not corrections_csv.exists():
             QMessageBox.information(
                 self, "No Corrections Found",
-                "No corrections.csv found in this project's score_data/ folder."
+                "No corrections.csv found in this assessment's score_data/ folder."
             )
             return
 
@@ -355,7 +355,7 @@ class ReportOnlyPage(QWidget):
 
         project_name = self.project_selector.project_name()
         if project_name:
-            self.log.append_line(f"Project: {project_name}")
+            self.log.append_line(f"Assessment: {project_name}")
         self.log.append_line(f"Output directory: {self.work_dir}")
         self.log.append_line(f"Command: markshark {' '.join(args)}\n")
         self.runner.run(args, "report")
@@ -414,13 +414,8 @@ class ReportOnlyPage(QWidget):
         if path is None or not path.exists():
             QMessageBox.warning(self, "Not Found", f"File not found: {path}")
             return
-        import subprocess, platform, os
+        from ..utils import open_file_or_folder
         try:
-            if platform.system() == "Darwin":
-                subprocess.run(["open", str(path)])
-            elif platform.system() == "Windows":
-                os.startfile(str(path))
-            else:
-                subprocess.run(["xdg-open", str(path)])
+            open_file_or_folder(path)
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Could not open: {e}")

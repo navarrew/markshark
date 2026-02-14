@@ -35,6 +35,8 @@ from .pages.score_only import ScoreOnlyPage
 from .pages.report_only import ReportOnlyPage
 from .pages.pdf_tools import PdfToolsPage
 from .pages.lms_integration import LmsIntegrationPage
+from .pages.key_builder import KeyBuilderPage
+from .pages.welcome_page import WelcomePage
 
 #import the dialog that will be used in the main window and the menu bar
 from .dialogs.about import AboutDialog
@@ -130,9 +132,13 @@ class MainWindow(QMainWindow):
         template_action.triggered.connect(lambda: self._navigate_to_key("template_manager"))
         util_menu.addAction(template_action)
 
-        project_action = QAction("&Project Manager", self)
+        project_action = QAction("&Course Manager", self)
         project_action.triggered.connect(lambda: self._navigate_to_key("project_manager"))
         util_menu.addAction(project_action)
+
+        key_builder_action = QAction("&Key Build Utility", self)
+        key_builder_action.triggered.connect(lambda: self._navigate_to_key("key_builder"))
+        util_menu.addAction(key_builder_action)
 
         util_menu.addSeparator()
 
@@ -196,6 +202,7 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
 
         # Create pages
+        self.welcome_page = WelcomePage(main_window=self)
         self.quick_grade_page = QuickGradePage()
         self.review_page = ReviewPanelPage()
         self.template_manager_page = TemplateManagerPage()
@@ -208,11 +215,16 @@ class MainWindow(QMainWindow):
         self.score_only_page = ScoreOnlyPage()
         self.report_only_page = ReportOnlyPage()
         self.pdf_tools_page = PdfToolsPage()
+        self.key_builder_page = KeyBuilderPage()
         self.lms_integration_page = LmsIntegrationPage()
 
         # Define sidebar structure: (label, key, widget)
         # Use _DIVIDER as a separator between groups.
         nav_entries = [
+            # --- Welcome ---
+            ("Welcome",           "welcome",          self.welcome_page),
+            # --- Divider ---
+            _DIVIDER,
             # --- Main ---
             ("Grader",            "quick_grade",      self.quick_grade_page),
             ("Review & Correct",  "review",           self.review_page),
@@ -225,12 +237,13 @@ class MainWindow(QMainWindow):
             # --- Divider ---
             _DIVIDER,
             # --- Utilities ---
-            ("Project Manager",   "project_manager",  self.project_manager_page),
+            ("Course Manager",     "project_manager",  self.project_manager_page),
             ("Template Manager",  "template_manager", self.template_manager_page),
             ("LMS Integration",   "lms_integration",  self.lms_integration_page),
             # --- Divider ---
             _DIVIDER,
             # --- Utilities ---
+            ("Key Build Utility", "key_builder",      self.key_builder_page),
             ("PDF Tools",         "pdf_tools",        self.pdf_tools_page),
             ("Mock Data Utility", "mock_data",        self.mock_data_page),
             ("Map Viewer",        "map_viewer",       self.map_viewer_page),

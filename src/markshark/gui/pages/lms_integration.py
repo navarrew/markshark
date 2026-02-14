@@ -36,13 +36,7 @@ from PySide6.QtWidgets import (
 
 from ..widgets import FileSelector, PageHeader
 from ..models.lms_filter_registry import LmsFilterRegistry
-
-_RUN_BTN_STYLE = (
-    "QPushButton { background-color: #0d6efd; color: white; "
-    "font-weight: bold; font-size: 14px; border-radius: 4px; padding: 6px 20px; }"
-    "QPushButton:hover { background-color: #0b5ed7; }"
-    "QPushButton:disabled { background-color: #6c757d; }"
-)
+from ..utils import RUN_BUTTON_STYLE as _RUN_BTN_STYLE
 
 _NONE_LABEL = "(none)"
 

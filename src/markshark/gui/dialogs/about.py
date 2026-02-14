@@ -33,13 +33,8 @@ class AboutDialog(QDialog):
         layout.addWidget(title)
 
         # Version
-        try:
-            from markshark import __version__
-            version = __version__
-        except ImportError:
-            version = "development"
-
-        version_label = QLabel(f"Version {version}")
+        from ..utils import get_app_version
+        version_label = QLabel(f"Version {get_app_version()}")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version_label)
 

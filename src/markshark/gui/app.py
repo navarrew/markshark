@@ -57,15 +57,23 @@ def main():
     font = QFont("Poppins", 12)
     app.setFont(font)
 
-    # App-wide stylesheet: larger Poppins Medium for QGroupBox section titles
+    # App-wide stylesheet: QGroupBox "card" look with visible contrast
     app.setStyleSheet(
         "QGroupBox { font-family: 'Poppins'; font-weight: 500; font-size: 15px;"
-        "            padding-top: 22px; }"
+        "            padding-top: 22px;"
+        "            background-color: rgba(255, 255, 255, 0.06);"
+        "            border: 1px solid rgba(255, 255, 255, 0.12);"
+        "            border-radius: 6px;"
+        "            margin-top: 6px; }"
         "QGroupBox::title { subcontrol-origin: margin;"
         "                    subcontrol-position: top left;"
         "                    padding: 4px 8px;"
         "                    background-color: #0E817E;"
-        "                    color: white; }"
+        "                    color: white;"
+        "                    border-top-left-radius: 4px;"
+        "                    border-top-right-radius: 4px;"
+        "                    border-bottom-left-radius: 0px;"
+        "                    border-bottom-right-radius: 4px; }"
     )
 
     # Create and show main window
