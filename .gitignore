@@ -213,5 +213,6 @@ __marimo__/
 
 .DS_Store
 
-# Git worktrees (local only)
+# Git worktrees and Claude Code local data
 .worktrees/
+.claude/

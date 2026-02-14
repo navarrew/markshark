@@ -68,6 +68,15 @@ Allow teachers to skip ID-based matching and just get names + scores.
 - Simplified report output (no orphan/absent classification)
 - Use case: teachers who don't assign student IDs and just want name + score
 
+### Template Catalog PDF
+Single combined PDF containing all bundled bubble sheet templates — a printable "lookbook" for teachers.
+- Auto-generated from all templates in `templates/` directory
+- Each page shows one template at full size with metadata overlay (name, question count, choice layout)
+- Table of contents on the first page
+- CLI command (`markshark catalog`) to regenerate when templates are added
+- Could be bundled as a static asset or generated on demand
+- "Find Your Bubble Sheet" card on the Welcome page could offer a one-click download of the catalog
+
 ---
 
 ## Longer-Term
