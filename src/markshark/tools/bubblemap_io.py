@@ -66,6 +66,22 @@ from typing import List, Dict, Any, Optional
 
 
 @dataclass
+class OutputZone:
+    """Rectangular text output area on the bubble sheet (not a bubble grid).
+
+    Used during annotation to print student name, ID, score, percentage,
+    date, and optional roster-match information on the graded sheet.
+
+    Coordinates are normalised 0-1 fractions of page dimensions,
+    consistent with GridLayout's coordinate system.
+    """
+    x_left: float       # normalised X of left edge   (0..1)
+    y_top: float        # normalised Y of top edge     (0..1)
+    x_right: float      # normalised X of right edge   (0..1)
+    y_bottom: float     # normalised Y of bottom edge  (0..1)
+
+
+@dataclass
 class GridLayout:
     """Defines a single bubble grid (answers, ID, names, version)."""
     name: str
@@ -141,6 +157,7 @@ class PageLayout:
     id_zone: GridLayout | None = None
     test_id_zone: GridLayout | None = None  # Numerical test ID (distinct from version)
     version_zone: GridLayout | None = None  # Test version (A, B, C, D, etc.)
+    output_zone: OutputZone | None = None   # Text output rectangle for annotation
 
 
 
@@ -239,6 +256,13 @@ class Bubblemap:
         """Get version_zone from page 1."""
         if self.pages:
             return self.pages[0].version_zone
+        return None
+
+    @property
+    def output_zone(self) -> OutputZone | None:
+        """Get output_zone from page 1."""
+        if self.pages:
+            return self.pages[0].output_zone
         return None
 
 
@@ -408,6 +432,33 @@ def _parse_page_layouts(page_num: int, page_data: Dict[str, Any],
                 layout_dict.setdefault("selection_axis", "col")
                 layout_dict.setdefault("labels", "0123456789")
             setattr(page_layout, zone_name, _parse_layout(f"page{page_num}_{zone_name}", layout_dict, page_size_mm))
+
+    # Parse output_zone (text output rectangle, NOT a bubble grid).
+    # This does not use _parse_layout() because OutputZone has no
+    # numrows/numcols/radius — it is a simple bounding rectangle.
+    output_zone_data = page_data.get("output_zone")
+    if output_zone_data:
+        page_width_mm, page_height_mm = page_size_mm
+        if "x_mm" in output_zone_data:
+            # v3 mm coordinates → normalised 0-1
+            oz_x = float(output_zone_data["x_mm"])
+            oz_y = float(output_zone_data["y_mm"])
+            oz_w = float(output_zone_data["width_mm"])
+            oz_h = float(output_zone_data["height_mm"])
+            page_layout.output_zone = OutputZone(
+                x_left=oz_x / page_width_mm,
+                y_top=oz_y / page_height_mm,
+                x_right=(oz_x + oz_w) / page_width_mm,
+                y_bottom=(oz_y + oz_h) / page_height_mm,
+            )
+        elif "x_left" in output_zone_data:
+            # Already normalised (v1 format)
+            page_layout.output_zone = OutputZone(
+                x_left=float(output_zone_data["x_left"]),
+                y_top=float(output_zone_data["y_top"]),
+                x_right=float(output_zone_data["x_right"]),
+                y_bottom=float(output_zone_data["y_bottom"]),
+            )
 
     return page_layout
 

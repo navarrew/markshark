@@ -206,7 +206,7 @@ class QuickGradePage(QWidget):
         output_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         output_btn_panel.addWidget(output_label)
 
-        self.open_folder_btn = QPushButton("Open\n Assessment Folder")
+        self.open_folder_btn = QPushButton("Open\nExam Folder")
         self.open_folder_btn.setEnabled(False)
         self.open_folder_btn.setFixedWidth(100)
         self.open_folder_btn.clicked.connect(lambda: self._open_file(self.work_dir))

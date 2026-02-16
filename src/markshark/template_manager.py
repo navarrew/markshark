@@ -33,6 +33,7 @@ class BubbleSheetTemplate:
     num_choices: Optional[int] = None
     num_pages: Optional[int] = None
     choices_label: str = ""  # Human-readable, e.g. "5 choices (A-E)" or "10 T/F, 20 A-E"
+    preview_image_path: Optional[Path] = None  # Optional quarter-size PNG/JPG preview
 
     def to_dict(self) -> Dict:
         """Convert template to dictionary for JSON/YAML serialization"""
@@ -46,6 +47,7 @@ class BubbleSheetTemplate:
             'num_choices': self.num_choices,
             'num_pages': self.num_pages,
             'choices_label': self.choices_label,
+            'preview_image_path': str(self.preview_image_path) if self.preview_image_path else None,
         }
     
     def __str__(self) -> str:
@@ -384,6 +386,14 @@ class TemplateManager:
             except Exception as e:
                 logger.warning(f"Error reading metadata from {yaml_path}: {e}")
 
+            # Look for optional preview image (preview.png, preview.jpg, etc.)
+            preview_image_path = None
+            for suffix in ('.png', '.jpg', '.jpeg'):
+                candidate = subdir / f"preview{suffix}"
+                if candidate.exists():
+                    preview_image_path = candidate
+                    break
+
             template = BubbleSheetTemplate(
                 template_id=template_id,
                 display_name=display_name,
@@ -394,6 +404,7 @@ class TemplateManager:
                 num_choices=num_choices,
                 num_pages=num_pages,
                 choices_label=choices_label,
+                preview_image_path=preview_image_path,
             )
 
 

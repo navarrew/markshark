@@ -136,7 +136,7 @@ class MainWindow(QMainWindow):
         project_action.triggered.connect(lambda: self._navigate_to_key("project_manager"))
         util_menu.addAction(project_action)
 
-        key_builder_action = QAction("&Key Build Utility", self)
+        key_builder_action = QAction("Answer &Key Utility", self)
         key_builder_action.triggered.connect(lambda: self._navigate_to_key("key_builder"))
         util_menu.addAction(key_builder_action)
 
@@ -146,7 +146,7 @@ class MainWindow(QMainWindow):
         mock_action.triggered.connect(lambda: self._navigate_to_key("mock_data"))
         util_menu.addAction(mock_action)
 
-        map_action = QAction("&Map Viewer", self)
+        map_action = QAction("&Bubblemap Utility", self)
         map_action.triggered.connect(lambda: self._navigate_to_key("map_viewer"))
         util_menu.addAction(map_action)
 
@@ -237,16 +237,16 @@ class MainWindow(QMainWindow):
             # --- Divider ---
             _DIVIDER,
             # --- Utilities ---
-            ("Course Manager",     "project_manager",  self.project_manager_page),
+            ("Course Manager",     "project_manager", self.project_manager_page),
             ("Template Manager",  "template_manager", self.template_manager_page),
             ("LMS Integration",   "lms_integration",  self.lms_integration_page),
             # --- Divider ---
             _DIVIDER,
             # --- Utilities ---
-            ("Key Build Utility", "key_builder",      self.key_builder_page),
+            ("Answer Key Utility", "key_builder",     self.key_builder_page),
             ("PDF Tools",         "pdf_tools",        self.pdf_tools_page),
             ("Mock Data Utility", "mock_data",        self.mock_data_page),
-            ("Map Viewer",        "map_viewer",       self.map_viewer_page),
+            ("Bubblemap Utility", "map_viewer",       self.map_viewer_page),
             # --- Divider ---
             _DIVIDER,
             # --- Bottom ---
@@ -304,6 +304,7 @@ class MainWindow(QMainWindow):
                 self.score_only_page,
                 self.report_only_page,
                 self.mock_data_page,
+                self.key_builder_page,
             )
             if hasattr(page, 'project_selector')
         ]

@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
 
 from ..widgets import PageHeader, PDFPreview, ProjectSelector, FlagInfoPanel
 from ..models import CorrectionLog
+from ..utils import RUN_BUTTON_STYLE
 
 # Lazy-loaded roster helpers (avoid import errors if score_core unavailable)
 try:
@@ -415,6 +416,22 @@ class ReviewPanelPage(QWidget):
         filter_layout.addWidget(self.show_flagged_btn)
 
         filter_layout.addStretch()
+
+        # Re-annotate button — regenerates annotated PDF + CSV with corrections applied
+        self.reannotate_btn = QPushButton("Apply Corrections && Re-annotate")
+        self.reannotate_btn.setStyleSheet(RUN_BUTTON_STYLE)
+        self.reannotate_btn.setFixedWidth(280)
+        self.reannotate_btn.setEnabled(False)
+        self.reannotate_btn.clicked.connect(self._on_reannotate)
+        filter_layout.addWidget(self.reannotate_btn)
+
+        # Clear corrections button — removes all pending corrections
+        self.clear_corrections_btn = QPushButton("Clear Corrections")
+        self.clear_corrections_btn.setFixedWidth(140)
+        self.clear_corrections_btn.setEnabled(False)
+        self.clear_corrections_btn.clicked.connect(self._on_clear_corrections)
+        filter_layout.addWidget(self.clear_corrections_btn)
+
         layout.addLayout(filter_layout)
 
         # ----- Main content splitter -----
@@ -452,6 +469,7 @@ class ReviewPanelPage(QWidget):
         self.flag_panel = FlagInfoPanel()
         self.flag_panel.suggestion_accepted.connect(self._accept_suggestion)
         self.flag_panel.roster_requested.connect(self._on_roster_requested)
+        self.flag_panel.undo_correction.connect(self._undo_id_correction)
         left_layout.addWidget(self.flag_panel)
 
         main_splitter.addWidget(left_widget)
@@ -718,6 +736,7 @@ class ReviewPanelPage(QWidget):
             # Enable buttons
             self.export_btn.setEnabled(True)
             self.view_log_btn.setEnabled(True)
+            self._update_reannotate_enabled()
             self._update_status()
 
         except Exception as e:
@@ -1007,6 +1026,9 @@ class ReviewPanelPage(QWidget):
         except Exception as e:
             print(f"[warn] Could not sync corrections to logs/: {e}")
 
+        # Enable Re-annotate button when corrections exist
+        self._update_reannotate_enabled()
+
     # =====================================================================
     # Context menu (right-click → Revert)
     # =====================================================================
@@ -1078,7 +1100,16 @@ class ReviewPanelPage(QWidget):
                 and self._correction_log.has_correction(student_id, "student_id")
             )
             if orphan_corrected:
-                self.flag_panel.show_corrected("CORRECTED")
+                # Look up what the ID was corrected to, so the teacher can
+                # see the mapping and undo it if needed.
+                effective = self._correction_log.get_effective_corrections()
+                corrected_id = effective.get(student_id, {}).get("student_id", "")
+                self.flag_panel.show_corrected(
+                    "CORRECTED",
+                    student_id=student_id,
+                    original_id=student_id,
+                    corrected_id=corrected_id,
+                )
             else:
                 self._show_orphan_suggestions(row_data)
         else:
@@ -1110,7 +1141,11 @@ class ReviewPanelPage(QWidget):
                 elif field == "ID":
                     readable.append("orphan ID")
                 elif field == "Version":
-                    readable.append("version bubble blank (auto-detected)")
+                    # flag_type is e.g. "blank, inferred B" or just "blank"
+                    if "inferred" in flag_type:
+                        readable.append(f"version bubble {flag_type}")
+                    else:
+                        readable.append("version bubble blank (auto-detected)")
                 else:
                     readable.append(part)
             else:
@@ -1225,6 +1260,24 @@ class ReviewPanelPage(QWidget):
         self._sync_corrections_to_logs()
         self._populate_spreadsheet()
         self._update_status()
+
+    def _undo_id_correction(self, student_id: str):
+        """Revert an orphan ID correction and return to the suggestions view."""
+        if self._correction_log is None:
+            return
+
+        # Revert the correction in the log (appends a REVERT entry)
+        self._correction_log.revert(student_id, "student_id", "Undone via GUI")
+        self._sync_corrections_to_logs()
+
+        # Rebuild the spreadsheet so the cell reverts to original styling
+        self._populate_spreadsheet()
+        self._update_status()
+
+        # Re-select the current row to refresh the flag panel — this will
+        # now show the orphan suggestions again since the correction is gone.
+        if self._current_student_idx >= 0:
+            self.spreadsheet.setCurrentCell(self._current_student_idx, 0)
 
     def _on_roster_requested(self):
         """Teacher clicked 'Load Roster...' — open a file dialog."""
@@ -1362,6 +1415,203 @@ class ReviewPanelPage(QWidget):
         self.show_all_btn.setChecked(not flagged_only)
         self.show_flagged_btn.setChecked(flagged_only)
         self._populate_spreadsheet()
+
+    # =====================================================================
+    # Re-annotation
+    # =====================================================================
+
+    def _update_reannotate_enabled(self):
+        """Enable/disable the Re-annotate and Clear Corrections buttons."""
+        has_corrections = (
+            self._correction_log is not None
+            and bool(self._correction_log.get_effective_corrections())
+        )
+        self.reannotate_btn.setEnabled(has_corrections)
+        self.clear_corrections_btn.setEnabled(has_corrections)
+
+    def _on_clear_corrections(self):
+        """Delete the corrections log so the teacher starts fresh."""
+        if self._correction_log is None:
+            return
+
+        effective = self._correction_log.get_effective_corrections()
+        n = sum(len(v) for v in effective.values())
+        reply = QMessageBox.question(
+            self,
+            "Clear Corrections",
+            f"This will permanently delete {n} correction(s).\n\n"
+            "The scored CSV and annotated PDF will NOT be changed — "
+            "only the pending corrections are removed.\n\n"
+            "Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        self._correction_log.clear()
+        # Invalidate the absent-roster cache so orphan suggestions are
+        # recomputed without the now-deleted corrections.
+        self._absent_roster = None
+        self._populate_spreadsheet()
+        self._update_reannotate_enabled()
+        self._update_status()
+        self.status_label.setText("Corrections cleared.")
+
+    def _on_reannotate(self):
+        """Re-run scoring with corrections applied to regenerate annotated PDF."""
+        if not self._correction_log or not self._scored_data:
+            return
+
+        # Load results_params.json to get original scoring parameters
+        csv_path = Path(self.results_combo.currentData())
+        params_path = csv_path.with_name(csv_path.stem + "_params.json")
+        if not params_path.exists():
+            QMessageBox.warning(
+                self,
+                "Missing Parameters",
+                "Cannot find scoring parameters file.\n\n"
+                "Re-annotation requires the original scoring parameters "
+                f"({csv_path.stem}_params.json) which is created during scoring.\n\n"
+                "Try re-scoring the original scans first.",
+            )
+            return
+
+        import json
+        with open(params_path, encoding="utf-8") as f:
+            params = json.load(f)
+
+        # Determine project root (parent of score_data/) for path discovery
+        project_root = (
+            csv_path.parent.parent
+            if csv_path.parent.name == "score_data"
+            else csv_path.parent
+        )
+        input_files = project_root / "input_files"
+
+        # Resolve aligned PDF path — try params first, fall back to standard
+        # project structure.  Older results_params.json files (pre-re-annotation
+        # feature) don't store input_path, so the fallback is essential.
+        input_path = params.get("input_path")
+        if not input_path or not Path(input_path).exists():
+            # Standard project structure: <project>/input_files/aligned_scans.pdf
+            fallback = input_files / "aligned_scans.pdf"
+            if fallback.exists():
+                input_path = str(fallback)
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Missing Input",
+                    "Aligned PDF not found.\n\n"
+                    "Looked in:\n"
+                    f"  • {input_path or '(not recorded in params)'}\n"
+                    f"  • {fallback}\n\n"
+                    "The aligned scans file may have been moved or deleted.",
+                )
+                return
+
+        # Resolve bubblemap path
+        bubblemap_path = params.get("template", {}).get("bubblemap_path")
+        if not bubblemap_path or not Path(bubblemap_path).exists():
+            QMessageBox.warning(
+                self,
+                "Missing Template",
+                f"Bubblemap not found:\n{bubblemap_path}\n\n"
+                "The template may have been removed.",
+            )
+            return
+
+        # Get corrections in the format score_pdf() expects:
+        # {student_id: {field: corrected_value, ...}, ...}
+        corrections = self._correction_log.get_effective_corrections()
+
+        # Output paths (overwrite existing scored outputs)
+        out_pdf = str(project_root / "scored_scans.pdf")
+        out_csv = str(csv_path)
+
+        # Key file — try params, fall back to input_files/key.*
+        key_txt = params.get("key_txt")
+        if key_txt and not Path(key_txt).exists():
+            key_txt = None
+        if not key_txt and input_files.exists():
+            for k in sorted(input_files.glob("key.*")):
+                key_txt = str(k)
+                break
+
+        # Roster — try params, fall back to input_files/roster.*
+        roster_csv = params.get("roster_csv")
+        if roster_csv and not Path(roster_csv).exists():
+            roster_csv = None
+        if not roster_csv and input_files.exists():
+            for r in sorted(input_files.glob("roster.*")):
+                roster_csv = str(r)
+                break
+
+        # Archive the original results CSV before overwriting — only on the
+        # first re-annotation so the teacher always has the raw scanner output.
+        original_backup = Path(out_csv).with_name("results_original.csv")
+        will_archive = Path(out_csv).exists() and not original_backup.exists()
+
+        # Confirm with user before overwriting
+        n_corrections = sum(len(v) for v in corrections.values())
+        archive_note = (
+            f"\nOriginal results will be saved as {original_backup.name}."
+            if will_archive else ""
+        )
+        reply = QMessageBox.question(
+            self,
+            "Apply Corrections",
+            f"This will re-score all sheets with {n_corrections} correction(s) applied "
+            f"and overwrite:\n"
+            f"  • {Path(out_csv).name}\n"
+            f"  • {Path(out_pdf).name}\n"
+            f"{archive_note}\n"
+            "Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # Save original results before overwriting (first time only)
+        if will_archive:
+            try:
+                shutil.copy2(out_csv, str(original_backup))
+            except Exception as e:
+                print(f"[warn] Could not archive original results: {e}")
+
+        # Run score_pdf() in a worker thread so the GUI stays responsive
+        self.reannotate_btn.setEnabled(False)
+        self.status_label.setText("Re-annotating with corrections...")
+
+        from ..workers.reannotate_worker import ReAnnotateWorker
+
+        self._reannotate_worker = ReAnnotateWorker(
+            input_path=input_path,
+            bubblemap_path=bubblemap_path,
+            out_csv=out_csv,
+            out_pdf=out_pdf,
+            key_txt=key_txt,
+            roster_csv=roster_csv,
+            corrections=corrections,
+            params=params,
+        )
+        self._reannotate_worker.finished.connect(self._on_reannotate_done)
+        self._reannotate_worker.error.connect(self._on_reannotate_error)
+        self._reannotate_worker.start()
+
+    def _on_reannotate_done(self, out_csv: str):
+        """Handle successful re-annotation completion."""
+        self.status_label.setText("Re-annotation complete! PDF and CSV updated.")
+        # Clear the PDF preview cache so the new annotated pages load fresh
+        self.scan_preview.clear()
+        # Reload the CSV so the spreadsheet shows corrected scores
+        self._load_scored_csv(Path(out_csv))
+        self.reannotate_btn.setEnabled(True)
+
+    def _on_reannotate_error(self, error_msg: str):
+        """Handle re-annotation failure."""
+        self.status_label.setText("Re-annotation failed.")
+        QMessageBox.warning(self, "Re-annotation Error", error_msg)
+        self.reannotate_btn.setEnabled(True)
 
     # =====================================================================
     # Export & Log
@@ -1563,3 +1813,5 @@ class ReviewPanelPage(QWidget):
         self.spreadsheet.setColumnCount(0)
         self.export_btn.setEnabled(False)
         self.view_log_btn.setEnabled(False)
+        self.reannotate_btn.setEnabled(False)
+        self.clear_corrections_btn.setEnabled(False)

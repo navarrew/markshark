@@ -763,6 +763,165 @@ def score_student(
 
 
 # =============================================================================
+# Serialization Functions
+# =============================================================================
+
+def answer_spec_to_text(spec: AnswerSpec, default_points: float = 1.0) -> str:
+    """
+    Serialize an AnswerSpec back to its canonical text representation.
+
+    Point values are included only when they differ from *default_points*
+    so that round-tripping through parse_answer → answer_spec_to_text is
+    clean.
+
+    Examples (default_points=1.0):
+        SINGLE  A, 1pt  -> "A"
+        SINGLE  A, 3pt  -> "A:3"
+        OR      A^B     -> "A^B"
+        AND     A&B     -> "A&B"
+        PARTIAL A:2@B:1 -> "A:2@B:1"
+        FREEBIE 1pt     -> "*"
+        FREEBIE 5pt     -> "*:5"
+        DISCARD         -> ""
+    """
+    if spec.mode == ScoringMode.DISCARD:
+        return ""
+
+    if spec.mode == ScoringMode.FREEBIE:
+        if spec.total_points != default_points:
+            return f"*:{spec.total_points:g}"
+        return "*"
+
+    keys_sorted = sorted(spec.correct_answers.keys())
+    if not keys_sorted:
+        return ""
+
+    # Choose the operator character for the mode
+    op_map = {
+        ScoringMode.OR: "^",
+        ScoringMode.AND: "&",
+        ScoringMode.PARTIAL_LENIENT: "@",
+        ScoringMode.PARTIAL_STRICT: "~",
+    }
+    operator = op_map.get(spec.mode)
+
+    if operator is not None:
+        # Multi-answer modes — include per-answer points when non-default
+        all_default = all(
+            spec.correct_answers[k] == default_points for k in keys_sorted
+        )
+        if all_default:
+            text = operator.join(keys_sorted)
+            # Append total override only for OR/AND when total != default
+            if spec.mode in (ScoringMode.OR, ScoringMode.AND):
+                if spec.total_points != default_points:
+                    text += f":{spec.total_points:g}"
+            return text
+        else:
+            # Per-answer point values
+            parts = [
+                f"{k}:{spec.correct_answers[k]:g}" for k in keys_sorted
+            ]
+            return operator.join(parts)
+
+    # SINGLE mode
+    letter = keys_sorted[0]
+    if spec.total_points != default_points:
+        return f"{letter}:{spec.total_points:g}"
+    return letter
+
+
+def write_key_file(
+    key_set: AnswerKeySet, path: Union[str, Path], fmt: str = "txt"
+) -> None:
+    """
+    Write an AnswerKeySet to a file.
+
+    Args:
+        key_set: The answer key set to serialize.
+        path:    Destination file path.
+        fmt:     ``"txt"`` for the text format that ``_load_text`` reads,
+                 ``"xlsx"`` for an Excel workbook with an *Answer Key* sheet.
+    """
+    path = Path(path)
+    if fmt == "xlsx":
+        _write_xlsx(key_set, path)
+    else:
+        _write_text(key_set, path)
+
+
+def _write_text(key_set: AnswerKeySet, path: Path) -> None:
+    """Write key set in the ver:/code:/default: text format."""
+    lines: List[str] = []
+    for identifier in sorted(key_set.keys):
+        vk = key_set.keys[identifier]
+        # Build header
+        parts: List[str] = []
+        if vk.version:
+            parts.append(f"ver:{vk.version}")
+        if vk.code:
+            parts.append(f"code:{vk.code}")
+        if vk.default_points != 1.0:
+            parts.append(f"default:{vk.default_points:g}")
+        lines.append(" ".join(parts))
+
+        # Build comma-separated answer line
+        answer_texts = [
+            answer_spec_to_text(spec, vk.default_points) for spec in vk.answers
+        ]
+        lines.append(",".join(answer_texts))
+
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_xlsx(key_set: AnswerKeySet, path: Path) -> None:
+    """Write key set as an Excel workbook."""
+    if not HAS_OPENPYXL:
+        raise ImportError(
+            "openpyxl is required to write Excel files. "
+            "Install with: pip install openpyxl"
+        )
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Answer Key"
+
+    # Build column headers: Q# then one column per version
+    sorted_ids = sorted(key_set.keys)
+    headers = ["Q#"]
+    for vid in sorted_ids:
+        vk = key_set.keys[vid]
+        parts: List[str] = []
+        if vk.version:
+            parts.append(f"ver:{vk.version}")
+        if vk.code:
+            parts.append(f"code:{vk.code}")
+        if vk.default_points != 1.0:
+            parts.append(f"default:{vk.default_points:g}")
+        headers.append(" ".join(parts))
+    ws.append(headers)
+
+    # Determine max question count across versions
+    max_q = max((vk.num_questions for vk in key_set.keys.values()), default=0)
+
+    for q_idx in range(max_q):
+        row = [q_idx + 1]
+        for vid in sorted_ids:
+            vk = key_set.keys[vid]
+            if q_idx < len(vk.answers):
+                row.append(answer_spec_to_text(vk.answers[q_idx], vk.default_points))
+            else:
+                row.append("")
+        ws.append(row)
+
+    # Auto-size columns
+    for col in ws.columns:
+        max_len = max((len(str(cell.value or "")) for cell in col), default=8)
+        ws.column_dimensions[col[0].column_letter].width = max(max_len + 2, 8)
+
+    wb.save(path)
+
+
+# =============================================================================
 # Legacy Compatibility Functions
 # =============================================================================
 

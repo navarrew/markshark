@@ -73,6 +73,13 @@ styles:
 
 page_1:
 
+  # Rectangle where student name, score, and date are printed on annotated sheets
+  output_zone:
+    x_mm: 20
+    y_mm: 2.0
+    width_mm: 148
+    height_mm: 17
+
   text_zones:
   - content: "- please fill bubbles completely -"
     font_family: Poppins

@@ -35,7 +35,7 @@ from .defaults import (
     resolve_scored_pdf_path,
 )
 
-from .tools.bubblemap_io import load_bublmap, Bubblemap, GridLayout, PageLayout
+from .tools.bubblemap_io import load_bublmap, Bubblemap, GridLayout, PageLayout, OutputZone
 from .tools import io_pages as IO
 from .tools.score_tools import (
     process_page_all,
@@ -519,14 +519,23 @@ box_color_blank_answer_row=None,
 box_thickness: Optional[int] = None,
 box_pad: Optional[int] = None,
 box_top_extra: Optional[int] = None,
+corrected_questions: Optional[set] = None,
 ) -> np.ndarray:
     """
     Draw per-bubble overlays for answer blocks:
       - green circle for correct,
       - red for incorrect,
       - grey for blank,
-      - orange for multi.
+      - orange for multi,
+      - teal diamond for corrected questions (when corrected_questions is provided).
     Optionally put % fill text in each bubble (label_density=True).
+
+    corrected_questions : set of 0-indexed question numbers that were manually
+        corrected by the teacher.  When a question is in this set, its selected
+        bubble(s) are drawn as teal diamonds instead of the normal circles.
+        The colour still reflects correct/incorrect, but the diamond shape
+        signals "this answer was overridden by the teacher".
+
     Returns a new image with drawings (does not modify input in place).
     """
     out = img_bgr.copy()
@@ -573,6 +582,11 @@ box_top_extra: Optional[int] = None,
         box_pad = getattr(ad, "box_pad", 6)
     if box_top_extra is None:
         box_top_extra = getattr(ad, "box_top_extra", 0)
+
+    # Corrected-question defaults (diamond shape in teal)
+    color_corrected = getattr(ad, "color_corrected", (180, 130, 0))
+    thickness_corrected = getattr(ad, "thickness_corrected", 3)
+    corrected_set = corrected_questions or set()
 
     q_global = 0
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
@@ -739,7 +753,24 @@ box_top_extra: Optional[int] = None,
                     else:
                         col = (0, 200, 200) if (c in selected_idx) else (200, 200, 200)
 
-                cv2.circle(out, (cx, cy), radius, col, thickness, lineType=cv2.LINE_AA)
+                # Corrected questions get a diamond shape in teal so they
+                # stand out visually on the annotated sheet.  The colour
+                # stays correct/incorrect but the shape signals "teacher
+                # override".  Non-corrected questions keep the normal circle.
+                if q_global in corrected_set and c in selected_idx:
+                    # Diamond = rotated square whose inscribed circle has
+                    # the same radius, so the diamond tips extend ~40% further.
+                    d = int(radius * 1.1)  # half-diagonal of the diamond
+                    pts = np.array([
+                        [cx, cy - d],   # top
+                        [cx + d, cy],   # right
+                        [cx, cy + d],   # bottom
+                        [cx - d, cy],   # left
+                    ], dtype=np.int32)
+                    cv2.polylines(out, [pts], isClosed=True, color=color_corrected,
+                                  thickness=thickness_corrected, lineType=cv2.LINE_AA)
+                else:
+                    cv2.circle(out, (cx, cy), radius, col, thickness, lineType=cv2.LINE_AA)
 
                 if label_density:
                     pct = int(round(100 * row_scores[c]))
@@ -768,7 +799,174 @@ box_top_extra: Optional[int] = None,
                                 font, pct_fill_font_scale, pct_fill_font_color,
                                 pct_fill_font_thickness, cv2.LINE_AA)
 
+            # Corrected-row indicator: draw a small filled teal dot to the
+            # right of the last bubble so corrected rows pop visually even
+            # when the diamond shape alone is hard to spot at a glance.
+            if q_global in corrected_set:
+                last_roi = rois[r * layout.numcols + (layout.numcols - 1)]
+                lx, ly, lw, lh = last_roi
+                dot_radius = max(3, radius // 3)  # small but visible
+                dot_x = lx + lw + dot_radius + 4  # ~4 px pad from rightmost bubble
+                dot_y = ly + lh // 2               # vertically centred
+                cv2.circle(out, (dot_x, dot_y), dot_radius,
+                           color_corrected, -1, lineType=cv2.LINE_AA)
+
             q_global += 1
+
+    return out
+
+
+def _annotate_output_zone(
+    img_bgr: np.ndarray,
+    output_zone: OutputZone,
+    student_info: dict,
+    score_info: dict,
+    roster: Optional[dict] = None,
+    flag_details: str = "",
+    annotation_defaults: Optional[AnnotationDefaults] = None,
+    corrections_applied: bool = False,
+) -> np.ndarray:
+    """Draw student name, score, and optional roster/flag text in the output zone.
+
+    Parameters
+    ----------
+    img_bgr : BGR image (numpy array).
+    output_zone : OutputZone with normalised 0-1 coordinates.
+    student_info : dict with keys ``last_name``, ``first_name``, ``student_id``.
+    score_info : dict with keys ``score``, ``total``, ``percent``, ``version``,
+                 ``has_key`` (bool, True when a key was provided).
+    roster : optional dict mapping student_id → {first_name, last_name, …}.
+    flag_details : pipe-separated flag string, e.g. ``"Q5:blank|Q10:multi"``.
+    annotation_defaults : colour / font overrides.
+
+    Returns a new image with the text overlay drawn.
+
+    Line 1: ``{LastName}, {FirstName}   ID: {StudentID}   Score: X/Y (pct%)   YYYY-MM-DD``
+    Line 2: ``From Roster: {Last}, {First}`` (only if a roster match is found)
+    Line 3: ``Flagged: Q5 (blank), Q10 (multi)`` (only if there are flagged questions)
+    """
+    import datetime
+
+    out = img_bgr.copy()
+    H, W = out.shape[:2]
+    ad = annotation_defaults or ANNOTATION_DEFAULTS
+
+    # Resolve annotation style from defaults
+    font_scale = getattr(ad, "output_font_scale", 0.55)
+    font_thickness = getattr(ad, "output_font_thickness", 1)
+    font_color = getattr(ad, "output_font_color", (180, 0, 0))
+    bg_color = getattr(ad, "output_bg_color", (255, 255, 255))
+    bg_alpha = getattr(ad, "output_bg_alpha", 0.7)
+
+    # Convert normalised coords → pixel rect
+    x1 = int(output_zone.x_left * W)
+    y1 = int(output_zone.y_top * H)
+    x2 = int(output_zone.x_right * W)
+    y2 = int(output_zone.y_bottom * H)
+
+    # Semi-transparent white background so text is readable over the form
+    overlay = out.copy()
+    cv2.rectangle(overlay, (x1, y1), (x2, y2), bg_color, -1)
+    cv2.addWeighted(overlay, bg_alpha, out, 1 - bg_alpha, 0, out)
+
+    # ---- Build text lines ----
+    last_name = student_info.get("last_name", "")
+    first_name = student_info.get("first_name", "")
+    student_id = student_info.get("student_id", "")
+    date_str = datetime.date.today().strftime("%Y-%m-%d")
+
+    name_part = last_name
+    if first_name:
+        name_part += f", {first_name}"
+
+    has_key = score_info.get("has_key", True)
+    if has_key:
+        score_val = score_info.get("score", 0)
+        total_val = score_info.get("total", 0)
+        percent_val = score_info.get("percent", 0.0)
+        # Format with appropriate precision (no decimal if whole number)
+        s_str = str(int(score_val)) if score_val == int(score_val) else f"{score_val:.1f}"
+        t_str = str(int(total_val)) if total_val == int(total_val) else f"{total_val:.1f}"
+        line1 = f"{name_part}   ID: {student_id}   Score: {s_str}/{t_str} ({percent_val:.1f}%)   {date_str}"
+    else:
+        line1 = f"{name_part}   ID: {student_id}   {date_str}"
+
+    # Line 2: roster match (simple dict lookup, not the full match_roster())
+    # Show "No roster match" when a roster was provided but ID wasn't found,
+    # so the teacher knows to investigate — but never show alternative names
+    # (privacy: students shouldn't see other students' IDs on returned sheets).
+    line2 = ""
+    if roster and student_id:
+        match = roster.get(student_id)
+        if match:
+            r_last = match.get("last_name", "")
+            r_first = match.get("first_name", "")
+            roster_name = r_last
+            if r_first:
+                roster_name += f", {r_first}"
+            if roster_name:
+                line2 = f"From Roster: {roster_name}"
+        else:
+            line2 = "No roster match"
+    elif roster and not student_id:
+        line2 = "No roster match (no ID detected)"
+
+    # Line 3: flagged questions — convert pipe-delimited codes to readable text
+    # e.g. "Q5:blank|Q10:multi|Version:blank" → "Flagged: Version (blank), Q5 (blank), Q10 (multi)"
+    line3 = ""
+    if flag_details:
+        parts = []
+        for flag in flag_details.split("|"):
+            flag = flag.strip()
+            if not flag:
+                continue
+            if ":" in flag:
+                name, reason = flag.split(":", 1)
+                parts.append(f"{name} ({reason})")
+            else:
+                parts.append(flag)
+        if parts:
+            line3 = "Flagged: " + ", ".join(parts)
+
+    # ---- Collect non-empty lines for rendering ----
+    lines = [line1]
+    if line2:
+        lines.append(line2)
+    if line3:
+        lines.append(line3)
+    if corrections_applied:
+        lines.append(f"Corrections applied: {date_str}")
+
+    # ---- Draw text inside the rectangle ----
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    margin_x = 5  # pixels from left edge of box
+
+    box_width = x2 - x1 - 2 * margin_x
+    box_height = y2 - y1
+
+    # Measure line 1 at the default font scale (widest line drives auto-scaling)
+    (tw1, th1), _ = cv2.getTextSize(line1, font, font_scale, font_thickness)
+
+    # Auto-scale font down if the widest line exceeds the box width
+    scale = font_scale
+    max_tw = tw1
+    for ln in lines[1:]:
+        (tw, _), _ = cv2.getTextSize(ln, font, font_scale, font_thickness)
+        max_tw = max(max_tw, tw)
+    if max_tw > box_width and box_width > 0:
+        scale = font_scale * (box_width / max_tw)
+        (tw1, th1), _ = cv2.getTextSize(line1, font, scale, font_thickness)
+
+    line_gap = 4  # pixels between lines
+
+    # Vertical centering based on actual number of lines
+    total_text_h = th1 * len(lines) + line_gap * (len(lines) - 1)
+    y_start = y1 + max((box_height - total_text_h) // 2, 2) + th1
+
+    for i, ln in enumerate(lines):
+        y_pos = y_start + i * (th1 + line_gap)
+        cv2.putText(out, ln, (x1 + margin_x, y_pos),
+                    font, scale, font_color, font_thickness, cv2.LINE_AA)
 
     return out
 
@@ -802,8 +1000,12 @@ def score_pdf(
     adaptive_min_above_floor: float = SCORING_DEFAULTS.adaptive_min_above_floor,
     # Roster matching (for orphan detection - adds ID:orphan flags)
     roster_csv: Optional[str] = None,
+    # Per-student corrections from the Review panel (dict of student_id → dict)
+    # When provided, corrected answers override the scanned values and the
+    # affected bubbles are drawn as teal diamonds instead of normal circles.
+    corrections: Optional[dict] = None,
 ) -> str:
-    
+
     """
     Grade a PDF or image stack using axis-based geometry.
 
@@ -830,6 +1032,7 @@ def score_pdf(
       - Generates an annotated PDF with overlays on each page
       - Blue circles for name/ID fields
       - Green/red/grey/orange circles for correct/incorrect/blank/multi answers
+      - Teal diamonds for corrected answers (when corrections are provided)
       - Page numbers in CSV correspond to pages in this PDF
     """
     bmap: Bubblemap = load_bublmap(bublmap_path)
@@ -971,7 +1174,10 @@ def score_pdf(
         """
         flags = []
         if version_used.endswith("*"):
-            flags.append("Version:blank")
+            inferred = version_used.rstrip("*")
+            # Include the inferred version so teachers know which key was used.
+            # Format: "Version:blank, inferred B" → rendered as "Version (blank, inferred B)"
+            flags.append(f"Version:blank, inferred {inferred}" if inferred else "Version:blank")
         for q_idx, ans in enumerate(answers):
             if ans is None or ans == "":
                 flags.append(f"Q{q_idx + 1}:blank")
@@ -1079,10 +1285,33 @@ def score_pdf(
                 # Limit answers to key length
                 answers_out = all_answers[:q_out]
                 answers_csv = [a if a is not None else "" for a in answers_out]
-                
+
+                # Apply corrections: override scanned answers with teacher-corrected values.
+                # This must happen before scoring so corrected answers affect the grades.
+                # We modify all_answers (not just answers_out) so the annotation path
+                # also picks up corrected values when it slices per-page answers.
+                if corrections:
+                    sid = student_info.get("student_id", "")
+                    student_corrections = corrections.get(sid, {})
+                    # StudentID correction — update info so roster/output zone use the corrected ID
+                    if "student_id" in student_corrections:
+                        student_info["student_id"] = student_corrections["student_id"]
+                    # Answer corrections — override individual question answers
+                    for field_name, corrected_value in student_corrections.items():
+                        if field_name.startswith("Q"):
+                            try:
+                                q_idx = int(field_name[1:]) - 1  # "Q5" → index 4
+                                if 0 <= q_idx < len(all_answers):
+                                    all_answers[q_idx] = corrected_value if corrected_value else None
+                            except ValueError:
+                                pass
+                    # Rebuild answers_out and answers_csv from the corrected all_answers
+                    answers_out = all_answers[:q_out]
+                    answers_csv = [a if a is not None else "" for a in answers_out]
+
                 # Get detected version
                 student_version = student_info.get("version", "")
-                
+
                 # Metrics
                 blanks = sum(1 for a in answers_out if (a is None or a == ""))
                 multi = sum(1 for a in answers_out if (isinstance(a, str) and "," in a))
@@ -1238,6 +1467,24 @@ def score_pdf(
                             'answer_zones': page_layout.answer_zones,
                         })()
                         
+                        # Build set of corrected question indices for this page
+                        # so _annotate_answers can draw diamonds instead of circles.
+                        page_corrected = set()
+                        if corrections:
+                            sid = student_info.get("student_id", "")
+                            student_corrections = corrections.get(sid, {})
+                            for field_name in student_corrections:
+                                if field_name.startswith("Q"):
+                                    try:
+                                        q_num = int(field_name[1:])  # "Q5" → 5
+                                        # Convert 1-based question number to 0-based
+                                        # page-local index (subtract questions on prior pages)
+                                        local_idx = (q_num - 1) - answers_before_page
+                                        if 0 <= local_idx < answers_in_page:
+                                            page_corrected.add(local_idx)
+                                    except ValueError:
+                                        pass
+
                         vis = _annotate_answers(
                             vis,
                             temp_bmap_answers,
@@ -1250,7 +1497,32 @@ def score_pdf(
                             calibrate_background=calibrate_background,
                             background_percentile=background_percentile,
                             annotation_defaults=ANNOTATION_DEFAULTS,
+                            corrected_questions=page_corrected if page_corrected else None,
                         )
+
+                        # Output zone: print student name, score, roster, and flags
+                        # (only rendered on pages that define an output_zone)
+                        if page_layout.output_zone is not None:
+                            vis = _annotate_output_zone(
+                                vis,
+                                page_layout.output_zone,
+                                student_info={
+                                    "last_name": student_info.get("last_name", ""),
+                                    "first_name": student_info.get("first_name", ""),
+                                    "student_id": student_info.get("student_id", ""),
+                                },
+                                score_info={
+                                    "score": score,
+                                    "total": total_scored,
+                                    "percent": percent,
+                                    "version": version_used,
+                                    "has_key": bool(keys_dict or use_advanced_scoring),
+                                },
+                                roster=roster,
+                                flag_details=flag_details,
+                                annotation_defaults=ANNOTATION_DEFAULTS,
+                                corrections_applied=bool(corrections),
+                            )
 
                         # Save annotated page
                         if out_annotated_dir:
@@ -1311,6 +1583,26 @@ def score_pdf(
                 # Limit answers to the Qs we output (based on key length if present)
                 answers_out = answers[:q_out]
                 answers_csv = [a if a is not None else "" for a in answers_out]
+
+                # Apply corrections: override scanned answers with teacher-corrected values.
+                # This must happen before scoring so corrected answers affect the grades.
+                if corrections:
+                    sid = info.get("student_id", "")
+                    student_corrections = corrections.get(sid, {})
+                    # StudentID correction — update info so roster/output zone use the corrected ID
+                    if "student_id" in student_corrections:
+                        info["student_id"] = student_corrections["student_id"]
+                    # Answer corrections — override individual question answers
+                    for field_name, corrected_value in student_corrections.items():
+                        if field_name.startswith("Q"):
+                            try:
+                                q_idx = int(field_name[1:]) - 1  # "Q5" → index 4
+                                if 0 <= q_idx < len(answers_out):
+                                    answers_out[q_idx] = corrected_value if corrected_value else None
+                            except ValueError:
+                                pass
+                    # Rebuild answers_csv from the (possibly corrected) answers
+                    answers_csv = [a if a is not None else "" for a in answers_out]
 
                 # Get detected version
                 student_version = info.get("version", "")
@@ -1414,6 +1706,21 @@ def score_pdf(
                         label_density=label_density,
                         annotation_defaults=ANNOTATION_DEFAULTS,
                     )
+
+                    # Build set of corrected question indices (0-based) for
+                    # this student so diamonds are drawn for overridden answers.
+                    student_corrected = set()
+                    if corrections:
+                        sid = info.get("student_id", "")
+                        student_corrections = corrections.get(sid, {})
+                        for field_name in student_corrections:
+                            if field_name.startswith("Q"):
+                                try:
+                                    q_num = int(field_name[1:])  # "Q5" → 5
+                                    student_corrected.add(q_num - 1)  # 0-indexed
+                                except ValueError:
+                                    pass
+
                     vis = _annotate_answers(
                         vis,
                         bmap,
@@ -1426,7 +1733,33 @@ def score_pdf(
                         calibrate_background=calibrate_background,
                         background_percentile=background_percentile,
                         annotation_defaults=ANNOTATION_DEFAULTS,
+                        corrected_questions=student_corrected if student_corrected else None,
                     )
+
+                    # Output zone: print student name, score, roster, and flags
+                    page1_layout = bmap.pages[0] if bmap.pages else None
+                    if page1_layout and page1_layout.output_zone is not None:
+                        vis = _annotate_output_zone(
+                            vis,
+                            page1_layout.output_zone,
+                            student_info={
+                                "last_name": info.get("last_name", ""),
+                                "first_name": info.get("first_name", ""),
+                                "student_id": info.get("student_id", ""),
+                            },
+                            score_info={
+                                "score": score,
+                                "total": total_scored,
+                                "percent": percent,
+                                "version": version_used,
+                                "has_key": bool(keys_dict or use_advanced_scoring),
+                            },
+                            roster=roster,
+                            flag_details=flag_details,
+                            annotation_defaults=ANNOTATION_DEFAULTS,
+                            corrections_applied=bool(corrections),
+                        )
+
                     if out_annotated_dir:
                         out_png = os.path.join(out_annotated_dir, f"page_{page_idx:03d}_overlay.png")
                         cv2.imwrite(out_png, vis)
@@ -1435,7 +1768,7 @@ def score_pdf(
                             pdf_writer.add_page(vis)
                         else:
                             annotated_pages.append(vis)
-                    
+
     if out_pdf_path:
         if pdf_writer is not None:
             pdf_writer.close(save=True)
@@ -1554,6 +1887,9 @@ def score_pdf(
     params_path = os.path.splitext(out_csv)[0] + "_params.json"
     _meta = bmap.metadata or {}
     scoring_params = {
+        "input_path": str(input_path),
+        "key_txt": str(key_txt) if key_txt else None,
+        "roster_csv": str(roster_csv) if roster_csv else None,
         "template": {
             "name": _meta.get("display_name", os.path.basename(os.path.dirname(bublmap_path))),
             "description": _meta.get("description", ""),

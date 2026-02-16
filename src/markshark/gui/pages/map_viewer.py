@@ -1,5 +1,5 @@
 """
-Bubblemap Viewer — overlay bubblemap circles on any PDF to verify placement.
+Bubblemap Utility — overlay bubblemap circles on any PDF to verify placement.
 
 Separates bubblemap (YAML) and PDF selection so users can apply any
 bubblemap to any PDF (template, aligned scans, raw scans, etc.).
@@ -145,7 +145,7 @@ class _OverlayWorker(QThread):
 # ---------------------------------------------------------------------------
 class MapViewerPage(QWidget):
     """
-    Bubblemap Viewer — overlay bubble positions on any PDF.
+    Bubblemap Utility — overlay bubble positions on any PDF.
 
     Features:
       - Separate bubblemap YAML and PDF selectors (independent)
@@ -184,7 +184,7 @@ class MapViewerPage(QWidget):
         layout = QVBoxLayout(self)
 
         header = PageHeader(
-            "MarkShark Bubblemap Viewer",
+            "MarkShark Bubblemap Utility",
             "Overlay bubblemap circles on any PDF to verify placement and debug alignment.",
         )
         layout.addWidget(header)

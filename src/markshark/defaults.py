@@ -219,6 +219,19 @@ class AnnotationDefaults:
     box_pad: int = 4
     box_top_extra: int = 7  # raise the top edge to avoid overwriting % labels
 
+    # Corrected-answer markers — diamond shape in teal, distinct from all
+    # other annotation colours (green correct, red incorrect, grey blank,
+    # orange multi).  Used during re-annotation after teacher corrections.
+    color_corrected: Tuple[int, int, int] = (180, 130, 0)   # teal (BGR)
+    thickness_corrected: int = 3  # slightly thicker than normal to stand out
+
+    # Output zone text overlay (student info printed on annotated sheets)
+    output_font_scale: float = 0.55
+    output_font_thickness: int = 1
+    output_font_color: Tuple[int, int, int] = (180, 0, 0)    # dark blue (BGR)
+    output_bg_color: Tuple[int, int, int] = (255, 255, 255)   # white background
+    output_bg_alpha: float = 0.7  # semi-transparent white rectangle behind text
+
 ANNOTATION_DEFAULTS = AnnotationDefaults()
 
 def apply_annotation_overrides(**kwargs) -> AnnotationDefaults:

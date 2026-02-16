@@ -8,7 +8,7 @@ recently opened projects for easy access.
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QCursor, QFontDatabase
+from PySide6.QtGui import QCursor, QFontDatabase, QPixmap
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -50,10 +50,14 @@ _BLUE = "#0d6efd"
 class _TemplatePicker(QDialog):
     """Dialog to browse available bubble sheet templates."""
 
+    # Max dimensions for the preview thumbnail inside the dialog
+    _PREVIEW_MAX_W = 200
+    _PREVIEW_MAX_H = 280
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Find Your Bubble Sheet")
-        self.setMinimumSize(520, 420)
+        self.setMinimumSize(640, 480)
         self._selected_template = None
         self._setup_ui()
 
@@ -66,10 +70,14 @@ class _TemplatePicker(QDialog):
             "Select one below to view details or download the PDF."
         )
         intro.setWordWrap(True)
-        intro.setStyleSheet("font-size: 13px; color: #444; margin-bottom: 8px;")
+        intro.setStyleSheet("font-size: 13px; color: white; margin-bottom: 8px;")
         layout.addWidget(intro)
 
-        # Template list
+        # ── Middle area: template list (left) + details/preview (right) ──
+        middle = QHBoxLayout()
+        middle.setSpacing(12)
+
+        # Template list (left side)
         self.template_list = QListWidget()
         self.template_list.setStyleSheet(
             "QListWidget { font-size: 14px; }"
@@ -77,21 +85,45 @@ class _TemplatePicker(QDialog):
             "QListWidget::item:selected { background-color: #e6faf8; color: #000; }"
         )
         self.template_list.currentRowChanged.connect(self._on_selection_changed)
-        layout.addWidget(self.template_list, 1)
+        middle.addWidget(self.template_list, 3)
 
-        # Details panel
+        # Right side: details text + preview image (stacked vertically)
+        right_panel = QVBoxLayout()
+        right_panel.setSpacing(8)
+
+        # Details text
         self.details_label = QLabel("Select a template to see details.")
         self.details_label.setWordWrap(True)
+        self.details_label.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+        )
         self.details_label.setStyleSheet(
             "font-size: 12px; color: #555; padding: 8px; "
             "background-color: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 6px;"
         )
-        layout.addWidget(self.details_label)
+        right_panel.addWidget(self.details_label)
+
+        # Preview image
+        self.preview_label = QLabel()
+        self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview_label.setStyleSheet(
+            "background-color: #f0f0f0; border: 1px solid #ddd; border-radius: 6px;"
+        )
+        self.preview_label.setFixedSize(self._PREVIEW_MAX_W, self._PREVIEW_MAX_H)
+        self.preview_label.hide()  # hidden until a template with a preview is selected
+        right_panel.addWidget(
+            self.preview_label, 0, Qt.AlignmentFlag.AlignHCenter
+        )
+
+        right_panel.addStretch()
+        middle.addLayout(right_panel, 2)
+
+        layout.addLayout(middle, 1)
 
         # Buttons
         btn_layout = QHBoxLayout()
 
-        self.download_btn = QPushButton("Save Template PDF...")
+        self.download_btn = QPushButton("Save Bubble Sheet PDF...")
         self.download_btn.setEnabled(False)
         self.download_btn.setStyleSheet(
             f"QPushButton {{ background-color: {_TEAL}; color: white; "
@@ -113,6 +145,11 @@ class _TemplatePicker(QDialog):
         btn_layout.addStretch()
 
         close_btn = QPushButton("Close")
+        close_btn.setStyleSheet(
+            "QPushButton { background-color: #e0e0e0; color: #333; "
+            "padding: 8px 16px; border-radius: 6px; }"
+            "QPushButton:hover { background-color: #d0d0d0; }"
+        )
         close_btn.clicked.connect(self.reject)
         btn_layout.addWidget(close_btn)
 
@@ -148,6 +185,7 @@ class _TemplatePicker(QDialog):
             self.details_label.setText("Select a template to see details.")
             self.download_btn.setEnabled(False)
             self._selected_template = None
+            self.preview_label.hide()
             return
 
         t = self._templates[row]
@@ -165,6 +203,28 @@ class _TemplatePicker(QDialog):
 
         self.details_label.setText("<br>".join(parts))
         self.download_btn.setEnabled(True)
+
+        # Show preview image if available
+        self._update_preview(t)
+
+    def _update_preview(self, template):
+        """Load and display the template preview image, or hide the label."""
+        img_path = template.preview_image_path
+        if img_path and img_path.exists():
+            pixmap = QPixmap(str(img_path))
+            if not pixmap.isNull():
+                scaled = pixmap.scaled(
+                    self._PREVIEW_MAX_W,
+                    self._PREVIEW_MAX_H,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                self.preview_label.setPixmap(scaled)
+                self.preview_label.show()
+                return
+        # No preview available — hide the label entirely
+        self.preview_label.clear()
+        self.preview_label.hide()
 
     def _on_download(self):
         if self._selected_template is None:
@@ -245,7 +305,7 @@ class WelcomePage(QWidget):
         from ..utils import get_app_version
         subtitle_col = QVBoxLayout()
         subtitle_col.addStretch()
-        subtitle = QLabel("Fast, accurate bubble sheet grading for teachers.")
+        subtitle = QLabel("Fast and accurate bubble sheet grading for teachers.")
         subtitle.setStyleSheet("color: #aaa; font-size: 13px;")
         subtitle_col.addWidget(subtitle)
         version_label = QLabel(f"v{get_app_version()}")
@@ -294,8 +354,8 @@ class WelcomePage(QWidget):
         tpl_layout.addWidget(tpl_title)
 
         tpl_desc = QLabel(
-            "Browse ready-to-print bubble sheets, pick a favorite, "
-            "and download the PDF."
+            "Browse one of our many ready-to-use bubble sheets, pick a favorite, "
+            "and download the PDF for printing."
         )
         tpl_desc.setWordWrap(True)
         tpl_desc.setStyleSheet(
@@ -331,7 +391,7 @@ class WelcomePage(QWidget):
         key_layout.setContentsMargins(20, 14, 20, 14)
         key_layout.setSpacing(6)
 
-        key_title = QLabel("Build Your Answer Key")
+        key_title = QLabel("Create An Answer Key")
         key_title.setStyleSheet(
             "font-size: 16px; font-weight: bold; color: #b8860b; "
             "background: transparent; border: none;"
@@ -339,8 +399,7 @@ class WelcomePage(QWidget):
         key_layout.addWidget(key_title)
 
         key_desc = QLabel(
-            "Create and manage answer keys for your bubble sheets. "
-            "Coming soon!"
+            "Create and edit answer keys for your bubble sheets."
         )
         key_desc.setWordWrap(True)
         key_desc.setStyleSheet(
@@ -351,7 +410,7 @@ class WelcomePage(QWidget):
         key_layout.addStretch()
 
         key_btn_row = QHBoxLayout()
-        key_build_btn = QPushButton("Key Builder")
+        key_build_btn = QPushButton("Answer Key Utility")
         key_build_btn.setStyleSheet(
             "QPushButton { background-color: #b8860b; color: white; "
             "padding: 6px 14px; border-radius: 6px; font-weight: bold; font-size: 12px; }"
@@ -377,7 +436,7 @@ class WelcomePage(QWidget):
         gs_layout.setContentsMargins(20, 18, 20, 18)
         gs_layout.setSpacing(10)
 
-        gs_title = QLabel("Getting Started")
+        gs_title = QLabel("Steps to working with MarkShark")
         gs_title.setStyleSheet(
             f"font-size: 18px; font-weight: bold; color: {_BLUE}; "
             "background: transparent; border: none;"
@@ -385,11 +444,12 @@ class WelcomePage(QWidget):
         gs_layout.addWidget(gs_title)
 
         steps = [
-            ("\U0001F5A8  Print", "Download a bubble sheet template and print copies for your class."),
-            ("\U0001F4E0  Scan", "After your exam, scan the completed sheets into a single PDF."),
-            ("\u2705  Grade", "Open the Grader, select your template and answer key, and click Score."),
-            ("\U0001F50D  Review", "Check flagged items, make corrections, and export your final grades."),
-            ("\U0001F4CA  Report", "Generate a summary report to see class performance, question difficulty, and score distributions."),
+            ("\U0001F5A8  Print", "Download a bubble sheet. Print copies for your class."),
+            ("\U0001F4E0  Scan", "Scan the completed test sheets into a PDF."),
+            ("\U0001F5C2\ufe0f Set Folder", "Set a MarkShark folder for your class or section."),
+            ("\u2705  Grade", "Upload your scans, answer key, and click Score."),
+            ("\U0001F50D  Review", "Review student answers and correct if needed."),
+            ("\U0001F4CA  Report", "Get a summary report of student performance, question difficulty, and score distributions."),
         ]
 
         for step_title, step_desc in steps:
@@ -406,7 +466,7 @@ class WelcomePage(QWidget):
             sd = QLabel(step_desc)
             sd.setWordWrap(True)
             sd.setStyleSheet(
-                "font-size: 12px; color: #555; background: transparent; border: none;"
+                "font-size: 11px; color: #555; background: transparent; border: none;"
             )
             step_row.addWidget(sd, 1)
 
@@ -857,7 +917,7 @@ class WelcomePage(QWidget):
         dialog.exec()
 
     def _on_key_builder(self):
-        """Navigate to the Key Build Utility page."""
+        """Navigate to the Answer Key Utility page."""
         if self._main_window:
             self._main_window._navigate_to_key("key_builder")
 
