@@ -4,11 +4,8 @@ Planned features and improvements, roughly ordered by priority.
 
 ---
 
-- **1.1.3** - add a welcome page that helps novices navigate options and prompts them for key steps.  Improve documentation.  Add tutorial and mock dataset.
-- **1.1.4** - add a 'light' scoring/reporting mode that doesn't require student IDs and generates a simplified report and score sheet
-- **1.1.5** - improve template downloadability and include QR codes and a template registry so the scans can be autoidentified and the map applied.  Include an area for pdf annotation tow write out the answers and student ID on the pdf so teacher can easily summarize.
-- **1.1.6** - improve key management and making with a dedicated utility
-- **1.1.7** - PDF page corrector and alignment compare modes - add to PDF utilities to allow teachers to flip and manually rotate/tweak poorlyscanned pages.  Maybe also do gray correction or some other adjustments as well.  Clean up PDFs before alignments to improve them.
+- **1.1.5** - add a 'light' scoring/reporting mode that doesn't require student IDs and generates a simplified report and score sheet
+- **1.1.6** - PDF page corrector and alignment compare modes - add to PDF utilities to allow teachers to flip and manually rotate/tweak poorlyscanned pages.  Maybe also do gray correction or some other adjustments as well.  Clean up PDFs before alignments to improve them.
 
 
 ---
