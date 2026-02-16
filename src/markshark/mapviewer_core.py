@@ -62,6 +62,17 @@ def _overlay_page(
         if zone is not None:
             draw_layout_circles(img, zone, color=color, thickness=thickness)
 
+    # Draw output_zone as a rectangle (it is NOT a bubble grid)
+    if page_layout.output_zone is not None:
+        oz = page_layout.output_zone
+        h, w = img.shape[:2]
+        x1, y1 = int(oz.x_left * w), int(oz.y_top * h)
+        x2, y2 = int(oz.x_right * w), int(oz.y_bottom * h)
+        # Cyan rectangle to distinguish from green bubble circles
+        cv2.rectangle(img, (x1, y1), (x2, y2), (255, 255, 0), thickness)
+        cv2.putText(img, "OUTPUT ZONE", (x1 + 4, y1 + 14),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1, cv2.LINE_AA)
+
 
 def overlay_bublmap(
     bublmap_path: str,

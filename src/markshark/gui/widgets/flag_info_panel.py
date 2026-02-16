@@ -48,6 +48,11 @@ _LOAD_BTN = (
     "border: none; border-radius: 3px; padding: 4px 12px; }"
     "QPushButton:hover { background-color: #0b5ed7; }"
 )
+_UNDO_BTN = (
+    "QPushButton { background-color: #e0e0e0; color: #333; "
+    "border: none; border-radius: 3px; padding: 4px 12px; }"
+    "QPushButton:hover { background-color: #bdbdbd; }"
+)
 
 
 class FlagInfoPanel(QWidget):
@@ -56,10 +61,12 @@ class FlagInfoPanel(QWidget):
     Emits:
         suggestion_accepted(original_id, suggested_id, reason)
         roster_requested()  — teacher clicked "Load Roster..."
+        undo_correction(student_id)  — teacher clicked "Undo" on a corrected orphan
     """
 
     suggestion_accepted = Signal(str, str, str)  # original_id, suggested_id, reason
     roster_requested = Signal()
+    undo_correction = Signal(str)  # student_id whose correction should be reverted
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -110,6 +117,13 @@ class FlagInfoPanel(QWidget):
         self._load_roster_btn.hide()
         self._inner.addWidget(self._load_roster_btn)
 
+        # Undo button — shown only in corrected state
+        self._undo_btn = QPushButton("Undo")
+        self._undo_btn.setStyleSheet(_UNDO_BTN)
+        self._undo_btn.setFixedWidth(70)
+        self._undo_btn.hide()
+        self._inner.addWidget(self._undo_btn)
+
         layout.addWidget(self._container)
 
     # ------------------------------------------------------------------
@@ -124,15 +138,48 @@ class FlagInfoPanel(QWidget):
         self._orphan_header.hide()
         self._suggestions_widget.hide()
         self._load_roster_btn.hide()
+        self._undo_btn.hide()
 
-    def show_corrected(self, message: str = "CORRECTED"):
-        """Show a blue 'CORRECTED' banner (e.g. after an orphan ID fix)."""
+    def show_corrected(
+        self,
+        message: str = "CORRECTED",
+        student_id: str = "",
+        original_id: str = "",
+        corrected_id: str = "",
+    ):
+        """Show a blue 'CORRECTED' banner with undo capability.
+
+        Args:
+            message:      Primary label text.
+            student_id:   The *original* student ID (used to revert the correction).
+            original_id:  Display string for the original scanned ID.
+            corrected_id: Display string for the corrected (roster) ID.
+        """
         self._container.setStyleSheet(_CORRECTED_STYLE)
-        self._flags_label.setText(message)
+
+        # Show what changed so the teacher can see original → corrected
+        if original_id and corrected_id:
+            self._flags_label.setText(f"{message}  ({original_id} → {corrected_id})")
+        else:
+            self._flags_label.setText(message)
         self._flags_label.show()
         self._orphan_header.hide()
         self._suggestions_widget.hide()
         self._load_roster_btn.hide()
+
+        # Undo button — only show if we have a student_id to revert
+        if student_id:
+            # Disconnect any previous connection to avoid stale closures
+            try:
+                self._undo_btn.clicked.disconnect()
+            except RuntimeError:
+                pass  # no previous connection
+            self._undo_btn.clicked.connect(
+                lambda _checked=False, sid=student_id: self.undo_correction.emit(sid)
+            )
+            self._undo_btn.show()
+        else:
+            self._undo_btn.hide()
 
     def show_orphan_suggestions(
         self,
@@ -177,6 +224,7 @@ class FlagInfoPanel(QWidget):
             self._suggestions_widget.show()
 
         self._load_roster_btn.hide()
+        self._undo_btn.hide()
 
     def show_no_roster(self):
         """Show a message when no roster is available."""
@@ -186,6 +234,7 @@ class FlagInfoPanel(QWidget):
         self._orphan_header.hide()
         self._suggestions_widget.hide()
         self._load_roster_btn.show()
+        self._undo_btn.hide()
 
     # ------------------------------------------------------------------
     # Internals

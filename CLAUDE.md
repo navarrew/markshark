@@ -3,6 +3,49 @@
 ## Project Overview
 MarkShark is a bubble sheet grading system that processes scanned answer sheets, scores them against answer keys, and generates reports. It supports multiple interfaces: CLI, Streamlit web app, and PySide6 desktop GUI.
 
+## Coding Philosophy — Long-Term Maintenance, Cross-Platform
+
+MarkShark is academic software that must remain functional and maintainable for **5+ years** with minimal active development. It runs on both **macOS and Windows**. The original author has limited programming experience, so code should be readable by a competent programmer picking it up cold in 3 years on either platform.
+
+### Priorities (in order)
+
+1. **Cross-platform compatibility** — Always consider both Mac and Windows:
+   - Use `pathlib.Path` instead of `os.path` (handles `/` vs `\` correctly)
+   - Never hardcode path separators, drive letters, or case-sensitive filename assumptions
+   - Use `\n` for internal strings; let Python's `open()` handle line-ending translation
+   - Platform-specific GUI code must go through an abstraction (see `gui/utils.py`)
+   - Test file dialogs and subprocess calls on both platforms
+
+2. **Self-documenting comments** — Explain **why**, not what:
+   - Why this approach was chosen over alternatives
+   - What edge cases or platform quirks this handles
+   - What would break if this code were changed
+   - Comments should help a future maintainer, not narrate syntax
+
+3. **Dependency awareness** — When adding or updating libraries:
+   - Note what each dependency actually provides and why it was chosen
+   - Verify it works on both Mac and Windows
+   - Flag any OS-specific interfaces (these break first on OS updates)
+   - Prefer stable, widely-used, cross-platform libraries over niche alternatives
+
+4. **Testability** — Structure code so core functions can be tested independently:
+   - Separate file I/O from processing logic
+   - Keep scoring/parsing functions pure where possible (input → output, no side effects)
+   - Document example inputs/outputs so the same test files verify both platforms
+
+5. **Build documentation** — Keep PyInstaller build notes for both platforms:
+   - Python version, OS version, any platform-specific flags
+   - Where dependencies are specified (`pyproject.toml`)
+   - Differences between Mac and Windows builds
+
+### Avoid
+
+- Platform-specific path assumptions (hardcoded slashes, drive letters)
+- Clever one-liners that will be incomprehensible later
+- Undocumented magic numbers or thresholds
+- OS-specific GUI code without abstraction (use `gui/utils.py` helpers)
+- Jargon-heavy explanations — define terms when they first appear
+
 ## Architecture
 
 ### Core Components
@@ -36,10 +79,10 @@ gui/
 │   ├── align_only.py       # Alignment-only workflow
 │   ├── score_only.py       # Score-only workflow
 │   ├── report_only.py      # Report generation
-│   ├── key_builder.py      # Key Build Utility (coming soon)
+│   ├── key_builder.py      # Answer Key Utility (create, import, edit, export answer keys)
 │   ├── pdf_tools.py        # PDF manipulation utilities
 │   ├── lms_integration.py  # LMS gradebook import/export
-│   ├── map_viewer.py       # Bubblemap overlay viewer
+│   ├── map_viewer.py       # Bubblemap Utility (bubblemap overlay viewer)
 │   ├── mock_data_utility.py# Synthetic dataset generator
 │   ├── project_manager_page.py # Course Manager (browse/manage courses & assessments)
 │   ├── settings.py         # App settings
