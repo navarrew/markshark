@@ -54,8 +54,8 @@ class PdfToolsPage(QWidget):
         layout.addWidget(header)
 
         tabs = QTabWidget()
-        tabs.addTab(self._build_images_tab(), "Images to PDF")
-        tabs.addTab(self._build_merge_tab(), "Merge PDFs")
+        tabs.addTab(self._build_images_tab(), "Convert Images to PDF")
+        tabs.addTab(self._build_merge_tab(), "Combine PDFs")
         tabs.addTab(self._build_reorder_tab(), "Sort/Reorder Pages")
         tabs.addTab(self._build_interdigitate_tab(), "Interdigitate Scans")
         layout.addWidget(tabs, 1)
@@ -68,6 +68,14 @@ class PdfToolsPage(QWidget):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
+        desc = QLabel(
+            "Use this utility to convert a folder of scanned bubblesheet images into a multipage PDF."
+            ""
+        )
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+
         self.img_folder = FileSelector(
             "Image folder:",
             "",
@@ -77,9 +85,9 @@ class PdfToolsPage(QWidget):
         layout.addWidget(self.img_folder)
 
         sort_row = QHBoxLayout()
-        sort_row.addWidget(QLabel("Sort by:"))
+        sort_row.addWidget(QLabel("Sort PDF pages by:"))
         self.img_sort = QComboBox()
-        self.img_sort.addItems(["Filename", "Date modified"])
+        self.img_sort.addItems(["Image filenames", "Date modified"])
         sort_row.addWidget(self.img_sort)
         sort_row.addStretch()
         layout.addLayout(sort_row)

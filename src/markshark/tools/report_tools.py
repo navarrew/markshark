@@ -1107,8 +1107,9 @@ def generate_report(
     # Each version has its own answer key, so correctness must be computed per-version.
     # Pooled (amalgamated) stats are then derived by combining per-version results.
     version_stats = {}
-    all_items_num = []      # Collect correctness matrices for pooled stats
-    all_total_scores = []   # Collect total scores for pooled stats
+    all_items_num = []        # Collect 0/1 correctness matrices (for KR-20, point-biserial)
+    all_total_scores = []     # Collect correctness sums (for KR-20, point-biserial)
+    all_weighted_scores = []  # Collect point-weighted scores from CSV (for mean/std display)
     total_n_students = 0
 
     for version in versions:
@@ -1159,8 +1160,18 @@ def generate_report(
             pb_vals_v[col] = point_biserial(item_series, total_minus)
 
         # Version-level exam stats
-        mean_v = float(total_scores_v.mean()) if n_students_v > 0 else 0.0
-        std_v = float(total_scores_v.std(ddof=1)) if n_students_v > 1 else 0.0
+        # Use the point-weighted Score column from the CSV for mean/std
+        # (total_scores_v is the 0/1 correctness sum, which only equals the
+        # real score when all questions are worth 1 point).
+        score_col = _find_col(students_df_v, ['Score', 'score', 'SCORE'])
+        if score_col is not None:
+            weighted_scores_v = pd.to_numeric(students_df_v[score_col], errors='coerce').fillna(0)
+        else:
+            # Fallback: no Score column → use correctness sum (all questions worth 1)
+            weighted_scores_v = total_scores_v
+
+        mean_v = float(weighted_scores_v.mean()) if n_students_v > 0 else 0.0
+        std_v = float(weighted_scores_v.std(ddof=1)) if n_students_v > 1 else 0.0
         kr20_v = kr20(items_num_v, total_scores_v)
         kr21_v = kr21(items_num_v, total_scores_v)
 
@@ -1178,20 +1189,27 @@ def generate_report(
         }
 
         # Accumulate for pooled stats
+        # items_num / total_scores are 0/1 correctness (for KR-20, point-biserial)
+        # weighted_scores are point-weighted (for mean/std display)
         all_items_num.append(items_num_v)
         all_total_scores.append(total_scores_v)
+        all_weighted_scores.append(weighted_scores_v)
 
     # Compute pooled (amalgamated) stats from per-version correctness matrices.
     # Each student was scored against their own version's key, so these are correct.
     if all_items_num:
         pooled_items = pd.concat(all_items_num, ignore_index=True)
         pooled_totals = pd.concat(all_total_scores, ignore_index=True)
+        pooled_weighted = pd.concat(all_weighted_scores, ignore_index=True)
     else:
         pooled_items = pd.DataFrame(columns=item_cols)
         pooled_totals = pd.Series(dtype=float)
+        pooled_weighted = pd.Series(dtype=float)
 
-    mean_total = float(pooled_totals.mean()) if total_n_students > 0 else 0.0
-    std_total = float(pooled_totals.std(ddof=1)) if total_n_students > 1 else 0.0
+    # Mean/std use point-weighted scores (from the Score column in the CSV).
+    # KR-20/KR-21 use the 0/1 correctness sums (psychometric formulas need binary item data).
+    mean_total = float(pooled_weighted.mean()) if total_n_students > 0 else 0.0
+    std_total = float(pooled_weighted.std(ddof=1)) if total_n_students > 1 else 0.0
     kr20_val = kr20(pooled_items, pooled_totals)
     kr21_val = kr21(pooled_items, pooled_totals)
 
@@ -1402,7 +1420,7 @@ def create_summary_tab(
             vs = version_stats[ver]
             ver_mean = vs['mean']
             total_pts = vs.get('total_points', k)
-            ver_pct = (ver_mean / k * 100) if k > 0 else 0.0
+            ver_pct = (ver_mean / total_pts * 100) if total_pts > 0 else 0.0
             ver_kr20 = vs['kr20']
             ver_kr21 = vs['kr21']
 
@@ -1441,7 +1459,7 @@ def create_summary_tab(
         ("Total Points Possible", max_pts_display),
         ("Number of Versions", n_versions),
         ("Mean Score", f"{mean_total:.2f}"),
-        ("Mean Percentage", f"{mean_total/k*100:.1f}%" if k > 0 else "N/A"),
+        ("Mean Percentage", f"{mean_total/max_total_pts*100:.1f}%" if max_total_pts > 0 else "N/A"),
         ("Standard Deviation", f"{std_total:.2f}"),
         ("KR-20 Reliability", f"{kr20_val:.3f}" if not np.isnan(kr20_val) else "N/A"),
         ("KR-21 Reliability", f"{kr21_val:.3f}" if not np.isnan(kr21_val) else "N/A"),
@@ -2198,18 +2216,12 @@ def create_class_scores_tab(wb, df_full, item_cols, k):
     percent_col = 'percent' if 'percent' in df_full.columns else 'Percent' if 'Percent' in df_full.columns else None
     version_col = 'version' if 'version' in df_full.columns else 'Version' if 'Version' in df_full.columns else None
 
-    # Filter out KEY rows and header rows that got mixed in
-    def is_non_student_row(row):
-        # Check if any identity field contains "KEY" or is a header value
-        header_values = {'KEY', 'LASTNAME', 'FIRSTNAME', 'STUDENTID', 'STUDENT_ID', 'LAST_NAME', 'FIRST_NAME'}
-        for col in [lastname_col, firstname_col, studentid_col]:
-            if col and col in row.index:
-                val = str(row[col]).strip().upper()
-                if val in header_values:
-                    return True
-        return False
-
-    df_students = df_full[~df_full.apply(is_non_student_row, axis=1)].copy()
+    # Filter out KEY/VALUE rows — same strategy used everywhere else in report_tools.
+    # Checks ALL columns so any future marker rows are caught automatically.
+    non_student_mask = df_full.apply(
+        lambda row: any(str(cell).strip().upper() in ('KEY', 'VALUE') for cell in row), axis=1
+    )
+    df_students = df_full[~non_student_mask].copy()
 
     # Sort by last name first, then first name (case-insensitive)
     sort_cols = []

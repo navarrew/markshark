@@ -227,7 +227,11 @@ class _AddVersionDialog(QDialog):
         self.version_edit.setToolTip("Version letter (A, B, C …)")
         if self._edit_mode:
             self.version_edit.setReadOnly(True)
-            self.version_edit.setStyleSheet("background: #EEEEEE;")
+            # Dark background with white text so the read-only version letter
+            # is clearly visible but obviously not editable.
+            self.version_edit.setStyleSheet(
+                "background: #333333; color: #FFFFFF;"
+            )
         form.addRow("Version:", self.version_edit)
 
         self.code_edit = QLineEdit(edit_code if self._edit_mode else "")
@@ -374,23 +378,24 @@ class KeyBuilderPage(QWidget):
         left_layout.setContentsMargins(0, 0, 4, 0)
 
         # Paste box
-        paste_group = QGroupBox("Enter Answers")
+        paste_group = QGroupBox("Enter Answers Into Your Key")
         paste_group.setStyleSheet(
             "QGroupBox { background: #FFFFFF; }"
             " QLabel { background: transparent; }"
         )
         paste_layout = QVBoxLayout(paste_group)
         paste_hint = QLabel(
-            "Type or paste answers separated by commas,"
-            "spaces, semicolons, or newlines.\n"
-            "(e.g.  E, B, C, D, A\u2026)"
+            "Type or paste answers separated by commas, "
+            "tabs, spaces, semicolons, or newlines.  "
+            "You can cut and paste directly from Microsoft Word, "
+            "Google Docs, or a column or row from Excel, or Google Sheets."
         )
         paste_hint.setWordWrap(True)
         paste_hint.setStyleSheet("color: #424242; font-size: 12px;")
         paste_layout.addWidget(paste_hint)
 
         self.paste_edit = QPlainTextEdit()
-        self.paste_edit.setPlaceholderText("A, B, C, D, A, B  or  A B C D A B \u2026")
+        self.paste_edit.setPlaceholderText("Type or paste text here.\n(e.g. D, B, A, A, E\u2026)")
         self.paste_edit.setMinimumHeight(100)
         self.paste_edit.setMaximumHeight(200)
         paste_layout.addWidget(self.paste_edit)

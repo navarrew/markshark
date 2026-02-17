@@ -5,7 +5,7 @@ Quick reference for file formats, output columns, settings, and other details.
 The `results.csv` file in `score_data/` contains one row per student:
 | Column | Description |
 |--------|-------------|
-| Page | Page number in the scanned PDF |
+| Page | Page number in the annotated PDF |
 | Version | Detected test version (A, B, C, etc.) |
 | LastName | Student's last name (from bubbled name or roster) |
 | FirstName | Student's first name |
@@ -14,10 +14,8 @@ The `results.csv` file in `score_data/` contains one row per student:
 | Incorrect | Number of incorrect answers |
 | Blank | Number of blank (unanswered) questions |
 | Multi | Number of multi-fill (ambiguous) questions |
-| Score | Percentage score |
-| Points | Total points earned |
-| MaxPoints | Maximum possible points |
-| Flags | Comma-separated list of flag codes |
+| Flagged | "Y" if the student has any flags, otherwise blank |
+| FlagDetails | Pipe-separated flag codes (e.g. Q5:blank\|Q10:multi\|ID:orphan) |
 | Q1, Q2, ... | Student's detected answer for each question |
 ---
 ## Excel Report Contents
@@ -54,13 +52,15 @@ The `exam_report.xlsx` contains multiple sheets:
 | File | Location | Purpose |
 |------|----------|---------|
 | `raw_scans.pdf` | `input_files/` | Original scanned bubble sheets |
+| `aligned_scans.pdf` | `input_files/` | Aligned PDF (no scoring marks) |
 | `answer_key.txt` | `input_files/` | Answer key file |
 | `roster.csv` | `input_files/` | Class roster |
-| `results.csv` | `score_data/` | Raw scoring results |
+| `results.csv` | `score_data/` | Scoring results |
+| `results_original.csv` | `score_data/` | Backup of results before re-annotation |
+| `results_params.json` | `score_data/` | Scoring parameters (for re-annotation) |
 | `corrections.csv` | `score_data/` | Manual corrections log |
-| `exam_report.xlsx` | project root | Generated Excel report |
 | `scored_scans.pdf` | project root | Annotated PDF with scoring marks |
-| `aligned_scans.pdf` | project root | Aligned PDF (no scoring marks) |
+| `exam_report.xlsx` | project root | Generated Excel report |
 ---
 ## Command Line Usage
 MarkShark can be run from the command line for batch processing:

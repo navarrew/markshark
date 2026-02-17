@@ -745,8 +745,8 @@ class ProjectManagerPage(QWidget):
 
         dlg = CourseDialog(
             self,
-            title="Create New Course",
-            confirm_label="Create Course",
+            title="Create New MarkShark Course Folder",
+            confirm_label="Create Course Folder",
         )
         if dlg.exec() != CourseDialog.DialogCode.Accepted:
             return

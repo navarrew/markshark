@@ -391,7 +391,7 @@ class WelcomePage(QWidget):
         key_layout.setContentsMargins(20, 14, 20, 14)
         key_layout.setSpacing(6)
 
-        key_title = QLabel("Create An Answer Key")
+        key_title = QLabel("Create Your Answer Keys")
         key_title.setStyleSheet(
             "font-size: 16px; font-weight: bold; color: #b8860b; "
             "background: transparent; border: none;"
@@ -399,7 +399,9 @@ class WelcomePage(QWidget):
         key_layout.addWidget(key_title)
 
         key_desc = QLabel(
-            "Create and edit answer keys for your bubble sheets."
+            "It's easy to make an answer key for MarkShark."
+            "  You can use a word processor or spreadsheet "
+            "or our utility to create and edit answer keys for your tests."
         )
         key_desc.setWordWrap(True)
         key_desc.setStyleSheet(
@@ -535,7 +537,7 @@ class WelcomePage(QWidget):
         header_row = QHBoxLayout(header_widget)
         header_row.setContentsMargins(14, 8, 10, 8)
 
-        header_label = QLabel("Set Up Your Courses!")
+        header_label = QLabel("Set Up a MarkShark Folder for Each of Your Courses!")
         header_label.setStyleSheet(
             "font-size: 14px; font-weight: bold; color: white; background: transparent;"
         )
@@ -569,11 +571,11 @@ class WelcomePage(QWidget):
         desc_layout.setContentsMargins(14, 10, 14, 6)
 
         desc = QLabel(
-            "Create a <b>course folder</b> for each class you teach "
-            "(e.g. <i>Biology 101</i> or <i>AP History</i>). "
-            "Inside that folder, each <b>assessment</b> is one test — "
-            "like <i>Midterm 1</i> or <i>Final Exam 2025</i>. "
-            "MarkShark creates the sub-folders automatically."
+            "Make a different MarkShark folder for each course or section you teach "
+            "inside the folder you're already using for your class.  "
+            "Within each course folder, MarkShark will create subfolders "
+            "for each assessment to store all associated files and data "
+            "(e.g., Midterm 1 or Final Exam 2025)."
         )
         desc.setWordWrap(True)
         desc.setStyleSheet(
@@ -942,7 +944,7 @@ class WelcomePage(QWidget):
 
         dlg = CourseDialog(
             self,
-            title="Create New Course",
+            title="Create New MarkShark Course Folder",
             confirm_label="Create Course",
         )
         if dlg.exec() != CourseDialog.DialogCode.Accepted:

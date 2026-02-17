@@ -403,10 +403,40 @@ def load_key_file(path: Union[str, Path]) -> AnswerKeySet:
         return _load_text(path)
 
 
+def _read_text_permissive(path: Path) -> str:
+    """Read a text file regardless of encoding or newline style.
+
+    Teachers often save answer keys from Word, Notepad, or TextEdit, which
+    may produce UTF-8, UTF-8 with BOM, Windows-1252, or Mac-Roman depending
+    on which dialog option they pick.  Python's text mode already normalises
+    all newline styles (\\r\\n, \\r, \\n) to \\n, so the only real issue is
+    encoding.
+
+    Strategy: try UTF-8 first (handles BOM automatically via utf-8-sig),
+    fall back to Latin-1 which accepts every possible byte value — so it
+    never raises an error.  For answer key files (A-E letters, digits,
+    punctuation) the encoding rarely matters, but this prevents cryptic
+    UnicodeDecodeError crashes when a teacher saves from Word with the
+    wrong encoding selected.
+    """
+    raw = path.read_bytes()
+
+    # Strip UTF-8 BOM if present (Word on Windows adds this)
+    if raw.startswith(b"\xef\xbb\xbf"):
+        raw = raw[3:]
+
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        # Latin-1 maps every byte 0x00-0xFF to a character, so this
+        # never fails.  For answer keys (letters, digits, operators)
+        # the result is identical to the original intent.
+        return raw.decode("latin-1")
+
+
 def _load_text(path: Path) -> AnswerKeySet:
     """Load a text-format answer key file."""
-    with open(path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+    lines = _read_text_permissive(path).splitlines(keepends=True)
 
     keys: Dict[str, VersionKey] = {}
     code_to_version: Dict[str, str] = {}
@@ -473,9 +503,12 @@ def _load_text(path: Path) -> AnswerKeySet:
 
 def _load_delimited(path: Path, delimiter: str = ",") -> AnswerKeySet:
     """Load a CSV or TSV answer key file."""
-    with open(path, "r", encoding="utf-8", newline="") as f:
-        reader = csv.reader(f, delimiter=delimiter)
-        rows = list(reader)
+    # Use the same permissive encoding strategy as _load_text so CSV keys
+    # saved from Excel or Word with non-UTF-8 encoding don't crash.
+    import io
+    text = _read_text_permissive(path)
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+    rows = list(reader)
 
     if not rows:
         raise ValueError("Empty file")

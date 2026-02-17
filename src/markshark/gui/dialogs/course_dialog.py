@@ -39,7 +39,7 @@ class CourseDialog(QDialog):
         self,
         parent=None,
         *,
-        title: str = "New Course",
+        title: str = "Create New MarkShark Course Folder",
         course_name: str = "",
         parent_folder: str = "",
         subfolder_name: str = "MarkShark",
@@ -47,7 +47,7 @@ class CourseDialog(QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.setMinimumWidth(550)
+        self.setMinimumWidth(650)
         self._accepted = False
 
         self._setup_ui(course_name, parent_folder, subfolder_name, confirm_label)
@@ -79,11 +79,13 @@ class CourseDialog(QDialog):
         form = QFormLayout()
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(10)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        # Let fields expand to fill the full width of the dialog
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
         # Row 1: Course name
         self.name_edit = QLineEdit(course_name)
-        self.name_edit.setPlaceholderText('e.g. "Biology 101", "AP History"')
+        self.name_edit.setPlaceholderText('e.g. "Biology 101 Section 1" or "AP History 2025"')
         form.addRow("Course name:", self.name_edit)
 
         # Row 2: Parent folder (text + browse button)

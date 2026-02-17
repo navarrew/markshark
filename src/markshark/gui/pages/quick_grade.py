@@ -184,12 +184,19 @@ class QuickGradePage(QWidget):
         layout.addWidget(splitter, 1)
 
         # Tabs for inputs — minimum height prevents file selectors from squishing
+        # Tab order mirrors the teacher workflow: Score → Review → Report → Settings
         self.tabs = QTabWidget()
         self.tabs.addTab(self._create_inputs_tab(), "Align && Score")
+        self.tabs.addTab(self._create_review_placeholder(), "▲ Review && Correct")
         self.tabs.addTab(self._create_after_tab(), "Generate Report")
         self.tabs.addTab(self._create_options_tab(), "Grader Settings")
         self.tabs.setMinimumHeight(320)
         splitter.addWidget(self.tabs)
+
+        # Track which real tab was last active so we can bounce back after
+        # the user clicks the "Review & Correct" navigation tab.
+        self._last_real_tab = 0
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
         # Log viewer + output buttons side-by-side
         log_row = QHBoxLayout()
@@ -378,6 +385,60 @@ class QuickGradePage(QWidget):
 
         layout.addStretch()
         return widget
+
+    # ------------------------------------------------------------------
+    # Review & Correct navigation tab
+    # ------------------------------------------------------------------
+
+    def _create_review_placeholder(self) -> QWidget:
+        """Create a lightweight placeholder for the 'Review & Correct' tab.
+
+        This tab doesn't hold real content — clicking it navigates the user
+        to the full Review & Correct page via the sidebar. The placeholder
+        shows a brief message so the panel isn't blank during the transition.
+        """
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.addStretch()
+
+        msg = QLabel("Opening Review && Correct page…")
+        msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        msg.setStyleSheet("color: #888; font-size: 14px;")
+        layout.addWidget(msg)
+
+        layout.addStretch()
+        return widget
+
+    def _on_tab_changed(self, index: int):
+        """Intercept tab switches to handle the Review & Correct navigation tab.
+
+        Tab index 1 is a navigation shortcut, not real content. When clicked,
+        we navigate to the Review & Correct page and bounce the tab bar back
+        to whichever real tab the user was on before.
+        """
+        if index == 1:
+            # Navigate to Review & Correct via the MainWindow
+            main_win = self.window()
+            if hasattr(main_win, "navigate_to_review"):
+                # Pass results data if available so the Review page loads
+                # the current assessment's scored CSV automatically.
+                results_data = None
+                if self.results_csv and self.results_csv.exists():
+                    results_data = {
+                        "work_dir": str(self.work_dir),
+                        "results_csv": str(self.results_csv),
+                        "scored_pdf": str(self.scored_pdf) if self.scored_pdf else None,
+                        "aligned_pdf": str(self.aligned_pdf) if self.aligned_pdf else None,
+                    }
+                main_win.navigate_to_review(results_data)
+
+            # Bounce back to the last real tab so the Grader doesn't show
+            # the placeholder if the user navigates back.
+            self.tabs.blockSignals(True)
+            self.tabs.setCurrentIndex(self._last_real_tab)
+            self.tabs.blockSignals(False)
+        else:
+            self._last_real_tab = index
 
     def _create_after_tab(self) -> QWidget:
         """Create the Generate Report tab.
@@ -920,8 +981,8 @@ class QuickGradePage(QWidget):
                     "aligned_pdf": str(self.aligned_pdf),
                 })
         elif clicked is report_btn:
-            # Switch to the Generate Report tab
-            self.tabs.setCurrentIndex(1)
+            # Switch to the Generate Report tab (index 2, after Review tab)
+            self.tabs.setCurrentIndex(2)
 
     def _enable_output_buttons(self):
         """Enable the output buttons based on which files actually exist."""
