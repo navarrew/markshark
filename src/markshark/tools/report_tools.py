@@ -1622,9 +1622,12 @@ def create_summary_tab(
         # Convert raw scores to percentages for uniform bins across exams
         pct_scores = _student_scores / max_total_pts * 100 if max_total_pts > 0 else _student_scores
 
-        # 5% bins from 0 to 100
-        bin_edges = list(range(0, 101, 5))
-        bin_labels = [f"{lo}-{lo+4}%" for lo in range(0, 100, 5)]
+        # Wider bins at the low end (10% steps) where few students land,
+        # then 5% bins from 40% onward where the detail matters.
+        bin_edges = [0, 10, 20, 30, 40] + list(range(45, 101, 5))
+        bin_labels = []
+        for i in range(len(bin_edges) - 1):
+            bin_labels.append(f"{bin_edges[i]}-{bin_edges[i+1]-1}%")
 
         # Count students in each bin
         counts, _ = np.histogram(pct_scores, bins=bin_edges)
