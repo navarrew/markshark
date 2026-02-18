@@ -1263,6 +1263,9 @@ def generate_report(
 
         mean_v = float(weighted_scores_v.mean()) if n_students_v > 0 else 0.0
         std_v = float(weighted_scores_v.std(ddof=1)) if n_students_v > 1 else 0.0
+        median_v = float(weighted_scores_v.median()) if n_students_v > 0 else 0.0
+        min_v = float(weighted_scores_v.min()) if n_students_v > 0 else 0.0
+        max_v = float(weighted_scores_v.max()) if n_students_v > 0 else 0.0
         kr20_v = kr20(items_num_v, total_scores_v)
         kr21_v = kr21(items_num_v, total_scores_v)
 
@@ -1274,9 +1277,13 @@ def generate_report(
             'n_students': n_students_v,
             'mean': mean_v,
             'std': std_v,
+            'median': median_v,
+            'min': min_v,
+            'max': max_v,
             'kr20': kr20_v,
             'kr21': kr21_v,
             'total_points': total_pts,
+            'weighted_scores': weighted_scores_v,
         }
 
         # Accumulate for pooled stats
@@ -1501,7 +1508,8 @@ def create_summary_tab(
         row += 1
 
         ver_headers = ["", "N Students", "Total Points", "Mean Score", "Mean %",
-                        "Std Dev", "KR-20", "KR-21"]
+                        "Median", "Std Dev", "Min", "Max", "Range",
+                        "KR-20", "KR-21"]
         for col_idx, hdr in enumerate(ver_headers, start=1):
             ws.cell(row=row, column=col_idx, value=hdr)
         format_header_row(ws, row)
@@ -1521,9 +1529,13 @@ def create_summary_tab(
             ws.cell(row=row, column=3, value=int(total_pts) if total_pts == int(total_pts) else total_pts)
             ws.cell(row=row, column=4, value=f"{ver_mean:.2f}")
             ws.cell(row=row, column=5, value=f"{ver_pct:.1f}%")
-            ws.cell(row=row, column=6, value=f"{vs['std']:.2f}")
-            ws.cell(row=row, column=7, value=f"{ver_kr20:.3f}" if not np.isnan(ver_kr20) else "N/A")
-            ws.cell(row=row, column=8, value=f"{ver_kr21:.3f}" if not np.isnan(ver_kr21) else "N/A")
+            ws.cell(row=row, column=6, value=f"{vs['median']:.1f}")
+            ws.cell(row=row, column=7, value=f"{vs['std']:.2f}")
+            ws.cell(row=row, column=8, value=f"{vs['min']:.1f}")
+            ws.cell(row=row, column=9, value=f"{vs['max']:.1f}")
+            ws.cell(row=row, column=10, value=f"{vs['max'] - vs['min']:.1f}")
+            ws.cell(row=row, column=11, value=f"{ver_kr20:.3f}" if not np.isnan(ver_kr20) else "N/A")
+            ws.cell(row=row, column=12, value=f"{ver_kr21:.3f}" if not np.isnan(ver_kr21) else "N/A")
 
             for col_idx in range(1, len(ver_headers) + 1):
                 ws.cell(row=row, column=col_idx).border = BORDER_THIN
@@ -1544,6 +1556,21 @@ def create_summary_tab(
     )
     max_pts_display = int(max_total_pts) if max_total_pts == int(max_total_pts) else max_total_pts
 
+    # Compute descriptive statistics from the score data.
+    # The df contains scored student rows; extract numeric Score values.
+    _score_col_name = _find_col(df, ['Score', 'score', 'SCORE']) if df is not None else None
+    if _score_col_name is not None and df is not None:
+        # Filter out KEY/VALUE/stats rows before computing
+        _non_student = df.apply(
+            lambda r: any(str(c).strip().upper() in ('KEY', 'VALUE') for c in r), axis=1
+        )
+        _student_scores = pd.to_numeric(df.loc[~_non_student, _score_col_name], errors='coerce').dropna()
+        median_total = float(_student_scores.median()) if len(_student_scores) > 0 else 0.0
+        min_total = float(_student_scores.min()) if len(_student_scores) > 0 else 0.0
+        max_total = float(_student_scores.max()) if len(_student_scores) > 0 else 0.0
+    else:
+        median_total = min_total = max_total = 0.0
+
     stats = [
         ("Number of Students", n_students),
         ("Number of Questions", k),
@@ -1551,7 +1578,11 @@ def create_summary_tab(
         ("Number of Versions", n_versions),
         ("Mean Score", f"{mean_total:.2f}"),
         ("Mean Percentage", f"{mean_total/max_total_pts*100:.1f}%" if max_total_pts > 0 else "N/A"),
+        ("Median Score", f"{median_total:.1f}"),
         ("Standard Deviation", f"{std_total:.2f}"),
+        ("Minimum Score", f"{min_total:.1f}"),
+        ("Maximum Score", f"{max_total:.1f}"),
+        ("Score Range", f"{max_total - min_total:.1f}"),
         ("KR-20 Reliability", f"{kr20_val:.3f}" if not np.isnan(kr20_val) else "N/A"),
         ("KR-21 Reliability", f"{kr21_val:.3f}" if not np.isnan(kr21_val) else "N/A"),
     ]
@@ -1578,6 +1609,64 @@ def create_summary_tab(
         else:
             ws[f'A{row}'] = "Poor reliability (<0.60) - exam needs work"
             ws[f'A{row}'].fill = COLOR_PROBLEM
+
+    # ------------------------------------------------------------------ #
+    # 3b. Score Distribution Chart
+    # ------------------------------------------------------------------ #
+    # Build a percentage-based histogram with 5% bins.
+    # The bin data is written to columns D-E (out of the way of the stats
+    # in A-B) and the chart is anchored below the reliability section.
+    if _score_col_name is not None and df is not None and len(_student_scores) > 0:
+        from openpyxl.chart import BarChart, Reference
+
+        # Convert raw scores to percentages for uniform bins across exams
+        pct_scores = _student_scores / max_total_pts * 100 if max_total_pts > 0 else _student_scores
+
+        # 5% bins from 0 to 100
+        bin_edges = list(range(0, 101, 5))
+        bin_labels = [f"{lo}-{lo+4}%" for lo in range(0, 100, 5)]
+
+        # Count students in each bin
+        counts, _ = np.histogram(pct_scores, bins=bin_edges)
+
+        # Write bin data table to columns D-E (hidden from casual view)
+        row += 2
+        data_start_row = row
+        ws.cell(row=row, column=4, value="Score Range (%)")
+        ws.cell(row=row, column=5, value="# Students")
+        ws.cell(row=row, column=4).font = FONT_BOLD
+        ws.cell(row=row, column=5).font = FONT_BOLD
+        row += 1
+        for i, (label, count) in enumerate(zip(bin_labels, counts)):
+            ws.cell(row=row, column=4, value=label)
+            ws.cell(row=row, column=5, value=int(count))
+            row += 1
+        data_end_row = row - 1
+
+        # Create bar chart
+        chart = BarChart()
+        chart.type = "col"
+        chart.style = 10
+        chart.title = "Score Distribution"
+        chart.y_axis.title = "Number of Students"
+        chart.x_axis.title = "Score Range (%)"
+
+        # Data reference: the counts in column E
+        data_ref = Reference(ws, min_col=5, min_row=data_start_row,
+                             max_row=data_end_row)
+        # Category labels: the bin labels in column D
+        cat_ref = Reference(ws, min_col=4, min_row=data_start_row + 1,
+                            max_row=data_end_row)
+        chart.add_data(data_ref, titles_from_data=True)
+        chart.set_categories(cat_ref)
+        chart.shape = 4
+        chart.width = 22
+        chart.height = 12
+
+        # Anchor chart to column A, below current content
+        ws.add_chart(chart, f"A{data_start_row}")
+        # Advance row past the chart (~18 rows) and data table
+        row = max(row, data_start_row + 20)
 
     # ------------------------------------------------------------------ #
     # 4. Absent Students & Flagged Items
@@ -2176,6 +2265,43 @@ def create_version_tab(
 
     n_ver_students = len(student_rows)
 
+    # ---- Upper/Lower 27% Discrimination ----
+    # Classic item analysis metric: compare % correct for the top 27% of
+    # students (by total score) vs the bottom 27%.  Good items should be
+    # answered correctly more often by strong students than weak ones.
+    # The 27% cutoff maximises the discrimination power of the comparison
+    # (Kelley, 1939).  Requires at least 4 students to form meaningful groups.
+    upper_27_correct: Dict[str, float] = {}
+    lower_27_correct: Dict[str, float] = {}
+    _has_discrimination = False
+
+    if n_ver_students >= 4:
+        # Find a numeric score column for ranking
+        _sr_score_col = _find_col(student_rows, ['Score', 'score', 'Correct', 'correct'])
+        if _sr_score_col:
+            _sr_scores = pd.to_numeric(student_rows[_sr_score_col], errors='coerce').fillna(0)
+            _sr_sorted = _sr_scores.sort_values()
+            _n27 = max(1, int(round(n_ver_students * 0.27)))
+
+            lower_idx = _sr_sorted.head(_n27).index
+            upper_idx = _sr_sorted.tail(_n27).index
+
+            for col in item_cols:
+                correct_answer = key_answers.get(col, '')
+                if not correct_answer:
+                    continue
+
+                upper_answers = student_rows.loc[upper_idx, col].fillna('').astype(str).str.strip().str.upper()
+                lower_answers = student_rows.loc[lower_idx, col].fillna('').astype(str).str.strip().str.upper()
+
+                upper_correct = sum(1 for a in upper_answers if _answer_matches_key(a, correct_answer))
+                lower_correct = sum(1 for a in lower_answers if _answer_matches_key(a, correct_answer))
+
+                upper_27_correct[col] = (upper_correct / _n27 * 100) if _n27 > 0 else 0
+                lower_27_correct[col] = (lower_correct / _n27 * 100) if _n27 > 0 else 0
+
+            _has_discrimination = True
+
     # Collect all answer options seen for this version's students
     all_options = set()
     for col in item_cols:
@@ -2199,6 +2325,8 @@ def create_version_tab(
     resp_headers = ['Question', 'Correct', '# Students', '% Correct']
     resp_headers += sorted_options
     resp_headers += ['Blank', 'Multi']
+    if _has_discrimination:
+        resp_headers += ['Upper 27%', 'Lower 27%']
     for col_idx, hdr in enumerate(resp_headers, start=1):
         ws.cell(row=row_num, column=col_idx, value=hdr)
     format_header_row(ws, row_num)
@@ -2266,6 +2394,26 @@ def create_version_tab(
         multi_cell = ws.cell(row=row_num, column=multi_offset, value=multi_count)
         if multi_count > 0:
             multi_cell.fill = COLOR_MULTI
+
+        # Upper/Lower 27% discrimination columns
+        if _has_discrimination:
+            upper_offset = multi_offset + 1
+            lower_offset = upper_offset + 1
+            upper_pct = upper_27_correct.get(col_name, 0)
+            lower_pct = lower_27_correct.get(col_name, 0)
+
+            ws.cell(row=row_num, column=upper_offset, value=f"{upper_pct:.0f}%")
+            ws.cell(row=row_num, column=lower_offset, value=f"{lower_pct:.0f}%")
+
+            # Color-code: good discrimination = upper >> lower (green),
+            # inverted discrimination = upper < lower (red, item is broken)
+            disc = upper_pct - lower_pct
+            if disc >= 30:
+                ws.cell(row=row_num, column=upper_offset).fill = COLOR_GOOD
+            elif disc < 0:
+                # Inverted: weak students outperform strong students — flag
+                ws.cell(row=row_num, column=upper_offset).fill = COLOR_PROBLEM
+                ws.cell(row=row_num, column=lower_offset).fill = COLOR_PROBLEM
 
         row_num += 1
 
