@@ -1028,6 +1028,7 @@ def generate_report(
     roster_csv: Optional[str] = None,
     item_pattern: str = r"Q\d+",
     project_name: Optional[str] = None,
+    course_name: Optional[str] = None,
     run_label: Optional[str] = None,
     corrections_applied: int = 0,
     corrections_xlsx: Optional[str] = None,
@@ -1042,7 +1043,8 @@ def generate_report(
         out_xlsx: Path to output Excel file
         roster_csv: Optional path to class roster CSV
         item_pattern: Regex pattern for item columns (default: Q\d+)
-        project_name: Optional project name for report header
+        project_name: Optional project/assessment name for report header
+        course_name: Optional course name (from Course Manager) for report header
         run_label: Optional run label (e.g., "2025-01-21_final")
         corrections_applied: Number of corrections applied (for display on Summary tab)
         corrections_xlsx: Optional path to the corrections XLSX (for listing details on Summary tab)
@@ -1108,8 +1110,8 @@ def generate_report(
         else:
             versions = ['A']
 
-        # Build minimal version_stats with just the key answers (for the
-        # Answer Key tab).  No difficulty, no point-biserial, no KR-20.
+        # Build minimal version_stats with key answers and per-question point
+        # values (for the Answer Key tab).  No difficulty, no point-biserial.
         version_stats: Dict[str, dict] = {}
         for ver in versions:
             if version_col:
@@ -1125,7 +1127,24 @@ def generate_report(
                 })
             else:
                 key_series = pd.Series({col: "" for col in item_cols})
-            version_stats[ver] = {'key_series': key_series}
+
+            # Per-question point values from this version's VALUE row
+            value_mask_v = df_ver.apply(
+                lambda row: any(str(cell).strip().upper() == 'VALUE' for cell in row), axis=1
+            )
+            point_values_v: Dict[str, float] = {col: 1.0 for col in item_cols}
+            if value_mask_v.any():
+                val_row = df_ver[value_mask_v].iloc[0]
+                for col in item_cols:
+                    try:
+                        point_values_v[col] = float(val_row.get(col, 1))
+                    except (ValueError, TypeError):
+                        point_values_v[col] = 1.0
+
+            version_stats[ver] = {
+                'key_series': key_series,
+                'point_values': point_values_v,
+            }
 
         wb = Workbook()
         wb.remove(wb.active)
@@ -1135,8 +1154,14 @@ def generate_report(
         ws.cell(row=1, column=1, value="MarkShark Simple Grade Report")
         ws.cell(row=1, column=1).font = FONT_BOLD
         row_n = 3
+        if course_name:
+            ws.cell(row=row_n, column=1, value="Course:")
+            ws.cell(row=row_n, column=1).font = FONT_BOLD
+            ws.cell(row=row_n, column=2, value=course_name)
+            row_n += 1
         if project_name:
             ws.cell(row=row_n, column=1, value="Assessment:")
+            ws.cell(row=row_n, column=1).font = FONT_BOLD
             ws.cell(row=row_n, column=2, value=project_name)
             row_n += 1
         from datetime import datetime as _dt
@@ -1212,19 +1237,24 @@ def generate_report(
         else:
             df_version = df.copy()
 
-        # Extract VALUE row data before dropping (for total points calculation)
+        # Extract VALUE row data before dropping (for total points + per-question points)
         value_mask_v = df_version.apply(
             lambda row: any(str(cell).strip().upper() == 'VALUE' for cell in row), axis=1
         )
         total_pts = float(k)  # default: k questions × 1 point each
+        # Per-question point values dict: {Q1: 1.0, Q2: 2.0, ...}
+        # Used by the Answer Key tab to show point values alongside answers.
+        point_values_v: Dict[str, float] = {col: 1.0 for col in item_cols}
         if value_mask_v.any():
             val_row = df_version[value_mask_v].iloc[0]
             total_pts = 0.0
             for col in item_cols:
                 try:
-                    total_pts += float(val_row.get(col, 1))
+                    pts = float(val_row.get(col, 1))
                 except (ValueError, TypeError):
-                    total_pts += 1.0
+                    pts = 1.0
+                point_values_v[col] = pts
+                total_pts += pts
 
         # Drop VALUE rows before stats (prepare_correctness_matrix only drops KEY)
         df_version = df_version[~value_mask_v].reset_index(drop=True)
@@ -1274,6 +1304,7 @@ def generate_report(
             'difficulty': difficulty_v,
             'pb_vals': pb_vals_v,
             'key_series': key_series_v,
+            'point_values': point_values_v,
             'n_students': n_students_v,
             'mean': mean_v,
             'std': std_v,
@@ -1416,6 +1447,7 @@ def generate_report(
         df=df, item_cols=item_cols, input_csv_path=input_csv,
         scoring_params=scoring_params,
         auto_detected_students=auto_detected_students,
+        course_name=course_name,
     )
 
     # ========== PER-VERSION TABS ==========
@@ -1446,12 +1478,13 @@ def create_summary_tab(
     df=None, item_cols=None, input_csv_path=None,
     scoring_params=None,
     auto_detected_students=None,
+    course_name=None,
 ):
     """Create summary tab with statistics, flagged items, and scoring parameters.
 
     Layout order:
         1. Title
-        2. Project / Scores file / Generated
+        2. Course / Assessment / Scores file / Generated
         3. Per-version & amalgamated statistics + reliability
         4. Flagged items (blanks, multis, orphans, corrections)
         5. Scoring parameters (for reproducibility)
@@ -1470,11 +1503,16 @@ def create_summary_tab(
     ws['A1'].font = Font(size=16, bold=True)
 
     # ------------------------------------------------------------------ #
-    # 2. Project metadata
+    # 2. Course / Assessment metadata
     # ------------------------------------------------------------------ #
     row = 3
+    if course_name:
+        ws[f'A{row}'] = "Course:"
+        ws[f'A{row}'].font = FONT_BOLD
+        ws[f'B{row}'] = course_name
+        row += 1
     if project_name:
-        ws[f'A{row}'] = "Project:"
+        ws[f'A{row}'] = "Assessment:"
         ws[f'A{row}'].font = FONT_BOLD
         ws[f'B{row}'] = project_name
         row += 1
@@ -2024,7 +2062,8 @@ def create_version_tab(
     student_rows = df_version[~non_student_mask]
 
     # Determine columns to display in the desired order:
-    # LastName, FirstName, StudentID, Issue, correct, incorrect, blank, multi, percent, Version, Q1, Q2, ...
+    # Name/ID → Score/Percent (what teachers look at first) → detail counts → Issue → Q1, Q2, ...
+    # Version column is omitted because it's redundant with the tab name.
     display_cols = []
 
     # Identity columns first (check both cases)
@@ -2034,21 +2073,22 @@ def create_version_tab(
                 display_cols.append(variant)
                 break
 
-    # Add Issue column (will be computed)
-    display_cols.append('Issue')
-
-    # Score columns (check both cases)
-    for col in ['score', 'correct', 'incorrect', 'blank', 'multi', 'percent']:
+    # Score and percent immediately after name/ID — the most-checked columns
+    for col in ['score', 'percent']:
         if col in df_version.columns:
             display_cols.append(col)
         elif col.capitalize() in df_version.columns:
             display_cols.append(col.capitalize())
 
-    # Version column (check both cases)
-    if 'version' in df_version.columns:
-        display_cols.append('version')
-    elif 'Version' in df_version.columns:
-        display_cols.append('Version')
+    # Detail counts (correct, incorrect, blank, multi)
+    for col in ['correct', 'incorrect', 'blank', 'multi']:
+        if col in df_version.columns:
+            display_cols.append(col)
+        elif col.capitalize() in df_version.columns:
+            display_cols.append(col.capitalize())
+
+    # Issue column (computed below, not from the CSV)
+    display_cols.append('Issue')
 
     # Question columns
     display_cols.extend(item_cols)
@@ -2444,7 +2484,7 @@ def create_class_scores_tab(wb, df_full, item_cols, k):
     Create a "Class Scores" tab with all students sorted alphabetically.
 
     This provides a simple roster view suitable for pasting into gradebooks:
-    - LastName, FirstName, StudentID, Score, Correct, Percent, Version
+    - LastName, FirstName, StudentID, Score, Percent, Version
     - Sorted by LastName first, then FirstName
     """
     ws = wb.create_sheet("Class Scores")
@@ -2454,7 +2494,6 @@ def create_class_scores_tab(wb, df_full, item_cols, k):
     firstname_col = 'firstname' if 'firstname' in df_full.columns else 'FirstName' if 'FirstName' in df_full.columns else None
     studentid_col = 'studentid' if 'studentid' in df_full.columns else 'StudentID' if 'StudentID' in df_full.columns else None
     score_col = 'score' if 'score' in df_full.columns else 'Score' if 'Score' in df_full.columns else None
-    correct_col = 'correct' if 'correct' in df_full.columns else 'Correct' if 'Correct' in df_full.columns else None
     percent_col = 'percent' if 'percent' in df_full.columns else 'Percent' if 'Percent' in df_full.columns else None
     version_col = 'version' if 'version' in df_full.columns else 'Version' if 'Version' in df_full.columns else None
 
@@ -2479,8 +2518,9 @@ def create_class_scores_tab(wb, df_full, item_cols, k):
         # Drop sort columns
         df_students = df_students.drop(columns=[c for c in sort_cols if c in df_students.columns])
 
-    # Write header
-    headers = ['Last Name', 'First Name', 'Student ID', 'Score', 'Correct', 'Percent', 'Version']
+    # Write header — "Correct" column omitted because Score already captures
+    # points earned and showing both confuses teachers.
+    headers = ['Last Name', 'First Name', 'Student ID', 'Score', 'Percent', 'Version']
     for col_idx, header in enumerate(headers, start=1):
         ws.cell(row=1, column=col_idx, value=header)
     format_header_row(ws, 1)
@@ -2502,23 +2542,19 @@ def create_class_scores_tab(wb, df_full, item_cols, k):
         score_val = row.get(score_col, '') if score_col else ''
         ws.cell(row=row_num, column=4, value=score_val)
 
-        # Correct (number of correctly answered questions)
-        correct_val = row.get(correct_col, '') if correct_col else ''
-        ws.cell(row=row_num, column=5, value=correct_val)
-
         # Percent
         percent = row.get(percent_col, '') if percent_col else ''
         if percent and str(percent).strip():
             try:
                 pct_val = float(percent)
-                ws.cell(row=row_num, column=6, value=f"{pct_val:.1f}%")
+                ws.cell(row=row_num, column=5, value=f"{pct_val:.1f}%")
             except (ValueError, TypeError):
-                ws.cell(row=row_num, column=6, value=percent)
+                ws.cell(row=row_num, column=5, value=percent)
         else:
-            ws.cell(row=row_num, column=6, value='')
+            ws.cell(row=row_num, column=5, value='')
 
         # Version
-        ws.cell(row=row_num, column=7, value=row.get(version_col, '') if version_col else '')
+        ws.cell(row=row_num, column=6, value=row.get(version_col, '') if version_col else '')
 
         row_num += 1
 
@@ -2533,44 +2569,81 @@ def create_class_scores_tab(wb, df_full, item_cols, k):
 
 def create_answer_key_tab(wb, item_cols, versions, version_stats):
     """
-    Create an "Answer Key" tab showing the correct answer for each question
-    across all versions.
+    Create an "Answer Key" tab showing the correct answer and point value
+    for each question, per version.
 
-    Layout:
-        Question | Version A | Version B | ...
-        Q1       | C         | A         | ...
-        Q2       | B         | D         | ...
-        ...
+    Single version layout:
+        Question | Answer | Points
+        Q1       | C      | 1
+        Q2       | B      | 2
+
+    Multi-version layout (each version gets its own Answer + Points pair):
+        Question | Answer (A) | Points (A) | Answer (B) | Points (B) | ...
+        Q1       | C          | 1          | A          | 2          | ...
+        Q2       | B          | 2          | D          | 1          | ...
+
+    Point values come from each version's VALUE row in the scored CSV,
+    which mirrors the original answer key file.  Defaults to 1 when no
+    VALUE row was present.
     """
     ws = wb.create_sheet("Answer Key")
+    is_multi = len(versions) > 1
 
-    # Header row
-    headers = ["Question"] + [f"Version {v}" for v in versions]
+    # ── Build header row ──
+    headers = ["Question"]
+    if is_multi:
+        for ver in versions:
+            headers.append(f"Answer ({ver})")
+            headers.append(f"Points ({ver})")
+    else:
+        headers.append("Answer")
+        headers.append("Points")
+
     for col_idx, hdr in enumerate(headers, start=1):
         ws.cell(row=1, column=col_idx, value=hdr)
     format_header_row(ws, 1)
 
-    # One row per question
+    # ── Data rows: one per question ──
+    # Track per-version totals for the summary row
+    version_totals: Dict[str, float] = {v: 0.0 for v in versions}
+
     for q_idx, q_col in enumerate(item_cols):
         row_num = q_idx + 2
         ws.cell(row=row_num, column=1, value=q_col)
         ws.cell(row=row_num, column=1).font = FONT_BOLD
 
-        for v_idx, ver in enumerate(versions):
+        col_offset = 2  # start after "Question"
+        for ver in versions:
+            # Answer
             ks = version_stats[ver].get('key_series')
             if ks is not None and q_col in ks.index:
                 answer = str(ks[q_col]).strip().upper()
                 if answer and answer not in ('NAN', 'NONE', ''):
-                    ws.cell(row=row_num, column=v_idx + 2, value=answer)
+                    ws.cell(row=row_num, column=col_offset, value=answer)
 
-        # Apply thin borders to all cells in the row
+            # Points from this version's VALUE row
+            pv = version_stats[ver].get('point_values', {})
+            pts = pv.get(q_col, 1.0)
+            ws.cell(row=row_num, column=col_offset + 1, value=pts)
+            version_totals[ver] += pts
+
+            col_offset += 2  # advance past Answer + Points columns
+
+        # Thin borders across the row
         for c in range(1, len(headers) + 1):
             ws.cell(row=row_num, column=c).border = BORDER_THIN
 
-    # Summary
+    # ── Summary row ──
     row_num = len(item_cols) + 3
     ws.cell(row=row_num, column=1, value=f"Total Questions: {len(item_cols)}")
     ws.cell(row=row_num, column=1).font = FONT_BOLD
+
+    # Show total points per version under each Points column
+    col_offset = 2
+    for ver in versions:
+        ws.cell(row=row_num, column=col_offset + 1, value=version_totals[ver])
+        ws.cell(row=row_num, column=col_offset + 1).font = FONT_BOLD
+        col_offset += 2
 
     auto_size_columns(ws)
 

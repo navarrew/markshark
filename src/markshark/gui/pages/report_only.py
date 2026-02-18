@@ -353,6 +353,14 @@ class ReportOnlyPage(QWidget):
         if rlabel:
             args += ["--run-label", rlabel]
 
+        # Course name from registry — appears as "Course:" on the Summary tab
+        project_path = self.project_selector.project_dir()
+        if project_path:
+            from ..models.project_registry import ProjectRegistry
+            course_entry = ProjectRegistry().get_course_for_project(project_path)
+            if course_entry and course_entry.get("name"):
+                args += ["--course-name", course_entry["name"]]
+
         project_name = self.project_selector.project_name()
         if project_name:
             self.log.append_line(f"Assessment: {project_name}")

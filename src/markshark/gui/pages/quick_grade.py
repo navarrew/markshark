@@ -949,10 +949,19 @@ class QuickGradePage(QWidget):
             args += ["--corrections", self.corrections_selector.path()]
             self.log.append_line(f"Applying corrections from: {self.corrections_selector.path()}")
 
-        # Optional project name
+        # Optional project (assessment) and course names for the report header
         project_name = self.project_selector.project_name()
         if project_name:
             args += ["--project-name", project_name]
+
+        # Look up the course name from the registry so the report header
+        # shows "Course: Biology 101" above "Assessment: Midterm 1".
+        project_path = self.project_selector.project_dir()
+        if project_path:
+            from ..models.project_registry import ProjectRegistry
+            course_entry = ProjectRegistry().get_course_for_project(project_path)
+            if course_entry and course_entry.get("name"):
+                args += ["--course-name", course_entry["name"]]
 
         self.log.append_line(f"Command: markshark {' '.join(args)}\n")
         self.runner.run(args, "report")
