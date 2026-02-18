@@ -163,6 +163,16 @@ score = _get_field(row_data, "Correct", "correct", "Percent", "percent")
 ### PDF Preview
 `PDFPreview` widget caches by (path, page). Call `load_pdf(path, page=N)` where N is 0-indexed.
 
+### Simple Grade Mode
+A streamlined grading mode for small classes (no student IDs, no roster matching). Activated via a checkbox on the Quick Grade page.
+
+- **Per-assessment flag**: `ProjectRegistry.set_simple_mode()` / `get_simple_mode()` — stored in `projects.json` alongside `template_id`
+- **Global default**: `SettingsStore` key `"defaults/simple_grade"` (default: `False`)
+- **Report**: `generate_report(..., simple=True)` produces Summary + Class Scores + Answer Key only (no per-version item analysis)
+- **CLI**: `markshark report --simple` for the same streamlined output
+- **Corrections**: In simple mode, corrections are keyed by **page number** (from the CSV `Page` column) instead of `StudentID`. The `merge_corrections()` function auto-falls back to Page matching when StudentID matching fails — no explicit mode flag needed.
+- **Review panel**: Detects simple mode from ProjectRegistry on CSV load; uses page number as the correction key in `_on_cell_changed()`
+
 ## Current Feature Branch Focus
 This branch (`feature/gui-simplified-csv`) focuses on:
 1. Simplified CSV output from `score_core.py` (no stats, no fancy headers)

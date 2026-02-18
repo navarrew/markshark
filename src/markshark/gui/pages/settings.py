@@ -189,6 +189,16 @@ class SettingsPage(QWidget):
         self.auto_open_results.setChecked(True)
         prefs_layout.addWidget(self.auto_open_results)
 
+        self.default_simple_grade = QCheckBox(
+            "Default to Simple Grade for new assessments"
+        )
+        self.default_simple_grade.setToolTip(
+            "When checked, new assessments start in Simple Grade mode\n"
+            "(no student IDs or roster matching — scores only)."
+        )
+        self.default_simple_grade.setChecked(False)
+        prefs_layout.addWidget(self.default_simple_grade)
+
         prefs_layout.addSpacing(8)
 
         # Read-only display of key paths
@@ -601,6 +611,9 @@ class SettingsPage(QWidget):
         self.auto_open_results.setChecked(
             self.settings.value("defaults/auto_open", True, type=bool)
         )
+        self.default_simple_grade.setChecked(
+            self.settings.value("defaults/simple_grade", False, type=bool)
+        )
 
         # Scoring
         self.min_fill_spin.setValue(int(self.settings.value(
@@ -727,6 +740,7 @@ class SettingsPage(QWidget):
 
         # General
         s.setValue("defaults/auto_open", self.auto_open_results.isChecked())
+        s.setValue("defaults/simple_grade", self.default_simple_grade.isChecked())
 
         # Scoring
         s.setValue("scoring/min_fill", self.min_fill_spin.value())
@@ -807,6 +821,7 @@ class SettingsPage(QWidget):
 
         # General
         self.auto_open_results.setChecked(True)
+        self.default_simple_grade.setChecked(False)
 
         # Scoring
         self.min_fill_spin.setValue(_dflt(SCORING_DEFAULTS, "min_fill", 45))

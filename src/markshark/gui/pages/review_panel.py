@@ -701,6 +701,14 @@ class ReviewPanelPage(QWidget):
             corrections_path = csv_path.parent / "corrections.csv"
             self._correction_log = CorrectionLog(corrections_path, str(csv_path))
 
+            # Detect Simple Grade mode for this project — corrections are
+            # keyed by page number instead of student ID in simple mode.
+            self._simple_mode = False
+            project_dir = self.project_selector.project_dir()
+            if project_dir:
+                from ..models.project_registry import ProjectRegistry
+                self._simple_mode = ProjectRegistry().get_simple_mode(project_dir)
+
             # Find associated annotated PDF
             # In flat structure: scored_scans.pdf lives at project root (parent of score_data/)
             self._scored_pdf_path = None
@@ -911,7 +919,12 @@ class ReviewPanelPage(QWidget):
         if not row_data:
             return
 
-        student_id = _get_field(row_data, "StudentID", "student_id", "ID")
+        # In Simple Grade mode, corrections are keyed by page number (always
+        # unique and stable) instead of student ID (which may be blank).
+        if getattr(self, "_simple_mode", False):
+            student_id = _get_field(row_data, "Page", "page")
+        else:
+            student_id = _get_field(row_data, "StudentID", "student_id", "ID")
         original_value = row_data.get(col_name, "") or ""
 
         if self._is_q_column(col_name):

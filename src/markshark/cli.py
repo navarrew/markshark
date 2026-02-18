@@ -346,6 +346,7 @@ def report(
     project_name: Optional[str] = typer.Option(None, "--project-name", help="Project name to include in report header"),
     run_label: Optional[str] = typer.Option(None, "--run-label", help="Run label (e.g., 2025-01-21_final) to include in report header"),
     corrections: Optional[str] = typer.Option(None, "--corrections", "--corrections-xlsx", help="Corrections file (.csv or .xlsx) to apply and list on Summary tab"),
+    simple: bool = typer.Option(False, "--simple", help="Simple Grade report: class scores and answer key only (no item analysis)"),
 ):
     """
     Generate an Excel report with per-version tabs, item analysis, and roster checking.
@@ -356,6 +357,8 @@ def report(
     - Roster matching (if --roster provided): flags absent students and orphan scans
     - Color-coded item quality indicators
     - Project metadata (if --project-name or --run-label provided)
+
+    Use --simple for a streamlined report (class scores + answer key only).
     """
     try:
         from .tools import report_tools
@@ -366,6 +369,7 @@ def report(
             project_name=project_name,
             run_label=run_label,
             corrections_xlsx=corrections,
+            simple=simple,
         )
         rprint(f"[green]Report generated:[/green] {out_xlsx}")
     except Exception as e:

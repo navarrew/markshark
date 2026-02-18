@@ -345,8 +345,13 @@ def merge_corrections(
 
     # Find the student ID column
     id_col = _find_col(df, ['studentid', 'StudentID', 'Student_ID', 'student_id', 'ID', 'id'])
-    if id_col is None:
-        print(f"[corrections] Warning: No student ID column found in {list(df.columns)}", file=sys.stderr)
+
+    # Page column — used as a fallback key for Simple Grade mode where
+    # corrections are stored with the page number in the student_id field.
+    page_col = _find_col(df, ['Page', 'page'])
+
+    if id_col is None and page_col is None:
+        print(f"[corrections] Warning: No student ID or Page column found in {list(df.columns)}", file=sys.stderr)
         return df, 0
 
     # Find name columns for ID corrections
@@ -354,7 +359,7 @@ def merge_corrections(
     lastname_col = _find_col(df, ['lastname', 'LastName', 'Last_Name', 'last_name', 'Last'])
 
     # Pre-normalize all IDs in the DataFrame for matching
-    df_ids_normalized = df[id_col].apply(_normalize_id)
+    df_ids_normalized = df[id_col].apply(_normalize_id) if id_col else pd.Series("", index=df.index)
 
     for _, correction in corrections.iterrows():
         student_id_normalized = _normalize_id(correction['student_id'])
@@ -371,6 +376,13 @@ def merge_corrections(
             _value_indices = set(df[_value_mask].index.tolist())
             student_indices = [i for i in df[student_mask].index.tolist()
                               if i != key_row_idx and i not in _value_indices]
+
+            # Fallback: try matching by Page column (Simple Grade mode
+            # stores the page number in the correction's student_id field).
+            if not student_indices and page_col:
+                page_mask = df[page_col].astype(str).str.strip() == student_id_normalized
+                student_indices = [i for i in df[page_mask].index.tolist()
+                                   if i != key_row_idx and i not in _value_indices]
 
             if not student_indices:
                 sample_ids = df_ids_normalized[df_ids_normalized != 'KEY'].head(5).tolist()
@@ -417,6 +429,13 @@ def merge_corrections(
         _value_indices = set(df[_value_mask].index.tolist())
         student_indices = [i for i in df[student_mask].index.tolist()
                           if i != key_row_idx and i not in _value_indices]
+
+        # Fallback: try matching by Page column (Simple Grade mode
+        # stores the page number in the correction's student_id field).
+        if not student_indices and page_col:
+            page_mask = df[page_col].astype(str).str.strip() == student_id_normalized
+            student_indices = [i for i in df[page_mask].index.tolist()
+                               if i != key_row_idx and i not in _value_indices]
 
         if not student_indices:
             sample_ids = df_ids_normalized[df_ids_normalized != 'KEY'].head(5).tolist()
@@ -1013,6 +1032,7 @@ def generate_report(
     corrections_applied: int = 0,
     corrections_xlsx: Optional[str] = None,
     scoring_params: Optional[Dict] = None,
+    simple: bool = False,
 ):
     r"""
     Generate comprehensive Excel report from scored CSV.
@@ -1026,6 +1046,10 @@ def generate_report(
         run_label: Optional run label (e.g., "2025-01-21_final")
         corrections_applied: Number of corrections applied (for display on Summary tab)
         corrections_xlsx: Optional path to the corrections XLSX (for listing details on Summary tab)
+        simple: When True, produce a streamlined report with only a Class
+            Scores sheet and Answer Key sheet (no per-version item analysis,
+            no roster matching, no detailed statistics).  Designed for
+            small-class "Simple Grade" workflows.
     """
     # Auto-load scoring parameters from companion JSON if not explicitly given
     if scoring_params is None:
@@ -1066,6 +1090,73 @@ def generate_report(
             df, corrections_applied = merge_corrections(
                 df, corrections_df, item_cols, key_row_idx, roster=roster_for_merge,
             )
+
+    # ── Simple Grade shortcut ──────────────────────────────────────────
+    # Skip roster matching, item analysis, and per-version stats.
+    # Produce only a Class Scores sheet and an Answer Key sheet.
+    if simple:
+        # We still need version info for the answer-key tab, but we can
+        # compute it cheaply without the full per-version stats pipeline.
+        version_col = _find_col(df, ['Version', 'version'])
+        if version_col:
+            all_v = df[version_col].dropna().astype(str).str.strip().unique()
+            versions = sorted({
+                v.rstrip("*") for v in all_v
+                if v.rstrip("*") and len(v.rstrip("*")) <= 2
+                and v.rstrip("*").upper() not in ('VERSION', 'KEY')
+            })
+        else:
+            versions = ['A']
+
+        # Build minimal version_stats with just the key answers (for the
+        # Answer Key tab).  No difficulty, no point-biserial, no KR-20.
+        version_stats: Dict[str, dict] = {}
+        for ver in versions:
+            if version_col:
+                ver_mask = df[version_col].astype(str).str.strip() == ver
+                df_ver = df[ver_mask]
+            else:
+                df_ver = df
+            key_idx = detect_key_row_index(df_ver, item_cols, key_label="KEY")
+            if key_idx is not None:
+                key_row = df_ver.iloc[key_idx]
+                key_series = pd.Series({
+                    col: str(key_row[col]).strip() for col in item_cols
+                })
+            else:
+                key_series = pd.Series({col: "" for col in item_cols})
+            version_stats[ver] = {'key_series': key_series}
+
+        wb = Workbook()
+        wb.remove(wb.active)
+
+        # ── Simple Summary sheet (lightweight header only) ──
+        ws = wb.create_sheet("Summary")
+        ws.cell(row=1, column=1, value="MarkShark Simple Grade Report")
+        ws.cell(row=1, column=1).font = FONT_BOLD
+        row_n = 3
+        if project_name:
+            ws.cell(row=row_n, column=1, value="Assessment:")
+            ws.cell(row=row_n, column=2, value=project_name)
+            row_n += 1
+        from datetime import datetime as _dt
+        ws.cell(row=row_n, column=1, value="Generated:")
+        ws.cell(row=row_n, column=2, value=_dt.now().strftime("%Y-%m-%d %H:%M"))
+        row_n += 1
+        ws.cell(row=row_n, column=1, value="Total questions:")
+        ws.cell(row=row_n, column=2, value=k)
+        row_n += 1
+        if corrections_applied:
+            ws.cell(row=row_n, column=1, value="Corrections applied:")
+            ws.cell(row=row_n, column=2, value=corrections_applied)
+        auto_size_columns(ws)
+
+        create_class_scores_tab(wb, df, item_cols, k)
+        create_answer_key_tab(wb, item_cols, versions, version_stats)
+
+        wb.save(out_xlsx)
+        print(f"Simple Grade report generated: {out_xlsx}")
+        return
 
     # Load roster if provided
     roster_df = None

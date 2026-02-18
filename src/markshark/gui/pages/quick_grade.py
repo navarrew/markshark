@@ -92,6 +92,7 @@ class QuickGradePage(QWidget):
         self._setup_ui()
         self._load_templates()
         self._restore_template_for_current_project()
+        self._restore_simple_mode_for_current_project()
 
         # Save template choice whenever the user changes it
         self.template_combo.currentIndexChanged.connect(self._save_template_choice)
@@ -154,6 +155,44 @@ class QuickGradePage(QWidget):
             if t and getattr(t, "template_id", None) == template_id:
                 self.template_combo.setCurrentIndex(i)
                 return
+
+    # ------------------------------------------------------------------
+    # Simple Grade mode persistence
+    # ------------------------------------------------------------------
+
+    def _on_simple_grade_toggled(self, checked: bool):
+        """Show/hide the roster selector and persist the Simple Grade flag."""
+        self.roster_selector.setVisible(not checked)
+        self.simple_grade_hint.setVisible(checked)
+
+        # Persist per-assessment
+        project_dir = self.project_selector.project_dir()
+        if project_dir:
+            from ..models.project_registry import ProjectRegistry
+            ProjectRegistry().set_simple_mode(project_dir, checked)
+
+    def _restore_simple_mode_for_current_project(self):
+        """Restore the saved Simple Grade flag for the active project.
+
+        Falls back to the global default preference from Settings when the
+        project has no saved flag (i.e. a brand-new assessment).
+        """
+        project_dir = self.project_selector.project_dir()
+        if project_dir:
+            from ..models.project_registry import ProjectRegistry
+            simple = ProjectRegistry().get_simple_mode(project_dir)
+        else:
+            # No project selected — use the global default from Settings
+            from ..models.settings_store import SettingsStore
+            simple = SettingsStore().value("defaults/simple_grade", False, type=bool)
+        # Block signals so the toggled handler doesn't re-save the value
+        # we just loaded (which would touch the registry unnecessarily).
+        self.simple_grade_cb.blockSignals(True)
+        self.simple_grade_cb.setChecked(simple)
+        self.simple_grade_cb.blockSignals(False)
+        # Apply visibility directly since the signal was blocked
+        self.roster_selector.setVisible(not simple)
+        self.simple_grade_hint.setVisible(simple)
 
     def _setup_ui(self):
         """Build the page UI."""
@@ -283,6 +322,30 @@ class QuickGradePage(QWidget):
         files_layout.addWidget(self.roster_selector)
 
         layout.addWidget(files_group)
+
+        # Simple Grade toggle — hides roster selector and produces a
+        # streamlined report (alphabetical scores only, no item analysis).
+        simple_row = QHBoxLayout()
+        self.simple_grade_cb = QCheckBox(
+            "Simple Grade — no student IDs or roster matching"
+        )
+        self.simple_grade_cb.setToolTip(
+            "For small classes where you just need scores.\n"
+            "Skips roster matching and produces a simple alphabetical report."
+        )
+        self.simple_grade_cb.toggled.connect(self._on_simple_grade_toggled)
+        simple_row.addWidget(self.simple_grade_cb)
+        simple_row.addStretch()
+        layout.addLayout(simple_row)
+
+        self.simple_grade_hint = QLabel(
+            "Scores only. Alphabetical report by student name."
+        )
+        self.simple_grade_hint.setStyleSheet(
+            "color: #888; font-size: 11px; margin-left: 22px;"
+        )
+        self.simple_grade_hint.setVisible(False)
+        layout.addWidget(self.simple_grade_hint)
 
         layout.addStretch()
 
@@ -650,8 +713,9 @@ class QuickGradePage(QWidget):
         # Update browse dirs and auto-populate from new project
         self._update_browse_dirs()
 
-        # Restore saved template for the newly selected project
+        # Restore saved template and simple-mode flag for the newly selected project
         self._restore_template_for_current_project()
+        self._restore_simple_mode_for_current_project()
 
     def _update_browse_dirs(self, _name: str = ""):
         """Point all file-browse dialogs at the current project folder,
@@ -839,8 +903,8 @@ class QuickGradePage(QWidget):
         if self.verbose_thresh_cb.isChecked():
             args += ["--verbose-thresh"]
 
-        # Roster
-        if self.roster_selector.exists():
+        # Roster (skip in Simple Grade mode)
+        if not self.simple_grade_cb.isChecked() and self.roster_selector.exists():
             args += ["--roster-csv", self.roster_selector.path()]
 
         self.log.append_line(f"Command: markshark {' '.join(args)}\n")
@@ -870,11 +934,15 @@ class QuickGradePage(QWidget):
             "--out-xlsx", str(report_path),
         ]
 
-        # Roster — prefer the one on this tab, fall back to the Align & Score tab
-        if self.report_roster_selector.exists():
-            args += ["--roster", self.report_roster_selector.path()]
-        elif self.roster_selector.exists():
-            args += ["--roster", self.roster_selector.path()]
+        # Simple Grade mode — streamlined report without roster or item analysis
+        if self.simple_grade_cb.isChecked():
+            args += ["--simple"]
+        else:
+            # Roster — prefer the one on this tab, fall back to the Align & Score tab
+            if self.report_roster_selector.exists():
+                args += ["--roster", self.report_roster_selector.path()]
+            elif self.roster_selector.exists():
+                args += ["--roster", self.roster_selector.path()]
 
         # Corrections
         if self.corrections_selector.exists():

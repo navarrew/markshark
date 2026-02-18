@@ -175,6 +175,31 @@ class ProjectRegistry:
                 return entry.get("template_id", "")
         return ""
 
+    def set_simple_mode(self, project_path: Path, enabled: bool):
+        """Save the Simple Grade mode preference for a project (assessment)."""
+        resolved = self._normalize(project_path)
+        if resolved is None:
+            return
+        for entry in self._data["projects"]:
+            if entry["path"] == str(resolved):
+                entry["simple_mode"] = enabled
+                self._save()
+                return
+
+    def get_simple_mode(self, project_path: Path) -> bool:
+        """Return whether Simple Grade mode is enabled for a project.
+
+        Returns False for projects that predate this feature (the key
+        simply won't exist in their registry entry).
+        """
+        resolved = self._normalize(project_path)
+        if resolved is None:
+            return False
+        for entry in self._data["projects"]:
+            if entry["path"] == str(resolved):
+                return entry.get("simple_mode", False)
+        return False
+
     # ------------------------------------------------------------------
     # Public API — courses (course folders / working directories)
     # ------------------------------------------------------------------
