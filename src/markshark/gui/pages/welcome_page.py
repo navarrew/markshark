@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QFileDialog,
+    QMessageBox,
 )
 
 # Try to import MarkShark modules
@@ -420,6 +421,16 @@ class WelcomePage(QWidget):
         )
         key_build_btn.clicked.connect(self._on_key_builder)
         key_btn_row.addWidget(key_build_btn)
+
+        sample_key_btn = QPushButton("Download Sample Key")
+        sample_key_btn.setStyleSheet(
+            "QPushButton { background-color: #e8d5a3; color: #6b4f0a; "
+            "padding: 6px 14px; border-radius: 6px; font-size: 12px; }"
+            "QPushButton:hover { background-color: #dcc68e; }"
+        )
+        sample_key_btn.clicked.connect(self._on_download_sample_key)
+        key_btn_row.addWidget(sample_key_btn)
+
         key_btn_row.addStretch()
         key_layout.addLayout(key_btn_row)
 
@@ -537,7 +548,7 @@ class WelcomePage(QWidget):
         header_row = QHBoxLayout(header_widget)
         header_row.setContentsMargins(14, 8, 10, 8)
 
-        header_label = QLabel("Set Up a MarkShark Folder for Each of Your Courses!")
+        header_label = QLabel("Set up a MarkShark folder for each of your courses (or sections).")
         header_label.setStyleSheet(
             "font-size: 14px; font-weight: bold; color: white; background: transparent;"
         )
@@ -573,8 +584,8 @@ class WelcomePage(QWidget):
         desc = QLabel(
             "Make a different MarkShark folder for each course or section you teach "
             "inside the folder you're already using for your class.  "
-            "Within each course folder, MarkShark will create subfolders "
-            "for each assessment to store all associated files and data "
+            "MarkShark will create subfolders for each assessment "
+            "to store all associated files and data "
             "(e.g., Midterm 1 or Final Exam 2025)."
         )
         desc.setWordWrap(True)
@@ -922,6 +933,121 @@ class WelcomePage(QWidget):
         """Navigate to the Answer Key Utility page."""
         if self._main_window:
             self._main_window._navigate_to_key("key_builder")
+
+    def _on_download_sample_key(self):
+        """Let the user choose Text or Excel, then save a sample answer key.
+
+        Uses a small custom QDialog instead of QMessageBox so we can
+        control button order exactly (QMessageBox reorders buttons by
+        role, which varies across macOS / Windows).
+        """
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Download Sample Answer Key")
+        dlg.setMinimumWidth(360)
+        layout = QVBoxLayout(dlg)
+
+        label = QLabel(
+            "Which format would you like?\n\n"
+            "Text (.txt) \u2014 simple, one answer per line\n"
+            "Excel (.xlsx) \u2014 spreadsheet with instructions tab"
+        )
+        label.setWordWrap(True)
+        layout.addWidget(label)
+
+        btn_row = QHBoxLayout()
+        txt_btn = QPushButton("Text (.txt)")
+        xlsx_btn = QPushButton("Excel (.xlsx)")
+        cancel_btn = QPushButton("Cancel")
+
+        for btn in (txt_btn, xlsx_btn):
+            btn.setStyleSheet(
+                "QPushButton { background-color: #b8860b; color: white; "
+                "padding: 6px 16px; border-radius: 6px; font-weight: bold; }"
+                "QPushButton:hover { background-color: #9a7209; }"
+            )
+        cancel_btn.setStyleSheet(
+            "QPushButton { background-color: #e0e0e0; color: #333; "
+            "padding: 6px 16px; border-radius: 6px; }"
+            "QPushButton:hover { background-color: #d0d0d0; }"
+        )
+
+        btn_row.addWidget(txt_btn)
+        btn_row.addWidget(xlsx_btn)
+        btn_row.addWidget(cancel_btn)
+        layout.addLayout(btn_row)
+
+        # Wire buttons — store the choice, then close
+        choice = {}
+        txt_btn.clicked.connect(lambda: (choice.update(fmt="txt"), dlg.accept()))
+        xlsx_btn.clicked.connect(lambda: (choice.update(fmt="xlsx"), dlg.accept()))
+        cancel_btn.clicked.connect(dlg.reject)
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            if choice.get("fmt") == "txt":
+                self._save_sample_key_txt()
+            elif choice.get("fmt") == "xlsx":
+                self._save_sample_key_xlsx()
+
+    def _save_sample_key_txt(self):
+        """Copy the bundled sample_answer_key.txt to a user-chosen location."""
+        # The sample lives alongside the other bundled assets
+        sample = (
+            Path(__file__).resolve().parent.parent.parent
+            / "assets" / "sample_answer_key.txt"
+        )
+        if not sample.exists():
+            QMessageBox.warning(
+                self, "File Not Found",
+                "Sample text key not found in application assets.",
+            )
+            return
+
+        save_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Sample Answer Key",
+            str(Path.home() / "sample_answer_key.txt"),
+            "Text Files (*.txt)",
+        )
+        if save_path:
+            from ..utils import safe_copy_file
+            try:
+                safe_copy_file(sample, save_path)
+                QMessageBox.information(
+                    self, "Saved",
+                    f"Sample answer key saved to:\n{save_path}",
+                )
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Could not save file:\n{e}")
+
+    def _save_sample_key_xlsx(self):
+        """Copy the bundled answer_key_template.xlsx to a user-chosen location."""
+        template = (
+            Path(__file__).resolve().parent.parent.parent
+            / "assets" / "answer_key_template.xlsx"
+        )
+        if not template.exists():
+            QMessageBox.warning(
+                self, "File Not Found",
+                "Excel key template not found in application assets.",
+            )
+            return
+
+        save_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Sample Answer Key",
+            str(Path.home() / "answer_key_template.xlsx"),
+            "Excel Files (*.xlsx)",
+        )
+        if save_path:
+            from ..utils import safe_copy_file
+            try:
+                safe_copy_file(template, save_path)
+                QMessageBox.information(
+                    self, "Saved",
+                    f"Sample answer key saved to:\n{save_path}",
+                )
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Could not save file:\n{e}")
 
     def _go_to_page_and_close(self, dialog: QDialog, page_key: str):
         """Navigate to a page and close the dialog."""

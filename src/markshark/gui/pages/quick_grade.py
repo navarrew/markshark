@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QTabWidget,
     QProgressBar,
+    QScrollArea,
     QSplitter,
     QMessageBox,
     QFrame,
@@ -163,7 +164,7 @@ class QuickGradePage(QWidget):
     def _on_simple_grade_toggled(self, checked: bool):
         """Show/hide the roster selector and persist the Simple Grade flag."""
         self.roster_selector.setVisible(not checked)
-        self.simple_grade_hint.setVisible(checked)
+        self._update_run_button_label()
 
         # Persist per-assessment
         project_dir = self.project_selector.project_dir()
@@ -190,9 +191,81 @@ class QuickGradePage(QWidget):
         self.simple_grade_cb.blockSignals(True)
         self.simple_grade_cb.setChecked(simple)
         self.simple_grade_cb.blockSignals(False)
-        # Apply visibility directly since the signal was blocked
+        # Apply visibility and button label directly since the signal was blocked
         self.roster_selector.setVisible(not simple)
-        self.simple_grade_hint.setVisible(simple)
+        self._update_run_button_label()
+
+    # ------------------------------------------------------------------
+    # Run-button label — reflects the current checkbox state so the
+    # teacher always knows what will happen when they click the button.
+    # ------------------------------------------------------------------
+
+    def _update_run_button_label(self):
+        """Set the Run button text based on Simple Grade and Rescore state.
+
+        Four combinations:
+            Neither  → "Align Scans and Score"
+            Simple   → "Align Scans and Score (Simple Mode)"
+            Rescore  → "Rescore Previously Aligned Scans"
+            Both     → "Rescore Previously Aligned Scans (Simple Mode)"
+        """
+        rescore = self.rescore_cb.isChecked()
+        simple = self.simple_grade_cb.isChecked()
+
+        if rescore and simple:
+            label = "Rescore Previously Aligned Scans (Simple Mode)"
+        elif rescore:
+            label = "Rescore Previously Aligned Scans"
+        elif simple:
+            label = "Align Scans and Score (Simple Mode)"
+        else:
+            label = "Align Scans and Score"
+
+        self.align_score_btn.setText(label)
+
+    # ------------------------------------------------------------------
+    # Rescore mode — skip alignment, reuse aligned_scans.pdf
+    # ------------------------------------------------------------------
+
+    def _on_rescore_toggled(self, checked: bool):
+        """Toggle rescore mode: disable scans selector and update button text.
+
+        When rescore is active the teacher's raw-scan upload is irrelevant —
+        the previously aligned PDF in input_files/ is used directly.  We gray
+        out the scans selector and swap the button label so the teacher sees
+        a clear visual cue that alignment will be skipped.
+        """
+        if checked:
+            # Verify that aligned scans actually exist in this project
+            project_dir = self.project_selector.project_dir()
+            aligned = (
+                Path(project_dir) / "input_files" / "aligned_scans.pdf"
+                if project_dir else None
+            )
+            if not aligned or not aligned.exists():
+                # Can't rescore without a prior alignment
+                self.rescore_cb.blockSignals(True)
+                self.rescore_cb.setChecked(False)
+                self.rescore_cb.blockSignals(False)
+                QMessageBox.warning(
+                    self,
+                    "No Aligned Scans",
+                    "No aligned scans found for this assessment.\n"
+                    "Run a full Align & Score first, or uncheck Rescore.",
+                )
+                return
+
+            # Save original scans path so we can restore on uncheck
+            self._saved_scans_path = self.scans_selector.path()
+            self.scans_selector.set_path(str(aligned))
+            self.scans_selector.setEnabled(False)
+        else:
+            # Restore original scans selector state
+            self.scans_selector.setEnabled(True)
+            if hasattr(self, "_saved_scans_path"):
+                self.scans_selector.set_path(self._saved_scans_path)
+
+        self._update_run_button_label()
 
     def _setup_ui(self):
         """Build the page UI."""
@@ -281,12 +354,22 @@ class QuickGradePage(QWidget):
         splitter.setSizes([350, 200])
 
     def _create_inputs_tab(self) -> QWidget:
-        """Create the Inputs tab."""
+        """Create the Inputs tab.
+
+        Content is wrapped in a QScrollArea so that adding checkboxes
+        (Simple Grade, Rescore) and their hint labels doesn't squish
+        the file selectors to invisibility on small windows.
+        """
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        scroll.setWidget(widget)
 
         # Template selection
-        layout.addSpacing(20)
+        layout.addSpacing(18)
         template_group = QGroupBox("Choose your template bubblesheet")
         template_layout = QHBoxLayout(template_group)
         template_layout.addWidget(QLabel("Select template:"))
@@ -294,7 +377,7 @@ class QuickGradePage(QWidget):
         self.template_combo.setMinimumWidth(300)
         template_layout.addWidget(self.template_combo, 1)
         layout.addWidget(template_group)
-        layout.addSpacing(20)
+        layout.addSpacing(18)
 
         # File inputs
         files_group = QGroupBox("Upload Scanned Bubblesheets, Key, and Class Roster Files")
@@ -323,41 +406,45 @@ class QuickGradePage(QWidget):
 
         layout.addWidget(files_group)
 
-        # Simple Grade toggle — hides roster selector and produces a
-        # streamlined report (alphabetical scores only, no item analysis).
-        simple_row = QHBoxLayout()
+        # Options row — Simple Grade and Rescore side by side.
+        # Kept on one line to avoid eating vertical space that squishes
+        # the file selectors or pushes the Run button off-screen.
+        options_row = QHBoxLayout()
+
         self.simple_grade_cb = QCheckBox(
-            "Simple Grade — no student IDs or roster matching"
+            "Simple Grade — no student IDs or roster matching   "
         )
         self.simple_grade_cb.setToolTip(
             "For small classes where you just need scores.\n"
             "Skips roster matching and produces a simple alphabetical report."
         )
         self.simple_grade_cb.toggled.connect(self._on_simple_grade_toggled)
-        simple_row.addWidget(self.simple_grade_cb)
-        simple_row.addStretch()
-        layout.addLayout(simple_row)
+        options_row.addWidget(self.simple_grade_cb)
 
-        self.simple_grade_hint = QLabel(
-            "Scores only. Alphabetical report by student name."
+        self.rescore_cb = QCheckBox(
+            "Rescore — change your key or roster and rescore"
         )
-        self.simple_grade_hint.setStyleSheet(
-            "color: #888; font-size: 11px; margin-left: 22px;"
+        self.rescore_cb.setToolTip(
+            "Skip alignment and reuse aligned scans from a previous run.\n"
+            "Use this to re-grade with a corrected key or updated roster."
         )
-        self.simple_grade_hint.setVisible(False)
-        layout.addWidget(self.simple_grade_hint)
+        self.rescore_cb.toggled.connect(self._on_rescore_toggled)
+        options_row.addWidget(self.rescore_cb)
+
+        options_row.addStretch()
+        layout.addLayout(options_row)
 
         layout.addStretch()
 
         # Run button at the bottom of this tab
-        self.align_score_btn = QPushButton("Run")
+        self.align_score_btn = QPushButton("Align Scans and Score")
         self.align_score_btn.setMinimumHeight(36)
         from ..utils import RUN_BUTTON_STYLE
         self.align_score_btn.setStyleSheet(RUN_BUTTON_STYLE)
         self.align_score_btn.clicked.connect(self._run_align_and_score)
         layout.addWidget(self.align_score_btn)
 
-        return widget
+        return scroll
 
     def _create_options_tab(self) -> QWidget:
         """Create the Grader Settings tab — single box, two columns."""
@@ -737,10 +824,33 @@ class QuickGradePage(QWidget):
         self._auto_populate_report_files()
 
     def _validate_inputs(self) -> bool:
-        """Validate required inputs."""
-        if not self.scans_selector.exists():
-            QMessageBox.warning(self, "Missing Input", "Please select a scanned PDF file.")
-            return False
+        """Validate required inputs.
+
+        In rescore mode the raw-scans selector is disabled, so we check
+        for the aligned PDF in the project instead.
+        """
+        if self.rescore_cb.isChecked():
+            # Rescore: verify aligned scans exist in the project
+            project_dir = self.project_selector.project_dir()
+            aligned = (
+                Path(project_dir) / "input_files" / "aligned_scans.pdf"
+                if project_dir else None
+            )
+            if not aligned or not aligned.exists():
+                QMessageBox.warning(
+                    self,
+                    "No Aligned Scans",
+                    "No aligned scans found for this assessment.\n"
+                    "Run a full Align & Score first, or uncheck Rescore.",
+                )
+                return False
+        else:
+            if not self.scans_selector.exists():
+                QMessageBox.warning(
+                    self, "Missing Input",
+                    "Please select a scanned PDF file.",
+                )
+                return False
 
         template = self.template_combo.currentData()
         if template is None:
@@ -766,8 +876,9 @@ class QuickGradePage(QWidget):
         input_dir = project_dir / "input_files"
         input_dir.mkdir(exist_ok=True)
 
-        # Copy scans
-        if self.scans_selector.exists():
+        # Copy scans — skip in rescore mode because aligned_scans.pdf
+        # is already in input_files/ from the previous run.
+        if not self.rescore_cb.isChecked() and self.scans_selector.exists():
             src = Path(self.scans_selector.path())
             dst = input_dir / f"scans{src.suffix}"
             try:
@@ -775,21 +886,32 @@ class QuickGradePage(QWidget):
             except Exception as e:
                 print(f"[warn] Could not copy scans to input_files/: {e}")
 
-        # Copy key
+        # Copy key — in rescore mode, log when the key file is being replaced
+        # so the teacher gets clear feedback that the old (incorrect) key is gone.
         if self.key_selector.exists():
             src = Path(self.key_selector.path())
             dst = input_dir / f"key{src.suffix}"
+            replacing = self.rescore_cb.isChecked() and dst.exists()
             try:
                 shutil.copy2(str(src), str(dst))
+                if replacing:
+                    self.log.append_line(
+                        f"Replaced answer key: {dst.name} ← {src.name}"
+                    )
             except Exception as e:
                 print(f"[warn] Could not copy key to input_files/: {e}")
 
-        # Copy roster
+        # Copy roster — same rescore-aware logging as the key above.
         if self.roster_selector.exists():
             src = Path(self.roster_selector.path())
             dst = input_dir / f"roster{src.suffix}"
+            replacing = self.rescore_cb.isChecked() and dst.exists()
             try:
                 shutil.copy2(str(src), str(dst))
+                if replacing:
+                    self.log.append_line(
+                        f"Replaced roster: {dst.name} ← {src.name}"
+                    )
             except Exception as e:
                 print(f"[warn] Could not copy roster to input_files/: {e}")
 
@@ -849,6 +971,21 @@ class QuickGradePage(QWidget):
         self.results_csv = self.work_dir / "score_data" / "results.csv"
         self.scored_pdf = self.work_dir / "scored_scans.pdf"
 
+        # ── Rescore shortcut ──
+        # When rescore is active, alignment has already been done in a
+        # previous run and aligned_scans.pdf sits in input_files/.
+        # Jump straight to scoring.
+        if self.rescore_cb.isChecked():
+            self.log.clear()
+            self.progress.setVisible(True)
+            self.progress.setRange(0, 0)
+            self.align_score_btn.setEnabled(False)
+            self.status_label.setText("Rescoring with aligned scans...")
+            self.log.append_line("Rescore mode — skipping alignment.\n")
+            self._run_score()
+            return
+
+        # ── Normal flow: align first, then score ──
         # UI updates
         self.log.clear()
         self.progress.setVisible(True)
