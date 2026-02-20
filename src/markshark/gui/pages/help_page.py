@@ -29,10 +29,10 @@ _HELP_DIR = Path(__file__).parent.parent.parent / "assets" / "help"
 # Ordered list of (tab_label, filename) for the help tabs
 _HELP_TABS = [
     ("Getting Started", "getting_started.md"),
-    ("Key & Roster Formats", "key_formats.md"),
+    ("Templates", "templates.md"),
     ("Alignment", "alignment.md"),
     ("Scoring", "scoring.md"),
-    ("Templates", "templates.md"),
+    ("File Formats", "key_formats.md"),
     ("LMS Integration", "lms_integration.md"),
     ("Reference", "reference.md"),
 ]

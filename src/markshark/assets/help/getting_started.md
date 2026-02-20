@@ -1,14 +1,37 @@
 # Getting Started
-MarkShark is an optical mark recognition (OMR) system for bubble sheet grading.
+MarkShark is an optical mark recognition (OMR) system for bubble sheet grading that is designed to be teacher friendly.
+***It's completely free.  Really.***  
+- No paywalls or microtransactions.
+- No licensing requirements.
+- No arguing with your school about the costs of scanning.
+- You print your own bubble sheets, you don't have to order them.
+- You can use a scanner you probably already have access to.
+**MarkShark makes it easy for you.**
+- MarkShark works on both Mac and PC computers.
+- You control the data and can go from scans to scores in minutes.
+- We provide dozens of bubblesheet templates for you to choose from.
+  - *You can your own custom bubble sheets using our companion platform 'Bubblefish'*
+- Make a mistake with your answer key?  No problem!  You can rescore in seconds!
+- A student fill in their ID incorrectly?  No problem!  You can fix it with a click!
+- You scanned one page upside-down?  No problem!  Our PDF tools can fix it fast!
+- You want to copy student scores directly into the spreadsheet your course software uses?  No problem!  It's easy to integrate MarkShark with any LMS!
+- MarkShark works for courses as small as 10 students to classes bigger than 1000!
+- MarkShark accepts a variety of answer key formats.
+- MarkShark generates a report that is easy to read and understand.
+- MarkShark produces annotated student scans make it easy to see and understand why a student got their score.
+# Step 1 - Find a bubble sheet (or two) that meet your needs.
+
+# Step 2 - Set up your MarkShark folder on your computer.
+
 
 [see Getting Started](getting_started.md)
 [see Troubleshooting](scoring.md#troubleshooting)
 [Answer Key Formats](key_formats.md)
 ---
-## Typical Workflow
-1. **Scan** your bubble sheets to a single PDF (use a document scanner or scanning app).
+# Typical workflow after the test
+1. **Scan** your student bubble sheets to a single PDF (use a document scanner or scanning app).
 2. **Open MarkShark** and go to the **Grader** page.
-3. **Create a new assessment folder within MarkShark**
+3. **Create a new assessment within your MarkShark course folder**
 4. **Load your scans, answer key, and optionally a class roster.**
 5. Click **Align & Score** — MarkShark will align and score your sheets.
 6. **Review & Correct** flagged items on the Review & Correct page.
