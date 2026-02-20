@@ -36,12 +36,6 @@ Bubble sheets are printed with faint circles marking where to fill in. These pri
 
 For each question row, MarkShark looks at the fill scores for all five choices (A through E) and picks the one with the highest score. But it only accepts this choice if certain conditions are met. The most important is that the highest score must be significantly higher than the second-highest. This prevents marking ambiguous rows as "answered" when the student circled two bubbles equally.
 
-MarkShark uses three parameters to make this decision:
-
-- **Minimum fill:** The highest score must be above this threshold (default: 0.15). If all scores are lower, the question is marked **blank**.
-- **Top-2 ratio:** The second-highest score must be less than this percentage of the best score (default: 80%). If the second is too close, it's marked **multi** (multiple marks detected).
-- **Minimum separation:** The difference between first and second must be above this percentage (default: 7 percentage points). This catches cases where both scores are very low but one is marginally higher.
-
 **Example:** If a row's scores are [0.85, 0.12, 0.08, 0.05, 0.02], the "A" choice is clearly marked and would be selected. But if the scores are [0.30, 0.28, 0.05, 0.03, 0.02], even though "A" is highest, the second-place "B" is too close, so the question is marked **multi**.
 
 ## Stage 6: Adaptive Rescoring (For Light Marks)
