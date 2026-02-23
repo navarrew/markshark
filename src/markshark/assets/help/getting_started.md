@@ -1,29 +1,16 @@
 # Getting Started
-MarkShark is an optical mark recognition (OMR) system for bubble sheet grading that is designed to be teacher friendly.  ***You are in control and can go from scans to scores in just a few minutes.***
 **Note: if you're new to MarkShark we have a tutorial PDF and a practice dataset for you to download and experiment with on the welcome page.**
-- MarkShark works on both Mac and PC computers.
-- MarkShark works for courses as small as 10 students to classes bigger than 1000!
-- You can use a scanner you probably already own or have access to.
-- You print your own bubble sheets, you don't have to order them.
-- We provide many bubblesheet templates for you to choose from.
-- *You can make your own custom bubble sheets using our companion platform* ***'Bubblefish'***
-- Make a mistake with your answer key?  No problem!  You can rescore in seconds!
-- A student fill in their ID incorrectly?  No problem!  You can fix it with a click!
-- You scanned one page upside-down?  No problem!  Our PDF tools can fix it fast!
-- You can easily copy student scores directly into the spreadsheet your course software uses. It's easy to integrate MarkShark with any LMS!
-- MarkShark accepts a variety of answer key formats.
-- MarkShark generates a report that is easy to read and understand.
-- MarkShark's annotated student scan output makes it easy to see why a student got their score.
 # Step 1 - Find a bubble sheet that meets your needs.
 MarkShark comes with many different bubble sheets templates you can download, print, and use right away.  MarkShark bubble sheet templates comprise two files - a pdf and an associated text file (a **bubblemap**) that tells the software what each of the bubbles represents.
-***How can I browse and get these bubble sheets?***
 On the **Welcome page** you can click 'Browse Templates' and see the various bubble sheets that can be used right away with MarkShark.  In the **Template Manager** you can get a closer look at each of the templates, select some favorites, and archive the ones you don't want to use to get them out of the way.  Click on the 'Download PDF' button and you can print and use these bubble sheets right away!
 ***Can I continue to use a non MarkShark bubble sheet I've already been using?***  
 *Uhhhh...yes and no.*  MarkShark can't decode a bubble sheet just by looking at it.  Every bubble sheet needs a corresponding **bubblemap** file that tells the software where the bubbles are on the page and what they represent.
 It's not *that* hard to make a bubblemap for a pre-existing bubble sheet (its just a text file and we give you instructions) but it does take some effort up front.  Once you make a bubblemap for a particular bubble sheet you can reuse it forever.  You'll have to decide for yourself whether the up-front effort (an hour) to make an accurate bubblemap for your old bubblesheet is worth it.
 # Step 2 - Set up your MarkShark folder(s) on your computer.
-You should put a MarkShark folder inside the course folder you might already use to hold the files for your lectures, syllabi, notes, etc.  You don't have to name the folder MarkShark...you can call it 'tests' or 'test scores' or 'section 101 scores'.  Doesn't matter.  MarkShark will remember where it is.  You can have several MarkShark folders for each of the courses (or course sections) that you teach.
-Within the MarkShark folder(s) MarkShark will create a new 'assessment' subfolder for each test (e.g., a folder for Quiz 1, a folder for Midterm 1, etc.).  And within the assessment folder it will store the scans, keys, rosters, and output reports/scores associated with that particular quiz, survey, test, or exam.
+You should put a MarkShark folder inside the folder you might already use for your course files (for your lectures, syllabi, notes, etc.).  You don't have to name the folder MarkShark...you can call it 'tests' or 'test scores' or 'section 101 scores'.  Doesn't matter.  MarkShark will remember where it is.  You can have several MarkShark folders even within the same course folder (one for each section of a large class, for example).
+For each new assessment (quiz, test, exam) MarkShark will create a new 'assessment' subfolder where it will automatically store the scans, keys, rosters, and output reports/scores associated with that particular assessment.
+In the example below, the teacher of Biology 101 has put two MarkShark folders (red) inside their course's main folder, one for each of the sections they teach.  They did this because the two sections enroll different students and it was important to keep their marks separate (you could decide to merge course sections if you so choose).  Inside each of the MarkShark folders are folders for each of the tests held during the course.  Looking inside the midterm 1 folder you see the 'input_files' folder holds a pdf of the scans, the midterm 1 answer key, and the class roster.  The scored_scans.pdf and final report output are kept in the main assessment folder.  Other files MarkShark needs are kept in the logs and score_data folders.
+![MarkShark folder structure](img/folders.png)
 # Step 3 - workflow after the test
 So you're back in your office after the test. What's next?
 1. **Scan** your student bubble sheets as a single PDF. [*See scanning tips below*](#scanning-tips).
@@ -46,28 +33,8 @@ The best way to avoid issues is to feed MarkShark good scans of your student bub
 ## Your class roster (optional)
 
 ---
-# Where to keep your MarkShark files
-MarkShark organises files into assessments. An assessment is typically a single test (e.g. "BIO101 2025 Midterm 1"). You set a course folder for your class and create assessments inside it.
-```
-BIO101 Section/               # the folder you already use for all your course content
-  MarkShark/                  # A folder inside your course folder specific to MarkShark
-    midterm_1/                # assessment folder for midterm #1
-      input_files/            # inputs + aligned scans
-        raw_scans.pdf
-        aligned_scans.pdf
-        answer_key.txt
-        roster.csv
-      score_data/               # grading outputs
-        results.csv
-        results_original.csv
-        results_params.json
-        corrections.csv
-      scored_scans.pdf          # annotated PDF (project root)
-      exam_report.xlsx          # generated report
-      logs/                     # processing logs
-    midterm_2/                  # another assessment folder...for midterm #2
-      ...
-```
+# More about the MarkShark folders and files
+
 ### input_files/
 Where your original uploads are stored: scanned PDFs, answer keys, and rosters. The aligned PDF (`aligned_scans.pdf`) is also saved here after alignment.
 ### score_data/
@@ -119,3 +86,17 @@ Overlay the bubblemap grid onto a template PDF to visually verify that bubble po
 [see Getting Started](getting_started.md)
 [see Troubleshooting](scoring.md#troubleshooting)
 [Answer Key Formats](key_formats.md)
+
+- MarkShark works on both Mac and PC computers.
+- MarkShark works for courses as small as 10 students to classes bigger than 1000!
+- You can use a scanner you probably already own or have access to.
+- You print your own bubble sheets, you don't have to order them.
+- We provide many bubblesheet templates for you to choose from.
+- *You can make your own custom bubble sheets using our companion platform* ***'Bubblefish'***
+- Make a mistake with your answer key?  No problem!  You can rescore in seconds!
+- A student fill in their ID incorrectly?  No problem!  You can fix it with a click!
+- You scanned one page upside-down?  No problem!  Our PDF tools can fix it fast!
+- You can easily copy student scores directly into the spreadsheet your course software uses. It's easy to integrate MarkShark with any LMS!
+- MarkShark accepts a variety of answer key formats.
+- MarkShark generates a report that is easy to read and understand.
+- MarkShark's annotated student scan output makes it easy to see why a student got their score.

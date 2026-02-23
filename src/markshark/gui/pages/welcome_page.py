@@ -7,7 +7,7 @@ recently opened projects for easy access.
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCursor, QFontDatabase, QPixmap
 from PySide6.QtWidgets import (
     QWidget,
@@ -447,6 +447,104 @@ class _TutorialDialog(QDialog):
 
 
 # ---------------------------------------------------------------------------
+# First-run welcome dialog
+# ---------------------------------------------------------------------------
+
+class _FirstRunDialog(QDialog):
+    """One-time onboarding dialog shown when MarkShark is opened for the first time.
+
+    Detected via the ``app/onboarding_dismissed`` flag in SettingsStore.
+
+    Three outcomes (checked by the caller via ``result``):
+      - **Don't show again** → ``accept()`` — caller persists the flag
+      - **Download Tutorial** → ``accept()`` with ``_open_tutorial`` set
+        — caller persists the flag and opens the tutorial dialog
+      - **Maybe Later** / window close → ``reject()`` — caller does NOT
+        persist the flag, so the dialog reappears next launch
+
+    The dialog uses the ``Qt.WindowType.Window`` flag so it appears as
+    its own top-level window.  This lets the user see the MarkShark
+    main window behind it rather than blocking the entire view.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Welcome to MarkShark!")
+        self.setMinimumWidth(460)
+        # Non-modal so the user can see and interact with the main
+        # window behind this dialog.  We avoid Qt.WindowType.Window
+        # because detaching a dialog from its parent's widget tree
+        # causes a use-after-free crash on macOS when Python GC's the
+        # dialog while Qt still references it in showChildren().
+        self.setModal(False)
+        self._open_tutorial = False  # set True if user clicks the tutorial button
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(14)
+
+        # ── Greeting ──
+        greeting = QLabel("Welcome!")
+        greeting.setStyleSheet(
+            f"font-size: 22px; font-weight: bold; color: {_BLUE};"
+        )
+        greeting.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(greeting)
+
+        body = QLabel(
+            "It looks like you might be new to MarkShark!\n\n"
+            "We have lots of help to get you started, including a "
+            "tutorial with sample student data that walks you through "
+            "the entire grading process — from scanning to reports."
+        )
+        body.setWordWrap(True)
+        body.setStyleSheet("font-size: 13px; color: white;")
+        body.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(body)
+
+        layout.addSpacing(4)
+
+        # ── Buttons ──
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+
+        later_btn = QPushButton("Maybe Later")
+        later_btn.setStyleSheet(
+            "QPushButton { background-color: #e0e0e0; color: #333; "
+            "padding: 8px 16px; border-radius: 6px; font-size: 12px; }"
+            "QPushButton:hover { background-color: #d0d0d0; }"
+        )
+        later_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(later_btn)
+
+        dismiss_btn = QPushButton("Don't show this again")
+        dismiss_btn.setStyleSheet(
+            "QPushButton { background-color: #6c757d; color: white; "
+            "padding: 8px 16px; border-radius: 6px; font-size: 12px; }"
+            "QPushButton:hover { background-color: #565e64; }"
+        )
+        dismiss_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(dismiss_btn)
+
+        tutorial_btn = QPushButton("Download Tutorial")
+        tutorial_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {_BLUE}; color: white; "
+            f"padding: 8px 16px; border-radius: 6px; font-weight: bold; font-size: 12px; }}"
+            f"QPushButton:hover {{ background-color: #0b5ed7; }}"
+        )
+        tutorial_btn.clicked.connect(self._on_tutorial)
+        btn_layout.addWidget(tutorial_btn)
+
+        layout.addLayout(btn_layout)
+
+    def _on_tutorial(self):
+        """Signal that the tutorial dialog should open, then close this dialog."""
+        self._open_tutorial = True
+        self.accept()
+
+
+# ---------------------------------------------------------------------------
 # Welcome page
 # ---------------------------------------------------------------------------
 
@@ -461,6 +559,7 @@ class WelcomePage(QWidget):
     def __init__(self, main_window=None, parent=None):
         super().__init__(parent)
         self._main_window = main_window
+        self._onboarding_checked = False  # guard so we only check once per session
         self._setup_ui()
 
     def _setup_ui(self):
@@ -1315,7 +1414,87 @@ class WelcomePage(QWidget):
             self._main_window._navigate_to_key("project_manager")
 
     def showEvent(self, event):
-        """Refresh recent projects and working dir when the page becomes visible."""
+        """Refresh recent projects and working dir when the page becomes visible.
+
+        On the very first show after launch, checks SettingsStore for the
+        ``app/onboarding_dismissed`` flag.  If it's unset (i.e. the user
+        has never seen the app before), shows a one-time welcome dialog.
+        The guard ``_onboarding_checked`` prevents re-checking on every
+        subsequent navigation back to this page within the same session.
+        """
         super().showEvent(event)
         self._populate_recent_projects()
         self._refresh_course_list()
+        self._maybe_show_onboarding()
+
+    def _maybe_show_onboarding(self):
+        """Show the first-run welcome dialog if the user hasn't dismissed it.
+
+        Uses ``app/onboarding_dismissed`` in SettingsStore as the
+        persistent flag.  Only runs once per application session
+        (guarded by ``_onboarding_checked``).
+
+        The dialog is opened with ``show()`` (non-modal) rather than
+        ``exec()`` so the user can see and interact with the main
+        window behind it.  Using ``exec()`` with custom window flags
+        causes a segfault on macOS because Python may GC the dialog
+        while Qt's widget tree still references it.
+        """
+        if self._onboarding_checked:
+            return
+        self._onboarding_checked = True
+
+        try:
+            from ..models.settings_store import SettingsStore
+            settings = SettingsStore()
+        except ImportError:
+            return
+
+        if settings.value("app/onboarding_dismissed", False, type=bool):
+            return  # user has seen the dialog before
+
+        # Defer showing the dialog until the next event-loop pass.
+        # showEvent fires while the main window is still being
+        # activated, so any dialog shown now gets buried behind it.
+        # QTimer.singleShot(0, ...) queues the call for after the
+        # window manager has finished placing the main window.
+        QTimer.singleShot(0, self._show_onboarding_dlg)
+
+    def _show_onboarding_dlg(self):
+        """Create and display the first-run dialog (called via deferred timer).
+
+        Stored on ``self`` so Python doesn't garbage-collect the dialog
+        while it's still visible.
+        """
+        self._onboarding_dlg = _FirstRunDialog(self)
+        self._onboarding_dlg.finished.connect(self._on_onboarding_finished)
+        self._onboarding_dlg.show()
+        self._onboarding_dlg.raise_()
+        self._onboarding_dlg.activateWindow()
+
+    def _on_onboarding_finished(self, result: int):
+        """Handle the first-run dialog closing.
+
+        Called via the ``finished`` signal after the user clicks one of
+        the three buttons or closes the window.
+        """
+        dlg = self._onboarding_dlg
+
+        # Only persist the flag if the user explicitly chose "Don't show
+        # again" or "Download Tutorial" (both call accept()).  "Maybe
+        # Later" and the window close button call reject(), leaving the
+        # flag unset so the dialog reappears on the next launch.
+        if result == QDialog.DialogCode.Accepted:
+            try:
+                from ..models.settings_store import SettingsStore
+                SettingsStore().setValue("app/onboarding_dismissed", True)
+            except ImportError:
+                pass
+
+        # If user chose "Download Tutorial", open the tutorial dialog
+        if dlg._open_tutorial:
+            self._on_open_tutorial()
+
+        # Clean up
+        dlg.deleteLater()
+        self._onboarding_dlg = None
