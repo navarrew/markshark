@@ -48,11 +48,42 @@ MarkShark is academic software that must remain functional and maintainable for 
 
 ## Architecture
 
-### Core Components
-- **`score_core.py`** - Main grading engine. Outputs simplified CSV with columns: `Page, Version, LastName, FirstName, StudentID, Correct, Incorrect, Blank, Multi, Flagged, FlagDetails, Q1-Qn`
-- **`cli.py`** - Typer-based CLI with commands: `align`, `score`, `report`, `gui`
-- **`app_streamlit.py`** - Streamlit web interface
-- **`gui/`** - PySide6 desktop application (in active development)
+### Package Layout (`src/markshark/`)
+
+The package root and `tools/` directory have distinct roles:
+
+**Root level** — entry points, engines, and global config only:
+
+| File | Role |
+|---|---|
+| `cli.py` | Typer-based CLI entry point (`align`, `score`, `report`, `gui`) |
+| `align_core.py` | Alignment engine (`align_pdf_scans()`) |
+| `score_core.py` | Scoring engine (`score_pdf()`) |
+| `mapviewer_core.py` | Bubblemap overlay engine |
+| `defaults.py` | Global config and scoring constants |
+| `template_manager.py` | Core domain object — templates are central to the app |
+| `mock_dataset.py` | Synthetic dataset generator for testing/demos |
+| `app_streamlit.py` | Streamlit web interface |
+| `gui/` | PySide6 desktop application (see GUI Structure below) |
+
+**`tools/`** — reusable helper libraries with no CLI entry points:
+
+| File | Called by | Purpose |
+|---|---|---|
+| `align_tools.py` | `align_core` | Image processing, ArUco detection, homography |
+| `score_tools.py` | `score_core` | Bubble ROI scoring, grid centers, version detection |
+| `key_parser.py` | `score_core`, `score_tools`, GUI key builder | Answer key parsing (text/CSV/Excel), scoring logic |
+| `project_utils.py` | GUI pages | Project directory structure, archiving, metadata |
+| `report_tools.py` | CLI, GUI | Excel report generation, item analysis |
+| `stats_tools.py` | `report_tools` | Statistics computation |
+| `bubblemap_io.py` | Multiple | Bubble sheet template I/O (YAML ↔ `Bubblemap`) |
+| `io_pages.py` | `align_core`, `score_core` | PDF page loading/writing |
+| `visualizer_tools.py` | `score_core` | Annotation rendering on images |
+
+**Rule: where does a new module go?**
+- If it defines a **CLI command** or is a **top-level processing engine** (input → output pipeline), it belongs at the **root**.
+- If it is a **reusable helper library** called by engines or GUI pages (parsing, I/O, statistics, filesystem utilities), it belongs in **`tools/`**.
+- When in doubt, put it in `tools/`. The root should stay small and easy to scan.
 
 ### CSV Output Format (New Simplified Format)
 ```csv
@@ -206,7 +237,8 @@ markshark gui
 | Add a new widget, model, or dialog | Add it to the **GUI Structure** tree |
 | Add a new export to `gui/utils.py` | Add a row to the **What lives in `gui/utils.py`** table |
 | Add a new DRY rule or convention | Add it to the **Rules** list |
-| Add a new CLI command | Add it to **Core Components** |
+| Add a new CLI command or root-level engine | Add it to the **Package Layout** root table |
+| Add or move a module into `tools/` | Add it to the **Package Layout** tools table |
 | Change the CSV output format | Update **CSV Output Format** |
 | Change scoring/flagging conventions | Update **Key Patterns** |
 

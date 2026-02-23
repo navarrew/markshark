@@ -35,7 +35,7 @@ from ..models.project_registry import ProjectRegistry
 
 # Best-effort import of project_utils
 try:
-    from markshark.project_utils import get_project_info
+    from markshark.tools.project_utils import get_project_info
 except ImportError:
     get_project_info = None
 

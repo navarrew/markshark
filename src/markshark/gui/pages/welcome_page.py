@@ -269,18 +269,27 @@ class _TutorialDialog(QDialog):
     """Dialog offering tutorial PDF and sample dataset downloads.
 
     Tutorial assets are expected in assets/tutorial/:
-      - tutorial.pdf       — walkthrough guide
-      - sample_dataset.zip — sample scans + answer key for practice
-    If a file is missing the corresponding button is disabled so the
+      - tutorial.pdf           — walkthrough guide
+      - sample_scans.pdf       — scanned bubble sheets for practice
+      - sample_answer_key.txt  — answer key that matches the sample scans
+      - sample_roster.csv      — class roster with some deliberate mismatches
+    Each button auto-disables if its file is not yet present, so the
     dialog still works while assets are being prepared.
     """
 
     _ASSETS = Path(__file__).resolve().parent.parent.parent / "assets" / "tutorial"
 
+    # Each sample file: (asset_filename, button_label, save_name, file_filter)
+    _SAMPLE_FILES = [
+        ("sample_scans.pdf", "Sample Scans", "sample_scans.pdf", "PDF Files (*.pdf)"),
+        ("sample_answer_key.txt", "Sample Answer Key", "sample_answer_key.txt", "Text Files (*.txt)"),
+        ("sample_roster.csv", "Sample Roster", "sample_roster.csv", "CSV Files (*.csv)"),
+    ]
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("MarkShark Tutorial")
-        self.setMinimumWidth(420)
+        self.setMinimumWidth(480)
         self._setup_ui()
 
     def _setup_ui(self):
@@ -290,7 +299,7 @@ class _TutorialDialog(QDialog):
         # Intro
         intro = QLabel(
             "New to MarkShark?  Download the tutorial PDF for a step-by-step "
-            "walkthrough, and grab the sample dataset to follow along."
+            "walkthrough, and grab the sample files to follow along."
         )
         intro.setWordWrap(True)
         intro.setStyleSheet("font-size: 13px; color: white; margin-bottom: 4px;")
@@ -314,57 +323,78 @@ class _TutorialDialog(QDialog):
         pdf_label.setStyleSheet("color: #1a1a1a; background: transparent; border: none;")
         pdf_layout.addWidget(pdf_label, 1)
 
-        self.pdf_btn = QPushButton("Download PDF")
         self._pdf_path = self._ASSETS / "tutorial.pdf"
-        self.pdf_btn.setEnabled(self._pdf_path.exists())
-        self.pdf_btn.setToolTip(
+        pdf_btn = QPushButton("Download PDF")
+        pdf_btn.setEnabled(self._pdf_path.exists())
+        pdf_btn.setToolTip(
             str(self._pdf_path) if self._pdf_path.exists()
             else "tutorial.pdf not yet available"
         )
-        self.pdf_btn.setStyleSheet(
+        pdf_btn.setStyleSheet(
             f"QPushButton {{ background-color: {_BLUE}; color: white; "
             f"padding: 6px 14px; border-radius: 6px; font-weight: bold; }}"
             f"QPushButton:hover {{ background-color: #0b5ed7; }}"
             f"QPushButton:disabled {{ background-color: #ccc; color: #888; }}"
         )
-        self.pdf_btn.clicked.connect(self._on_download_pdf)
-        pdf_layout.addWidget(self.pdf_btn)
+        pdf_btn.clicked.connect(self._on_download_pdf)
+        pdf_layout.addWidget(pdf_btn)
 
         layout.addWidget(pdf_frame)
 
-        # ── Sample dataset row ──
+        # ── Sample data files ──
+        # One teal-themed frame with a description and a row of download
+        # buttons — one per file.  Each button is independently enabled
+        # based on whether the asset exists on disk.
         data_frame = QFrame()
         data_frame.setStyleSheet(
             "QFrame { background-color: #f0fdfa; border: 1px solid #99e0db; "
             "border-radius: 8px; }"
         )
-        data_layout = QHBoxLayout(data_frame)
+        data_layout = QVBoxLayout(data_frame)
         data_layout.setContentsMargins(14, 10, 14, 10)
+        data_layout.setSpacing(8)
 
         data_label = QLabel(
-            "<b>Sample Dataset</b><br>"
+            "<b>Sample Data Files</b><br>"
             "<span style='font-size: 11px; color: #555;'>"
-            "Practice scans and answer key so you can try MarkShark right away.</span>"
+            "Practice scans, answer key, and class roster so you can try "
+            "MarkShark right away.  The roster includes deliberate ID "
+            "mismatches so you can see how absent students and orphan "
+            "scans are flagged.</span>"
         )
         data_label.setWordWrap(True)
         data_label.setStyleSheet("color: #1a1a1a; background: transparent; border: none;")
-        data_layout.addWidget(data_label, 1)
+        data_layout.addWidget(data_label)
 
-        self.data_btn = QPushButton("Download Sample Data")
-        self._data_path = self._ASSETS / "sample_dataset.zip"
-        self.data_btn.setEnabled(self._data_path.exists())
-        self.data_btn.setToolTip(
-            str(self._data_path) if self._data_path.exists()
-            else "sample_dataset.zip not yet available"
-        )
-        self.data_btn.setStyleSheet(
-            f"QPushButton {{ background-color: {_TEAL}; color: white; "
-            f"padding: 6px 14px; border-radius: 6px; font-weight: bold; }}"
-            f"QPushButton:hover {{ background-color: #0a6b68; }}"
-            f"QPushButton:disabled {{ background-color: #ccc; color: #888; }}"
-        )
-        self.data_btn.clicked.connect(self._on_download_data)
-        data_layout.addWidget(self.data_btn)
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        self._sample_paths: dict[str, Path] = {}
+        for asset_name, btn_label, save_name, file_filter in self._SAMPLE_FILES:
+            asset_path = self._ASSETS / asset_name
+            self._sample_paths[asset_name] = asset_path
+
+            btn = QPushButton(btn_label)
+            btn.setEnabled(asset_path.exists())
+            btn.setToolTip(
+                str(asset_path) if asset_path.exists()
+                else f"{asset_name} not yet available"
+            )
+            btn.setStyleSheet(
+                f"QPushButton {{ background-color: {_TEAL}; color: white; "
+                f"padding: 6px 14px; border-radius: 6px; font-weight: bold; }}"
+                f"QPushButton:hover {{ background-color: #0a6b68; }}"
+                f"QPushButton:disabled {{ background-color: #ccc; color: #888; }}"
+            )
+            # Capture loop variables with default args so each lambda
+            # binds to the correct path / name / filter.
+            btn.clicked.connect(
+                lambda checked, p=asset_path, s=save_name, f=file_filter:
+                    self._save_asset(p, s, f)
+            )
+            btn_row.addWidget(btn)
+
+        btn_row.addStretch()
+        data_layout.addLayout(btn_row)
 
         layout.addWidget(data_frame)
 
@@ -375,8 +405,8 @@ class _TutorialDialog(QDialog):
         layout.addWidget(self.status_label)
 
         # ── Close button ──
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
+        close_row = QHBoxLayout()
+        close_row.addStretch()
         close_btn = QPushButton("Close")
         close_btn.setStyleSheet(
             "QPushButton { background-color: #e0e0e0; color: #333; "
@@ -384,8 +414,8 @@ class _TutorialDialog(QDialog):
             "QPushButton:hover { background-color: #d0d0d0; }"
         )
         close_btn.clicked.connect(self.reject)
-        btn_row.addWidget(close_btn)
-        layout.addLayout(btn_row)
+        close_row.addWidget(close_btn)
+        layout.addLayout(close_row)
 
     # ── Download helpers ──
 
@@ -411,11 +441,8 @@ class _TutorialDialog(QDialog):
             )
 
     def _on_download_pdf(self):
-        self._save_asset(self._pdf_path, "MarkShark_Tutorial.pdf", "PDF Files (*.pdf)")
-
-    def _on_download_data(self):
         self._save_asset(
-            self._data_path, "markshark_sample_dataset.zip", "ZIP Files (*.zip)"
+            self._pdf_path, "MarkShark_Tutorial.pdf", "PDF Files (*.pdf)"
         )
 
 

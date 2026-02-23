@@ -1,0 +1,24 @@
+## MarkShark Mock Tutorial Answer Key
+## ─────────────────────────────────────────
+## Lines starting with ## are comments (ignored by MarkShark).
+##
+## This is a key for a test that has two versions; A and B.
+
+## FORMAT OVERVIEW
+##   The answer key for each version always starts with a header line:
+##       ver:A               Version A (if you only have one version just use A, default points is 1 per correct answer)
+##       ver:B default:2     Version B, 2 points per question (unless specified otherwise)
+##       ver:A code:101      Version A with test code 101 (optional, if you use test codes)
+##
+##       Each correct answer is separated by a comma.  
+##       The first letter (like 'B' on version A below) corresponds to question 1.
+##
+##       If you want a different point value for a question you can add
+##       it to the answer using a colon (:) followed by a number (no spaces)
+##       In the example below, question #4 on both versions is worth three points. 
+
+ver:A default:1
+B, C, B, D:3, A, C, C, C, C, E, D, D, C, B, A, C, B, E, E, E, C, A, B, B, A, E, C, A, D, C, C, B, A, D, B, C, D, D, A, E, A, C, A, A, B, B, C, B, B, D, A, D, E, E, C, C, E, D, E, A
+
+ver:B default:1
+D, B, B, D:3, A, C, E, E, A, E, D, D, C, B, A, E, E, E, E, E, C, A, C, B, D, E, C, A, D, C, B, C, A, D, B, C, D, B, B, E, A, C, A, A, C, B, A, B, B, C, A, B, E, E, D, E, E, B, E, A

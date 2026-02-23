@@ -1051,7 +1051,7 @@ def score_pdf(
             if advanced_key_set:
                 use_advanced_scoring = True
                 # Also create legacy keys_dict for backward compatibility (annotations, stats)
-                from .key_parser import to_legacy_keys_dict
+                from .tools.key_parser import to_legacy_keys_dict
                 keys_dict = to_legacy_keys_dict(advanced_key_set)
                 print(f"[info] Using advanced key format with {len(advanced_key_set.keys)} version(s)", file=sys.stderr)
 

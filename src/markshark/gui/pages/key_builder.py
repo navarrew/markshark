@@ -48,7 +48,7 @@ from ..widgets import PageHeader, ProjectSelector
 from ..utils import RUN_BUTTON_STYLE, TEAL, BLUE
 
 # Lazy-imported at use sites:
-#   from markshark.key_parser import (
+#   from markshark.tools.key_parser import (
 #       load_key_file, parse_answer, answer_spec_to_text,
 #       write_key_file, AnswerKeySet, VersionKey, AnswerSpec, ScoringMode,
 #   )
@@ -576,7 +576,7 @@ class KeyBuilderPage(QWidget):
             return
 
         # Parse answers
-        from markshark.key_parser import parse_answer
+        from markshark.tools.key_parser import parse_answer
 
         parts = self._split_answer_text(text)
         if not parts:
@@ -664,7 +664,7 @@ class KeyBuilderPage(QWidget):
         Strips point annotations from the answer text and puts them
         in the points column instead.  E.g. ``E:3`` -> (``E``, ``3``).
         """
-        from markshark.key_parser import ScoringMode
+        from markshark.tools.key_parser import ScoringMode
 
         pts = str(spec.total_points)
 
@@ -710,7 +710,7 @@ class KeyBuilderPage(QWidget):
         self._import_from_path(Path(path))
 
     def _import_from_path(self, path: Path):
-        from markshark.key_parser import load_key_file
+        from markshark.tools.key_parser import load_key_file
 
         try:
             key_set = load_key_file(path)
@@ -894,7 +894,7 @@ class KeyBuilderPage(QWidget):
     # ------------------------------------------------------------------ #
 
     def _table_to_key_set(self):
-        from markshark.key_parser import (
+        from markshark.tools.key_parser import (
             AnswerKeySet, VersionKey, AnswerSpec, parse_answer,
         )
 
@@ -1025,7 +1025,7 @@ class KeyBuilderPage(QWidget):
         self._do_export(Path(path), fmt)
 
     def _do_export(self, path: Path, fmt: str):
-        from markshark.key_parser import write_key_file
+        from markshark.tools.key_parser import write_key_file
 
         key_set = self._table_to_key_set()
         try:

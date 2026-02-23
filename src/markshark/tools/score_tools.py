@@ -1065,7 +1065,7 @@ def load_advanced_key(path: str):
         AnswerKeySet from key_parser module, or None if parsing fails
     """
     try:
-        from ..key_parser import load_key_file
+        from .key_parser import load_key_file
         return load_key_file(path)
     except Exception as e:
         import sys
@@ -1142,7 +1142,7 @@ def score_with_advanced_key(
         status_counts: {"correct": n, "incorrect": n, "blank": n, "multi": n,
                        "partial": n, "spam": n, "freebie": n, "discard": n}
     """
-    from ..key_parser import score_student
+    from .key_parser import score_student
 
     # Check if version is directly available
     has_direct_match = version and version.upper() in key_set.keys

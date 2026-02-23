@@ -42,7 +42,7 @@ from ..workers import CLIRunner
 try:
     from markshark.defaults import SCORING_DEFAULTS
     from markshark.template_manager import TemplateManager
-    from markshark.project_utils import (
+    from markshark.tools.project_utils import (
         get_project_paths,
         has_existing_results,
         archive_current_results,
