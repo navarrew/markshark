@@ -4,24 +4,35 @@
 ##
 ## FORMAT OVERVIEW
 ##   Each section starts with a header line:
-##       ver:A               Version A
-##       ver:B default:2     Version B, 2 points per question
+##       ver:A               Version A (if you only have one version just use A)
+##       ver:B default:2     Version B, 2 points per question (unless specified otherwise)
 ##       ver:A code:101      Version A with test code 101
 ##
 ##   Then list one answer per line (or comma-separated on one line).
+##   So...
+##   ver:A 
+##   E
+##   D
+##   C 
+##   
+##   ...will be read by MarkShark the same as...  
+##   ver:A 
+##   E, D, C
+##
 ##
 ## ANSWER OPTIONS
-##   A           Single correct answer (1 point)
-##   A:3         Single correct answer worth 3 points
-##   A^B         Either A or B accepted (OR)
-##   A&B         Must select both A and B (AND)
-##   A@B         Partial credit: +1 per correct, wrong ignored
-##   A~B         Partial credit: +1 per correct, -1 per wrong
-##   *           Freebie (everyone gets points)
-##   (blank)     Discard question from scoring
+##   A                Single correct answer (1 point)
+##   A:3              Single correct answer worth 3 points
+##   A^B              Either A or B accepted (OR)
+##   A&B              Must select both A and B (AND)
+##   A@B              Partial credit: +1 per correct, wrong ignored
+##   A~B              Partial credit: +1 per correct, -1 per wrong
+##   *                Freebie (everyone gets full points)
+##   (blank line or empty space) -> Discard question from scoring
 ##
 ## ─────────────────────────────────────────
-## DELETE THESE COMMENTS and replace the answers below with your own.
+## DELETE THESE COMMENTS (if you want...MarkShark ignores lines starting with ##) 
+## and replace the answers below with your own.
 ## ─────────────────────────────────────────
 
 ver:A

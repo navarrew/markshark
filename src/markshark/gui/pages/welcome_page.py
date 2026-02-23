@@ -262,6 +262,164 @@ class _TemplatePicker(QDialog):
 
 
 # ---------------------------------------------------------------------------
+# Tutorial dialog
+# ---------------------------------------------------------------------------
+
+class _TutorialDialog(QDialog):
+    """Dialog offering tutorial PDF and sample dataset downloads.
+
+    Tutorial assets are expected in assets/tutorial/:
+      - tutorial.pdf       — walkthrough guide
+      - sample_dataset.zip — sample scans + answer key for practice
+    If a file is missing the corresponding button is disabled so the
+    dialog still works while assets are being prepared.
+    """
+
+    _ASSETS = Path(__file__).resolve().parent.parent.parent / "assets" / "tutorial"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("MarkShark Tutorial")
+        self.setMinimumWidth(420)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        # Intro
+        intro = QLabel(
+            "New to MarkShark?  Download the tutorial PDF for a step-by-step "
+            "walkthrough, and grab the sample dataset to follow along."
+        )
+        intro.setWordWrap(True)
+        intro.setStyleSheet("font-size: 13px; color: white; margin-bottom: 4px;")
+        layout.addWidget(intro)
+
+        # ── Tutorial PDF row ──
+        pdf_frame = QFrame()
+        pdf_frame.setStyleSheet(
+            "QFrame { background-color: #eff6ff; border: 1px solid #93c5fd; "
+            "border-radius: 8px; }"
+        )
+        pdf_layout = QHBoxLayout(pdf_frame)
+        pdf_layout.setContentsMargins(14, 10, 14, 10)
+
+        pdf_label = QLabel(
+            "<b>Tutorial PDF</b><br>"
+            "<span style='font-size: 11px; color: #555;'>"
+            "A printable guide covering setup, scoring, and reports.</span>"
+        )
+        pdf_label.setWordWrap(True)
+        pdf_label.setStyleSheet("color: #1a1a1a; background: transparent; border: none;")
+        pdf_layout.addWidget(pdf_label, 1)
+
+        self.pdf_btn = QPushButton("Download PDF")
+        self._pdf_path = self._ASSETS / "tutorial.pdf"
+        self.pdf_btn.setEnabled(self._pdf_path.exists())
+        self.pdf_btn.setToolTip(
+            str(self._pdf_path) if self._pdf_path.exists()
+            else "tutorial.pdf not yet available"
+        )
+        self.pdf_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {_BLUE}; color: white; "
+            f"padding: 6px 14px; border-radius: 6px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background-color: #0b5ed7; }}"
+            f"QPushButton:disabled {{ background-color: #ccc; color: #888; }}"
+        )
+        self.pdf_btn.clicked.connect(self._on_download_pdf)
+        pdf_layout.addWidget(self.pdf_btn)
+
+        layout.addWidget(pdf_frame)
+
+        # ── Sample dataset row ──
+        data_frame = QFrame()
+        data_frame.setStyleSheet(
+            "QFrame { background-color: #f0fdfa; border: 1px solid #99e0db; "
+            "border-radius: 8px; }"
+        )
+        data_layout = QHBoxLayout(data_frame)
+        data_layout.setContentsMargins(14, 10, 14, 10)
+
+        data_label = QLabel(
+            "<b>Sample Dataset</b><br>"
+            "<span style='font-size: 11px; color: #555;'>"
+            "Practice scans and answer key so you can try MarkShark right away.</span>"
+        )
+        data_label.setWordWrap(True)
+        data_label.setStyleSheet("color: #1a1a1a; background: transparent; border: none;")
+        data_layout.addWidget(data_label, 1)
+
+        self.data_btn = QPushButton("Download Sample Data")
+        self._data_path = self._ASSETS / "sample_dataset.zip"
+        self.data_btn.setEnabled(self._data_path.exists())
+        self.data_btn.setToolTip(
+            str(self._data_path) if self._data_path.exists()
+            else "sample_dataset.zip not yet available"
+        )
+        self.data_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {_TEAL}; color: white; "
+            f"padding: 6px 14px; border-radius: 6px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background-color: #0a6b68; }}"
+            f"QPushButton:disabled {{ background-color: #ccc; color: #888; }}"
+        )
+        self.data_btn.clicked.connect(self._on_download_data)
+        data_layout.addWidget(self.data_btn)
+
+        layout.addWidget(data_frame)
+
+        # ── Status label (shows save confirmations / errors) ──
+        self.status_label = QLabel("")
+        self.status_label.setWordWrap(True)
+        self.status_label.setStyleSheet("font-size: 11px;")
+        layout.addWidget(self.status_label)
+
+        # ── Close button ──
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.setStyleSheet(
+            "QPushButton { background-color: #e0e0e0; color: #333; "
+            "padding: 8px 16px; border-radius: 6px; }"
+            "QPushButton:hover { background-color: #d0d0d0; }"
+        )
+        close_btn.clicked.connect(self.reject)
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+    # ── Download helpers ──
+
+    def _save_asset(self, source: Path, suggested_name: str, file_filter: str):
+        """Prompt user for a save location and copy *source* there."""
+        save_path, _ = QFileDialog.getSaveFileName(
+            self, "Save File",
+            str(Path.home() / suggested_name),
+            file_filter,
+        )
+        if not save_path:
+            return  # user cancelled
+
+        from ..utils import safe_copy_file
+        try:
+            safe_copy_file(source, save_path)
+            self.status_label.setText(
+                f"<span style='color: green;'>Saved to {save_path}</span>"
+            )
+        except Exception as e:
+            self.status_label.setText(
+                f"<span style='color: red;'>Error: {e}</span>"
+            )
+
+    def _on_download_pdf(self):
+        self._save_asset(self._pdf_path, "MarkShark_Tutorial.pdf", "PDF Files (*.pdf)")
+
+    def _on_download_data(self):
+        self._save_asset(
+            self._data_path, "markshark_sample_dataset.zip", "ZIP Files (*.zip)"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Welcome page
 # ---------------------------------------------------------------------------
 
@@ -484,6 +642,31 @@ class WelcomePage(QWidget):
             step_row.addWidget(sd, 1)
 
             gs_layout.addLayout(step_row)
+
+        # ── Help & Tutorial buttons ──
+        gs_btn_row = QHBoxLayout()
+        gs_btn_row.setSpacing(8)
+
+        help_btn = QPushButton("Help & Documentation")
+        help_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {_BLUE}; color: white; "
+            f"padding: 6px 14px; border-radius: 6px; font-weight: bold; font-size: 12px; }}"
+            f"QPushButton:hover {{ background-color: #0b5ed7; }}"
+        )
+        help_btn.clicked.connect(self._on_open_help)
+        gs_btn_row.addWidget(help_btn)
+
+        tutorial_btn = QPushButton("Tutorial and Sample Data")
+        tutorial_btn.setStyleSheet(
+            "QPushButton { background-color: #6c757d; color: white; "
+            "padding: 6px 14px; border-radius: 6px; font-weight: bold; font-size: 12px; }"
+            "QPushButton:hover { background-color: #565e64; }"
+        )
+        tutorial_btn.clicked.connect(self._on_open_tutorial)
+        gs_btn_row.addWidget(tutorial_btn)
+
+        gs_btn_row.addStretch()
+        gs_layout.addLayout(gs_btn_row)
 
         gs_layout.addStretch()
 
@@ -920,6 +1103,16 @@ class WelcomePage(QWidget):
             self._main_window.navigate_to_grader(project_path)
 
     # ----- Card actions -----
+
+    def _on_open_help(self):
+        """Navigate to the Help & Documentation page."""
+        if self._main_window:
+            self._main_window._navigate_to_key("help")
+
+    def _on_open_tutorial(self):
+        """Open the tutorial dialog with download options."""
+        dialog = _TutorialDialog(self)
+        dialog.exec()
 
     def _on_find_bubblesheet(self):
         """Open the template picker dialog."""
