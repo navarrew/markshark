@@ -139,7 +139,7 @@ def _md_to_html(md: str) -> str:
             # Build a URL-friendly anchor ID: lowercase, spaces→hyphens,
             # strip non-alphanumeric (except hyphens).
             anchor_id = re.sub(r"[^a-z0-9\-]", "", text.lower().replace(" ", "-"))
-            sizes = {1: "22px", 2: "18px", 3: "15px", 4: "13px", 5: "12px", 6: "11px"}
+            sizes = {1: "26px", 2: "22px", 3: "18px", 4: "16px", 5: "15px", 6: "14px"}
             sz = sizes.get(level, "13px")
             margin = "16px 0 8px 0" if level <= 2 else "12px 0 6px 0"
             html_lines.append(
@@ -294,7 +294,7 @@ _BROWSER_STYLE = (
     "QTextBrowser {"
     "  border: 1px solid #ccc;"
     "  padding: 16px;"
-    "  font-size: 14px;"
+    "  font-size: 16px;"
     "  line-height: 1.5;"
     "  background-color: #ffffff;"
     "  color: #222222;"
