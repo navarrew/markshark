@@ -346,7 +346,10 @@ class KeyBuilderPage(QWidget):
             "QFrame { background: #FFF3CD; border: 1px solid #FFCA2C; "
             "border-radius: 4px; padding: 4px 8px; }"
             " QLabel { color: #664D03; }"
-            " QPushButton { color: #664D03; }"
+            " QPushButton { color: #664D03; background: #FFE69C;"
+            "              border: 1px solid #FFCA2C; border-radius: 3px;"
+            "              padding: 2px 10px; }"
+            " QPushButton:hover { background: #FFD54F; }"
         )
         bar_layout = QHBoxLayout(self._key_found_bar)
         bar_layout.setContentsMargins(8, 4, 8, 4)
@@ -415,6 +418,11 @@ class KeyBuilderPage(QWidget):
         self.import_btn = QPushButton("Import Key\u2026")
         self.import_btn.clicked.connect(self._on_import_file)
         import_layout.addWidget(self.import_btn)
+
+        self.clear_btn = QPushButton("Clear All")
+        self.clear_btn.setToolTip("Remove all versions and answers from the table")
+        self.clear_btn.clicked.connect(self._on_clear_all)
+        import_layout.addWidget(self.clear_btn)
 
         left_layout.addWidget(import_group)
 
@@ -1298,6 +1306,30 @@ class KeyBuilderPage(QWidget):
         self._colorize_all()
         self._update_summary()
         self.status_label.setText(f"Deleted version {ver}.")
+
+    def _on_clear_all(self):
+        """Remove all versions and answers, resetting the table to empty."""
+        # Nothing to clear if the table is already empty
+        if not self._versions:
+            return
+        reply = QMessageBox.question(
+            self, "Clear All?",
+            "Remove all versions and answers from the key?\n\n"
+            "This cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        self._versions.clear()
+        self._version_meta.clear()
+        self.table.blockSignals(True)
+        self.table.setRowCount(0)
+        self.table.setColumnCount(0)
+        self.table.blockSignals(False)
+        self.paste_edit.clear()
+        self._update_summary()
+        self.status_label.setText("Key cleared.")
 
     def _renumber_questions(self):
         """Renumber the Q# column after row insert/delete."""

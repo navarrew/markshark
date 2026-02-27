@@ -59,8 +59,26 @@ Flagged rows appear highlighted on the Review & Correct page, where you can manu
 If you realize you have a mistake on your key or roster, or uploaded the wrong key or roster, you can easily rescore the scans without having to go through the process of scan alignment.
 
 ---
+## Results CSV Columns
+The `results.csv` file in `score_data/` contains one row per student:
+| Column | Description |
+|--------|-------------|
+| Page | Page number in the annotated PDF |
+| Version | Detected test version (A, B, C, etc.) |
+| LastName | Student's last name (from bubbled name or roster) |
+| FirstName | Student's first name |
+| StudentID | Student ID (from bubbled ID field) |
+| Correct | Number of correct answers |
+| Incorrect | Number of incorrect answers |
+| Blank | Number of blank (unanswered) questions |
+| Multi | Number of multi-fill (ambiguous) questions |
+| Flagged | "Y" if the student has any flags, otherwise blank |
+| FlagDetails | Pipe-separated flag codes (e.g. Q5:blank\|Q10:multi\|ID:orphan) |
+| Q1, Q2, ... | Student's detected answer for each question |
+
+---
 # Troubleshooting
-MarkShark has to find a way to determine whether a pixel is 'filled' (by a pencil) or is simply gray due to background noise.  It sets a darkness threshold, beyond which a pixel is called filled and below which (lighter gray than the threshold) the pixel is determined to be background.  Markshark will adjust the gray threshold for each scan in an attempt to maximize the contrast difference between filled bubbles and unfilled bubbles.  If the original scans have poor contrast, uneven lighting, or the student has written lightly in the bubbles, the differences in darkness make it difficult for the software to distinguish between genuinely filled bubbles and the background.
+MarkShark tries to determine whether a pixel is 'filled' (by a pencil) or is simply gray due to background noise.  It sets a darkness threshold, beyond which a pixel is called filled and below which (lighter gray than the threshold) the pixel is determined to be background.  Markshark will adjust the gray threshold for each scan in an attempt to maximize the contrast difference between filled bubbles and unfilled bubbles.  If the original scans have poor contrast, uneven lighting, or the student has written lightly in the bubbles, the differences in darkness make it difficult for the software to distinguish between genuinely filled bubbles and the background.
 # Basic Scoring and Annotation Parameters
 The parameters below can be adjusted in the Grader panel.
 - **Min % Fill (Default: 45)**  The minimum fill score for a bubble to count as filled. A bubble with a fill score below this threshold is considered empty.

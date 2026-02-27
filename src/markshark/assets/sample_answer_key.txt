@@ -1,80 +1,36 @@
-## MarkShark Sample Answer Key
-## ─────────────────────────────────────────
-## Lines starting with ## are comments (ignored by MarkShark).
+## MarkShark Mock Tutorial Answer Key
+##
+## Lines starting with ##, like this one, are ignored by MarkShark.
+## You can use these ## lines to write down information about the key.
+##    Example: '## This is the answer key for version A of the 2025 midterm'
+##
+## Below is an example key for a test that has two versions; A and B.
 ##
 ## FORMAT OVERVIEW
-##   Each section starts with a header line:
-##       ver:A               Version A (if you only have one version just use A)
-##       ver:B default:2     Version B, 2 points per question (unless specified otherwise)
-##       ver:A code:101      Version A with test code 101
+##   The answer key for each version always starts with a single header line:
+##     ver:A              Version A (if you only have one version just use A)
+##     ver:B default:2    Version B, 2 points per question (unless specified otherwise)
+##     ver:A code:101     Version A with test code 101 (optional, if you use test codes)
 ##
-##   Then list one answer per line (or comma-separated on one line).
-##   So...
-##   ver:A 
-##   E
-##   D
-##   C 
-##   
-##   ...will be read by MarkShark the same as...  
-##   ver:A 
-##   E, D, C
+##   If you don't put a default value in the header, MarkShark assumes the default 
+##   is 1 point per question.  Do not put spaces between the 'ver:' and its letter or
+##   'default:' and its number.  So its 'ver:A', not 'ver: A'.
 ##
+##   Each correct answer below is separated by a comma.  
+##   The first letter ('B' on version A below) corresponds to question 1.
 ##
-## ANSWER OPTIONS
-##   A                Single correct answer (1 point)
-##   A:3              Single correct answer worth 3 points
-##   A^B              Either A or B accepted (OR)
-##   A&B              Must select both A and B (AND)
-##   A@B              Partial credit: +1 per correct, wrong ignored
-##   A~B              Partial credit: +1 per correct, -1 per wrong
-##   *                Freebie (everyone gets full points)
-##   (blank line or empty space) -> Discard question from scoring
+##   Answers don't have to be separated by a comma, you can also
+##   do one answer per line of text, or separate by tabs.
 ##
-## ─────────────────────────────────────────
-## DELETE THESE COMMENTS (if you want...MarkShark ignores lines starting with ##) 
-## and replace the answers below with your own.
-## ─────────────────────────────────────────
+##   If you want a different point value for a question you can add the value
+##   to the answer using a colon (:) followed by a number (no spaces in between)
+##   In the example below, question #4 on both versions is worth three points. 
+##
+##   Feel free to erase the answers below and put in your own, with your own scores 
+##   Feel free to erase the entire version B, or add new versions C, D, E, etc.
+ 
+ver:A default:1
+B, C, B, D:3, A, C, C, C, C, E, D, D, C, B, A, C, B, E, E, E, C, A, B, B, A, E, C, A, D, C, C, B, A, D, B, C, D, D, A, E, A, C, A, A, B, B, C, B, B, D, A, D, E, E, C, C, E, D, E, A
 
-ver:A
-A
-B
-C
-D
-A
-B
-C
-A
-D
-B
-A
-C
-D
-B
-A
-C
-A
-B
-D
-C
-
-ver:B
-B
-A
-D
-C
-B
-A
-D
-B
-C
-A
-B
-D
-C
-A
-B
-D
-B
-A
-C
-D
+ver:B default:1
+D, B, B, D:3, A, C, E, E, A, E, D, D, C, B, A, E, E, E, E, E, C, A, C, B, D, E, C, A, D, C, B, C, A, D, B, C, D, B, B, E, A, C, A, A, C, B, A, B, B, C, A, B, E, E, D, E, E, B, E, A

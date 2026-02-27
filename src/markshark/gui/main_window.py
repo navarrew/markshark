@@ -4,7 +4,9 @@ Main application window with navigation sidebar and stacked pages.
 """
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QKeySequence, QFont, QColor
+from pathlib import Path
+
+from PySide6.QtGui import QAction, QKeySequence, QFont, QColor, QPixmap
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -189,14 +191,39 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(splitter)
 
-        # Sidebar navigation
+        # Sidebar container: logo image + navigation list
+        sidebar = QWidget()
+        sidebar.setMaximumWidth(220)
+        sidebar.setMinimumWidth(170)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        sidebar_layout.setSpacing(0)
+
+        # Shark logo at the top of the sidebar
+        logo_path = Path(__file__).resolve().parent.parent / "assets" / "SharkCorner.png"
+        if logo_path.exists():
+            self._sidebar_logo = QLabel()
+            pixmap = QPixmap(str(logo_path))
+            # Scale at 2x pixel density for Retina/HiDPI sharpness:
+            # render at double the logical width, then tag the pixmap so
+            # Qt displays it at the correct point size with full detail.
+            dpr = self.devicePixelRatio() or 2.0
+            scaled = pixmap.scaledToWidth(
+                int(160 * dpr), Qt.TransformationMode.SmoothTransformation
+            )
+            scaled.setDevicePixelRatio(dpr)
+            self._sidebar_logo.setPixmap(scaled)
+            self._sidebar_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._sidebar_logo.setContentsMargins(4, 8, 4, 12)
+            sidebar_layout.addWidget(self._sidebar_logo)
+
+        # Navigation list
         self.nav_list = QListWidget()
-        self.nav_list.setMaximumWidth(220)
-        self.nav_list.setMinimumWidth(170)
         nav_font = self.nav_list.font()
         nav_font.setPointSize(16)
         self.nav_list.setFont(nav_font)
         self.nav_list.currentRowChanged.connect(self._on_nav_changed)
+        sidebar_layout.addWidget(self.nav_list)
 
         # Stacked widget for pages
         self.pages = QStackedWidget()
@@ -279,7 +306,7 @@ class MainWindow(QMainWindow):
                 self._row_to_page[self.nav_list.count() - 1] = page_index
                 page_index += 1
 
-        splitter.addWidget(self.nav_list)
+        splitter.addWidget(sidebar)
         splitter.addWidget(self.pages)
 
         # Set splitter proportions

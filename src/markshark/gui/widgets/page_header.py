@@ -1,10 +1,8 @@
 """
-Page header widget with title and MarkShark icon.
+Page header widget with title and description.
 """
 
-from pathlib import Path
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QWidget,
     QHBoxLayout,
@@ -13,19 +11,15 @@ from PySide6.QtWidgets import (
 )
 
 
-# Path to the icon
-ICON_PATH = Path(__file__).parent.parent / "resources" / "icons" / "SHARKICON.png"
-
-
 class PageHeader(QWidget):
     """
-    Page header with title on top row, description below, and MarkShark icon on the right.
+    Page header with title on top row and description below.
 
     Layout:
-        +----------------------------------+--------+
-        | Title (large, bold)              |        |
-        | Description (smaller, gray)      |  ICON  |
-        +----------------------------------+--------+
+        +----------------------------------+
+        | Title (large, bold)              |
+        | Description (smaller, gray)      |
+        +----------------------------------+
 
     Usage:
         header = PageHeader("Quick Grade", "Upload scans and grade them.")
@@ -38,25 +32,10 @@ class PageHeader(QWidget):
 
     def _setup_ui(self, title: str, description: str):
         """Build the header UI."""
-        # Main horizontal layout: icon on left, text on right
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 5)
 
-        # Left side: icon (vertically centered)
-        if ICON_PATH.exists():
-            icon_label = QLabel()
-            pixmap = QPixmap(str(ICON_PATH))
-            # Scale to 80x80 pixels
-            scaled = pixmap.scaled(
-                80, 80,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            icon_label.setPixmap(scaled)
-            icon_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            layout.addWidget(icon_label)
-
-        # Right side: title on top, description below (vertical stack)
+        # Title and description in a vertical stack
         text_layout = QVBoxLayout()
         text_layout.setSpacing(2)
 

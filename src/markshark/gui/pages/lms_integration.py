@@ -39,6 +39,7 @@ from ..models.lms_filter_registry import LmsFilterRegistry
 from ..utils import RUN_BUTTON_STYLE as _RUN_BTN_STYLE
 
 _NONE_LABEL = "(none)"
+_ADD_NEW_COL = "\u2795 Add a new column\u2026"
 
 # Maximum preview rows shown in the table
 _MAX_PREVIEW_ROWS = 8
@@ -597,6 +598,7 @@ class LmsIntegrationPage(QWidget):
             "Spreadsheets (*.csv *.tsv *.tab *.xlsx *.xls)",
             "Select the original LMS gradebook...",
         )
+        self.scores_lms_file.file_selected.connect(self._on_scores_lms_selected)
         layout.addWidget(self.scores_lms_file)
 
         self.scores_results = FileSelector(
@@ -631,20 +633,24 @@ class LmsIntegrationPage(QWidget):
         )
         map_layout.addRow("Value to write:", self.scores_value_combo)
 
-        self.scores_target_col = QLineEdit()
-        self.scores_target_col.setPlaceholderText("e.g. Exam 1")
-        self.scores_target_col.setToolTip(
-            "Name of the column in the LMS file where scores will be written. "
-            "If the column exists it will be overwritten; otherwise a new column is added."
+        self.scores_target_combo = QComboBox()
+        self.scores_target_combo.setMinimumWidth(220)
+        self.scores_target_combo.setToolTip(
+            "Choose an existing column to overwrite, or add a new one."
         )
-        map_layout.addRow("Target column name:", self.scores_target_col)
+        self.scores_target_combo.addItem(_ADD_NEW_COL)
+        self.scores_target_combo.currentIndexChanged.connect(
+            self._on_target_col_changed
+        )
+        map_layout.addRow("Target column:", self.scores_target_combo)
 
         self.absent_combo = QComboBox()
         self.absent_combo.setMinimumWidth(220)
         self.absent_combo.addItems(["Leave blank", "Enter zero (0)"])
         self.absent_combo.setToolTip(
-            "What to enter for students in the LMS gradebook who have no "
-            "matching score in the MarkShark results (e.g. absent students)."
+            "For students with no matching score AND a blank target cell:\n"
+            "'Leave blank' does nothing; 'Enter zero' writes 0.\n"
+            "Cells that already have content are never overwritten."
         )
         map_layout.addRow("Absent students:", self.absent_combo)
 
@@ -720,10 +726,11 @@ class LmsIntegrationPage(QWidget):
             QMessageBox.warning(self, "Parse Error", f"Failed to read file:\n{e}")
             return
 
-        # Populate the SID combo
+        # Populate the SID combo and target column combo from headers
         self.scores_sid_combo.clear()
         self.scores_sid_combo.addItem(_NONE_LABEL)
         self.scores_sid_combo.addItems(headers)
+        self._populate_target_combo(headers)
 
         # Set the SID column from the filter
         sid_col = filt.get("student_id_col", "")
@@ -733,6 +740,60 @@ class LmsIntegrationPage(QWidget):
                 self.scores_sid_combo.setCurrentIndex(idx)
 
         self.scores_status.setText(f"Filter \"{name}\" applied.")
+
+    def _on_scores_lms_selected(self):
+        """Auto-populate SID and target combos when a file is chosen.
+
+        Uses default parsing settings (skip 0, comma delimiter for CSV).
+        The teacher can refine by applying a saved filter afterward.
+        """
+        lms_path = self.scores_lms_file.path()
+        if not lms_path or not Path(lms_path).is_file():
+            return
+
+        ext = Path(lms_path).suffix.lower()
+        try:
+            if ext in (".xlsx", ".xls"):
+                headers, _ = self._read_excel(lms_path, 0)
+            else:
+                headers, _ = self._read_text(lms_path, ",", 0)
+        except Exception:
+            return
+
+        # Populate the SID combo with headers
+        self.scores_sid_combo.clear()
+        self.scores_sid_combo.addItem(_NONE_LABEL)
+        self.scores_sid_combo.addItems(headers)
+
+        # Populate the target column combo
+        self._populate_target_combo(headers)
+
+    def _populate_target_combo(self, headers: list[str]):
+        """Fill the target-column combo: 'Add new' + existing headers."""
+        self.scores_target_combo.blockSignals(True)
+        self.scores_target_combo.clear()
+        self.scores_target_combo.addItem(_ADD_NEW_COL)
+        for h in headers:
+            self.scores_target_combo.addItem(h)
+        self.scores_target_combo.blockSignals(False)
+
+    def _on_target_col_changed(self, index: int):
+        """When 'Add a new column' is selected, prompt for the name."""
+        if self.scores_target_combo.currentText() != _ADD_NEW_COL:
+            return
+
+        name, ok = QInputDialog.getText(
+            self, "New Column",
+            "Enter a name for the new score column:",
+            QLineEdit.EchoMode.Normal,
+            "Exam 1",
+        )
+        if ok and name.strip():
+            # Insert the custom name right after 'Add new' and select it
+            self.scores_target_combo.blockSignals(True)
+            self.scores_target_combo.insertItem(1, name.strip())
+            self.scores_target_combo.setCurrentIndex(1)
+            self.scores_target_combo.blockSignals(False)
 
     @staticmethod
     def _count_orphans_in_report(xlsx_path: str) -> int:
@@ -801,9 +862,12 @@ class LmsIntegrationPage(QWidget):
             )
             return
 
-        target_col = self.scores_target_col.text().strip()
-        if not target_col:
-            QMessageBox.warning(self, "No Target Column", "Please enter a target column name for the scores.")
+        target_col = self.scores_target_combo.currentText().strip()
+        if not target_col or target_col == _ADD_NEW_COL:
+            QMessageBox.warning(
+                self, "No Target Column",
+                "Please choose an existing column or add a new one for the scores.",
+            )
             return
 
         value_type = self.scores_value_combo.currentText()
@@ -879,9 +943,12 @@ class LmsIntegrationPage(QWidget):
                     row.append("")
 
             # Determine absent-student fill value
-            absent_value = "0" if self.absent_combo.currentIndex() == 1 else ""
+            fill_absent_zero = self.absent_combo.currentIndex() == 1
 
-            # Write scores
+            # Write scores — only touch cells where we have a match.
+            # Pre-existing data in non-matching rows is preserved so
+            # teachers can safely write into a column that already has
+            # other scores or notes.
             matched = 0
             for row in rows:
                 sid = row[sid_idx].strip() if sid_idx < len(row) else ""
@@ -890,8 +957,10 @@ class LmsIntegrationPage(QWidget):
                 if sid in score_map:
                     row[target_idx] = score_map[sid]
                     matched += 1
-                else:
-                    row[target_idx] = absent_value
+                elif fill_absent_zero and not row[target_idx].strip():
+                    # Only fill blank cells with "0" for absent students;
+                    # never overwrite existing content.
+                    row[target_idx] = "0"
 
             # Save output
             if out_ext == ".xlsx":

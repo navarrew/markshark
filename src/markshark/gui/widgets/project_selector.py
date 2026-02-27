@@ -70,18 +70,22 @@ class ProjectSelector(QWidget):
         # Project selector (left side)
         frame_layout.addWidget(QLabel("Assessment:"))
 
+        # Semi-transparent white buttons — same style as the Welcome page's
+        # "Recent Assessments" tile header.  They blend with whatever tinted
+        # background they sit on, keeping the palette cohesive.
         _BAR_BTN = (
-            "QPushButton { background-color: #0d6efd; color: white;"
-            "              border: none; border-radius: 3px; padding: 3px 10px; }"
-            "QPushButton:hover { background-color: #0b5ed7; }"
+            "QPushButton { background-color: rgba(255,255,255,0.2); color: white;"
+            "              border: 1px solid rgba(255,255,255,0.4);"
+            "              border-radius: 4px; padding: 3px 10px; }"
+            "QPushButton:hover { background-color: rgba(255,255,255,0.35); }"
         )
 
         _COMBO_STYLE = (
             "QComboBox { background-color: #1a1a1a; color: white;"
-            "            border: 1px solid #444; border-radius: 3px;"
+            "            border: 1px solid rgba(255,255,255,0.3); border-radius: 4px;"
             "            padding: 3px 8px; }"
             "QComboBox QAbstractItemView { background-color: #1a1a1a;"
-            "            color: white; selection-background-color: #0d6efd; }"
+            "            color: white; selection-background-color: #0E817E; }"
         )
 
         self.project_combo = QComboBox()

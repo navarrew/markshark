@@ -30,11 +30,13 @@ _HELP_DIR = Path(__file__).parent.parent.parent / "assets" / "help"
 _HELP_TABS = [
     ("Getting Started", "getting_started.md"),
     ("Templates", "templates.md"),
+    ("Answer Key && Roster", "key_formats.md"),
     ("Alignment", "alignment.md"),
     ("Scoring", "scoring.md"),
-    ("File Formats", "key_formats.md"),
+    ("Corrections", "corrections.md"),
+    ("Report", "report.md"),
     ("LMS Integration", "lms_integration.md"),
-    ("Reference", "reference.md"),
+    ("Utilities", "utilities.md"),
 ]
 
 

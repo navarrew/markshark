@@ -1,5 +1,5 @@
 # Getting Started
-**Note: if you're new to MarkShark we have a tutorial PDF and a practice dataset for you to download and experiment with on the welcome page.**
+**Note:** *If you're new to MarkShark we have a tutorial PDF and a practice dataset for you to download and experiment with on the welcome page.*
 # Step 1 - Find a bubble sheet that meets your needs.
 MarkShark comes with many different bubble sheets templates you can download, print, and use right away.  MarkShark bubble sheet templates comprise two files - a pdf and an associated text file (a **bubblemap**) that tells the software what each of the bubbles represents.
 On the **Welcome page** you can click 'Browse Templates' and see the various bubble sheets that can be used right away with MarkShark.  In the **Template Manager** you can get a closer look at each of the templates, select some favorites, and archive the ones you don't want to use to get them out of the way.  Click on the 'Download PDF' button and you can print and use these bubble sheets right away!
@@ -34,13 +34,22 @@ The best way to avoid issues is to feed MarkShark good scans of your student bub
 
 ---
 # More about the MarkShark folders and files
-
-### input_files/
-Where your original uploads are stored: scanned PDFs, answer keys, and rosters. The aligned PDF (`aligned_scans.pdf`) is also saved here after alignment.
-### score_data/
-Where grading outputs live: the scored `results.csv`, scoring parameters (`results_params.json`), and any `corrections.csv` from the Review page. If you re-annotate, the original results are archived as `results_original.csv`.
-### Top-level outputs
-The `scored_scans.pdf` (annotated PDF with scores) and `exam_report.xlsx` are placed at the assessment root for easy access.
+## MarkShark File Locations
+MarkShark will automatically make copies of your scans, key, and roster and put them in the folder 'input_files' in your assessment folder.  It also saves the aligned scans to the input_files folder after running an alignment.  Throughout the grading and reporting processes, MarkShark saves a variety of files to different places in the assessment folder.  
+MarkShark does not modify your original files, but instead makes copies of them to the input_files directory and works with those copies.  This is to protect your original scan and answer key files, making it easy to retry if something goes wrong along the way.
+| File | Location | Purpose |
+|------|----------|---------|
+| `scored_scans.pdf` | assessment root | Annotated PDF with scoring marks |
+| `exam_report.xlsx` | assessment root | Generated Excel report |
+| `raw_scans.pdf` | `input_files/` | Original scanned bubble sheets |
+| `aligned_scans.pdf` | `input_files/` | Aligned PDF (no scoring marks) |
+| `answer_key.txt` | `input_files/` | Answer key file |
+| `roster.csv` | `input_files/` | Class roster |
+| `results.csv` | `score_data/` | Scoring results |
+| `results_original.csv` | `score_data/` | Backup of results before re-annotation |
+| `results_params.json` | `score_data/` | Scoring parameters (for re-annotation) |
+| `corrections.csv` | `score_data/` | Manual corrections log |
+| `log_DATE-TIME.txt` | `logs/` | Logs of alignment and scoring data |
 ---
 ## An Overview of MarkShark Pages
 ### Welcome
@@ -51,26 +60,23 @@ The main grading page. Load scans, select a template, provide an answer key and 
 View scored results in a spreadsheet alongside the annotated PDF. Click on a student row to see their scanned sheet. Double-click answer cells to correct misread answers or student IDs. Corrections are saved automatically.
 
 When corrections are ready, click **Apply Corrections & Re-annotate** to re-run scoring with your corrections applied. This updates both the CSV scores and the annotated PDF — corrected answers are marked with teal diamonds and a "Corrections applied" stamp. Use **Clear Corrections** to start fresh if needed.
----
-## Management
+
 ### Course Manager
 Manage your courses and assessments. Browse course folders, view assessment contents, create new assessments, and open them directly in the Grader.
 ### Template Manager
 Browse, preview, favourite, and reorder your installed bubble sheet templates. Each template includes a PDF master and a bubblemap YAML that defines bubble positions.
 ### LMS Integration
 Import and export gradebook files for learning management systems (Canvas, Brightspace, etc.).
----
-## Standalone Tools
+
 ### Align Only
 Run the alignment step independently. Useful for troubleshooting alignment issues or preparing scans for external processing.
 ### Score Only
 Run scoring on pre-aligned PDFs without re-running alignment. Useful for re-scoring with different thresholds.
 ### Report Only
 Generate a report from existing results and corrections without re-running the full pipeline.
----
-## Utilities
-### Answer Key Utility
+## Answer Key Utility
 Create, import, edit, and export answer keys. Supports importing from text files, CSVs, and Excel spreadsheets. Build keys from scratch with per-question answer selection and multi-answer support.
+[See more at the utilities help page.](utilities.md#the-answer-key-utility)
 ### PDF Tools
 Split, merge, and manipulate PDF files. Useful for preparing scans or combining output documents.
 ### Mock Data Utility
