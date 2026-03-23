@@ -89,6 +89,7 @@ class QuickGradePage(QWidget):
         self.report_xlsx: Optional[Path] = None
         self._pending_score = False
         self._current_bubblemap: Optional[str] = None
+        self._remapped_key_path: Optional[Path] = None
 
         self._setup_ui()
         self._load_templates()
@@ -966,6 +967,85 @@ class QuickGradePage(QWidget):
         bubblemap = str(template.bubblemap_yaml_path)
         self._current_bubblemap = bubblemap
 
+        # ── Pre-flight: version mismatch check ──
+        # The key's version identifiers (e.g. "1","2") must be a subset of
+        # the bubblemap's version-zone labels (e.g. "ABCD").  If they aren't,
+        # the teacher probably used a different naming convention (numbers
+        # vs letters).  We can remap positionally: 1st key → 1st label, etc.
+        # It's fine if the bubblemap offers more options than the teacher
+        # uses — that just means unused version slots on the bubble sheet.
+        self._remapped_key_path = None  # Reset each run
+        if self.key_selector.exists():
+            try:
+                from markshark.tools.key_parser import load_key_file
+                from markshark.tools.bubblemap_io import load_bublmap
+
+                key_set = load_key_file(self.key_selector.path())
+                bmap = load_bublmap(bubblemap)
+                vz = bmap.version_zone  # GridLayout or None
+
+                if vz and vz.labels and len(key_set.versions) > 1:
+                    bmap_label_set = set(vz.labels)
+                    key_ids = set(key_set.versions)
+
+                    if not key_ids.issubset(bmap_label_set):
+                        # The key uses identifiers that the bubblemap
+                        # won't produce.  Offer a positional remap:
+                        # sort both lists and pair the first N labels
+                        # with the N key versions.
+                        sorted_keys = sorted(key_set.versions)
+                        # Bubblemap labels in their natural order
+                        # (the order they appear on the sheet).
+                        bmap_labels_ordered = list(vz.labels)
+                        target_labels = bmap_labels_ordered[:len(sorted_keys)]
+
+                        pairs = [
+                            f"  {k}  →  {l}"
+                            for k, l in zip(sorted_keys, target_labels)
+                        ]
+                        mapping_preview = "\n".join(pairs)
+
+                        msg = QMessageBox(self)
+                        msg.setIcon(QMessageBox.Icon.Warning)
+                        msg.setWindowTitle("Version Mismatch")
+                        msg.setText(
+                            f"Your answer key uses version labels "
+                            f"{sorted_keys} but the bubble sheet's "
+                            f"version options are "
+                            f"{bmap_labels_ordered}.\n\n"
+                            f"MarkShark can remap automatically:\n"
+                            f"{mapping_preview}\n\n"
+                            f"The remapped key will be saved alongside "
+                            f"your original (which is not changed)."
+                        )
+
+                        remap_btn = msg.addButton(
+                            "Remap && Continue",
+                            QMessageBox.ButtonRole.AcceptRole,
+                        )
+                        abort_btn = msg.addButton(
+                            "Stop — I'll fix the key",
+                            QMessageBox.ButtonRole.RejectRole,
+                        )
+                        ignore_btn = msg.addButton(
+                            "Ignore",
+                            QMessageBox.ButtonRole.DestructiveRole,
+                        )
+                        msg.setDefaultButton(remap_btn)
+                        msg.exec()
+
+                        clicked = msg.clickedButton()
+                        if clicked == abort_btn:
+                            return
+                        if clicked == remap_btn:
+                            self._remapped_key_path = (
+                                self._remap_key_versions(
+                                    key_set, sorted_keys, target_labels
+                                )
+                            )
+            except Exception:
+                pass  # Don't block scoring over a pre-flight check failure
+
         # Output paths — flat structure
         self.aligned_pdf = self.work_dir / "input_files" / "aligned_scans.pdf"
         self.results_csv = self.work_dir / "score_data" / "results.csv"
@@ -1022,8 +1102,11 @@ class QuickGradePage(QWidget):
             "--out-pdf", str(self.scored_pdf),
         ]
 
-        # Key file
-        if self.key_selector.exists():
+        # Key file — use the remapped copy if version labels were rewritten,
+        # otherwise use the original.
+        if self._remapped_key_path:
+            args += ["--key-txt", str(self._remapped_key_path)]
+        elif self.key_selector.exists():
             args += ["--key-txt", self.key_selector.path()]
 
         # Scoring parameters
@@ -1046,6 +1129,52 @@ class QuickGradePage(QWidget):
 
         self.log.append_line(f"Command: markshark {' '.join(args)}\n")
         self.runner.run(args, "score")
+
+    def _remap_key_versions(self, key_set, old_versions, new_labels):
+        """Create a copy of the answer key with remapped version identifiers.
+
+        The teacher used one naming convention (e.g. "1","2") but the
+        bubblemap uses another (e.g. "A","B").  Pair them positionally
+        and write a remapped key file to input_files/.  The mapping is
+        logged so the teacher can see exactly what changed.
+
+        Returns the Path to the remapped key file.
+        """
+        from copy import deepcopy
+        from markshark.tools.key_parser import AnswerKeySet, write_key_file
+
+        version_map = dict(zip(old_versions, new_labels))
+
+        # Build a new AnswerKeySet with remapped identifiers
+        new_keys = {}
+        new_code_map = {}
+        for old_id in old_versions:
+            new_id = version_map[old_id]
+            vk = deepcopy(key_set.keys[old_id])
+            vk.version = new_id
+            new_keys[new_id] = vk
+            if vk.code:
+                new_code_map[vk.code] = new_id
+
+        remapped = AnswerKeySet(keys=new_keys, code_to_version=new_code_map)
+
+        # Write to the project's input_files/ alongside the original key
+        out_path = self.work_dir / "input_files" / "key_remapped.txt"
+        write_key_file(remapped, out_path, fmt="txt")
+
+        # Log so the teacher knows what happened
+        self.log.append_header("VERSION REMAP")
+        self.log.append_line(
+            "The answer key's version labels did not match the bubble "
+            "sheet. MarkShark created a remapped copy of the key:"
+        )
+        for old_id, new_id in version_map.items():
+            self.log.append_line(f"  Key version {old_id}  →  Bubble label {new_id}")
+        self.log.append_line(
+            f"Remapped key saved to: {out_path}\n"
+            f"Your original key file is unchanged.\n"
+        )
+        return out_path
 
     def _run_report(self):
         """Generate the Excel report."""

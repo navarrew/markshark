@@ -263,14 +263,14 @@ class MainWindow(QMainWindow):
             ("Report Only",       "report_only",      self.report_only_page),
             # --- Divider ---
             _DIVIDER,
-            # --- Utilities ---
+            # --- Managers ---
             ("Course Manager",     "project_manager", self.project_manager_page),
             ("Template Manager",  "template_manager", self.template_manager_page),
-            ("LMS Integration",   "lms_integration",  self.lms_integration_page),
             # --- Divider ---
             _DIVIDER,
             # --- Utilities ---
             ("Answer Key Utility", "key_builder",     self.key_builder_page),
+            ("LMS Integration",   "lms_integration",  self.lms_integration_page),
             ("PDF Tools",         "pdf_tools",        self.pdf_tools_page),
             ("Mock Data Utility", "mock_data",        self.mock_data_page),
             ("Bubblemap Utility", "map_viewer",       self.map_viewer_page),

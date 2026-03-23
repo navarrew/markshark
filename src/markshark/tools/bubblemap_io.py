@@ -105,6 +105,10 @@ class ArUcoConfig:
     min_markers: int = 4
     ransac_threshold: float = 3.0
     markers: Optional[List[Dict[str, Any]]] = None  # Optional explicit marker positions
+    # Physical marker properties (used by template PDFs, not by detection itself)
+    marker_ids: Optional[List[int]] = None   # Which ArUco IDs are printed (e.g. [0,1,2,3])
+    size_mm: Optional[float] = None          # Printed marker size in mm
+    margin_mm: Optional[float] = None        # Distance from page edge to marker center in mm
 
 
 @dataclass
@@ -195,6 +199,9 @@ class Bubblemap:
                     enabled=aruco_data.get('enabled', False),
                     dictionary=aruco_data.get('dictionary', 'DICT_4X4_50'),
                     min_markers=aruco_data.get('min_markers', 4),
+                    marker_ids=aruco_data.get('marker_ids'),
+                    size_mm=aruco_data.get('size_mm'),
+                    margin_mm=aruco_data.get('margin_mm'),
                 )
         
         return ArUcoConfig()  # Default
@@ -480,6 +487,10 @@ def _parse_registration_config(data: Dict[str, Any]) -> Optional[RegistrationCon
             min_markers=aruco_data.get('min_markers', 4),
             ransac_threshold=aruco_data.get('ransac_threshold', 3.0),
             markers=aruco_data.get('markers'),
+            # Physical marker properties (used by Bubblefish PDF generator)
+            marker_ids=aruco_data.get('marker_ids'),
+            size_mm=aruco_data.get('size_mm'),
+            margin_mm=aruco_data.get('margin_mm'),
         )
     
     # Parse bubble grid config

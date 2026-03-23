@@ -1,7 +1,12 @@
 # Aligning scanned bubble sheets to the template bubble sheet.
+## Table of Contents
+- [How Alignment Works](#how-alignment-works)
+- [Alignment Methods](#alignment-methods)
+- [Alignment Parameters](#alignment-parameters)
+- [Troubleshooting Alignment](#troubleshooting-alignment)
 ***Why 'align' scanned bubbble sheets?  What does 'align' mean?***
-*First point - MarkShark aligns scans to their template automatically, so don't worry about the alignment process unless you have to troubleshoot a problem.  If you're not having issues with grading then you can skip this entire page.*
 Scanned pages are often slightly off-size, off-center, or skewed when compared to the original PDF they were printed from. This is a problem because MarkShark needs to identify the precise locations of each bubble. Alignment is the process of resizing and rotating each scanned page so that it matches the original template (and its bubble map) precisely. Once aligned, the software knows exactly where every bubble is and can measure how dark each one is.
+*Note: MarkShark aligns scans to their template automatically, so don't worry about the alignment process unless you have to troubleshoot a problem.  If you're not having issues with grading then you can skip this entire page.*
 In the example below, we attempted to score a scanned bubble sheet directly without aligning it to the original template. You can see that the bubble map does not align properly and that most of the bubbles are missed by MarkShark. On the right, we show the same page after it has gone through the alignment process. You can see that the bubble map aligns almost perfectly with the scanned page and that scoring happens properly.
 ![alignments are needed](img/alignbubble.png)
 ---

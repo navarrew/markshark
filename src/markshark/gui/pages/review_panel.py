@@ -404,6 +404,18 @@ class ReviewPanelPage(QWidget):
 
         # Filter bar
         filter_layout = QHBoxLayout()
+
+        # Navigate back to the Grader page
+        self.return_grader_btn = QPushButton("← Return to Grader")
+        self.return_grader_btn.setFixedWidth(160)
+        self.return_grader_btn.setStyleSheet(
+            "QPushButton { color: #0E817E; border: 1px solid #0E817E; "
+            "border-radius: 4px; padding: 4px 8px; background: transparent; }"
+            "QPushButton:hover { background: #e0f2f1; }"
+        )
+        self.return_grader_btn.clicked.connect(self._on_return_to_grader)
+        filter_layout.addWidget(self.return_grader_btn)
+
         self.show_all_btn = QPushButton("Show All")
         self.show_all_btn.setCheckable(True)
         self.show_all_btn.clicked.connect(lambda: self._set_filter(False))
@@ -1738,6 +1750,12 @@ class ReviewPanelPage(QWidget):
             csv_path = Path(results_data["results_csv"])
             if csv_path.exists():
                 self._load_scored_csv(csv_path)
+
+    def _on_return_to_grader(self):
+        """Navigate back to the Grader page via the main window."""
+        main_win = self.window()
+        if hasattr(main_win, "_navigate_to_key"):
+            main_win._navigate_to_key("quick_grade")
 
     def _on_project_changed(self, project_name: str):
         """Handle project selection change — auto-load results if available."""

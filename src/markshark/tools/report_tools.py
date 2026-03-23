@@ -1445,7 +1445,6 @@ def generate_report(
         orphan_scans, absent_students, project_name, run_label,
         corrections_applied, corrections_detail,
         df=df, item_cols=item_cols, input_csv_path=input_csv,
-        scoring_params=scoring_params,
         auto_detected_students=auto_detected_students,
         course_name=course_name,
     )
@@ -1465,6 +1464,16 @@ def generate_report(
     # ========== ANSWER KEY TAB ==========
     create_answer_key_tab(wb, item_cols, versions, version_stats)
 
+    # ========== FLAGS & ISSUES TAB ==========
+    create_flags_and_issues_tab(
+        wb, df, item_cols,
+        orphan_scans, absent_students,
+        corrections_detail, corrections_applied,
+        auto_detected_students=auto_detected_students,
+        versions=versions,
+        scoring_params=scoring_params,
+    )
+
     # Save workbook
     wb.save(out_xlsx)
     print(f"Excel report generated: {out_xlsx}")
@@ -1476,18 +1485,19 @@ def create_summary_tab(
     orphan_scans, absent_students, project_name=None, run_label=None,
     corrections_applied=0, corrections_detail=None,
     df=None, item_cols=None, input_csv_path=None,
-    scoring_params=None,
     auto_detected_students=None,
     course_name=None,
 ):
-    """Create summary tab with statistics, flagged items, and scoring parameters.
+    """Create summary tab with statistics and a brief flagged-items note.
+
+    Detailed flags, corrections, and scoring parameters live on the
+    dedicated 'Flags & Issues' sheet.
 
     Layout order:
         1. Title
         2. Course / Assessment / Scores file / Generated
         3. Per-version & amalgamated statistics + reliability
-        4. Flagged items (blanks, multis, orphans, corrections)
-        5. Scoring parameters (for reproducibility)
+        4. Brief note pointing to the Flags & Issues sheet
     """
     from datetime import datetime
     import os
@@ -1534,6 +1544,62 @@ def create_summary_tab(
         ws[f'B{row}'] = f"{corrections_applied} manual corrections from review"
         ws[f'B{row}'].font = Font(color="0000FF", italic=True)
         row += 1
+
+    # ------------------------------------------------------------------ #
+    # 2b. Flags & Issues note (placed here so the chart can't obscure it)
+    # ------------------------------------------------------------------ #
+    n_flagged = 0
+    n_absent = len(absent_students) if absent_students else 0
+    n_auto = len(auto_detected_students) if auto_detected_students else 0
+    if df is not None and item_cols is not None:
+        _blank_col = _find_col(df, ['blank', 'Blank'])
+        _multi_col = _find_col(df, ['multi', 'Multi'])
+        _version_col_f = _find_col(df, ['version', 'Version'])
+        _flagdetails_col = _find_col(df, ['flagdetails', 'FlagDetails', 'flag_details'])
+
+        _non_student_mask = df.apply(
+            lambda r: any(str(cell).strip().upper() in ('KEY', 'VALUE') for cell in r), axis=1
+        )
+        for _, srow in df[~_non_student_mask].iterrows():
+            has_issue = False
+            if _blank_col:
+                try:
+                    if int(srow.get(_blank_col, 0)) > 0:
+                        has_issue = True
+                except (ValueError, TypeError):
+                    pass
+            if _multi_col and not has_issue:
+                try:
+                    if int(srow.get(_multi_col, 0)) > 0:
+                        has_issue = True
+                except (ValueError, TypeError):
+                    pass
+            if _version_col_f and not has_issue:
+                if str(srow.get(_version_col_f, '')).strip().endswith("*"):
+                    has_issue = True
+            if _flagdetails_col and not has_issue:
+                if 'orphan' in str(srow.get(_flagdetails_col, '')).lower():
+                    has_issue = True
+            if has_issue:
+                n_flagged += 1
+
+    total_issues = n_flagged + n_absent + n_auto
+    if total_issues > 0:
+        parts = []
+        if n_flagged:
+            parts.append(f"{n_flagged} flagged student(s)")
+        if n_absent:
+            parts.append(f"{n_absent} absent")
+        if n_auto:
+            parts.append(f"{n_auto} version auto-detected")
+        note = ", ".join(parts) + " \u2014 see Flags & Issues sheet"
+        ws.cell(row=row, column=1, value=f"\u26a0 {note}")
+        ws.cell(row=row, column=1).fill = COLOR_WARNING
+        ws.cell(row=row, column=1).font = FONT_BOLD
+    else:
+        ws.cell(row=row, column=1, value="\u2714 No flagged items.")
+        ws.cell(row=row, column=1).font = Font(italic=True, color="228B22")
+    row += 1
 
     row += 1  # spacer
 
@@ -1684,84 +1750,68 @@ def create_summary_tab(
             row += 1
         data_end_row = row - 1
 
-        # Create bar chart
+        # ── Create bar chart with readable formatting ──
+        from openpyxl.chart.text import RichText
+        from openpyxl.drawing.text import (
+            Paragraph, ParagraphProperties, CharacterProperties,
+            Font as DrawingFont,
+        )
+
         chart = BarChart()
         chart.type = "col"
         chart.style = 10
-        chart.title = "Score Distribution"
-        chart.y_axis.title = "Number of Students"
-        chart.x_axis.title = "Score Range (%)"
+        chart.legend = None  # Single data series — legend is redundant
 
-        # Data reference: the counts in column E
+        # ── Title: above the chart, 14pt bold ──
+        chart.title = "Score Distribution"
+        title_font = CharacterProperties(sz=1400, b=True)
+        chart.title.txPr = RichText(
+            p=[Paragraph(
+                pPr=ParagraphProperties(defRPr=title_font),
+                endParaRPr=title_font,
+            )]
+        )
+
+        # ── Y-axis: integer tick labels, 10pt, with axis title ──
+        chart.y_axis.title = "Number of Students"
+        chart.y_axis.numFmt = '0'           # Show integers, not decimals
+        chart.y_axis.scaling.min = 0        # Start at zero
+        chart.y_axis.delete = False         # Ensure axis is visible
+        axis_label_font = CharacterProperties(sz=1000)
+        chart.y_axis.txPr = RichText(
+            p=[Paragraph(
+                pPr=ParagraphProperties(defRPr=axis_label_font),
+                endParaRPr=axis_label_font,
+            )]
+        )
+
+        # ── X-axis: 9pt labels (rotated to fit), with axis title ──
+        chart.x_axis.title = "Score Range (%)"
+        chart.x_axis.delete = False
+        x_label_font = CharacterProperties(sz=900)
+        chart.x_axis.txPr = RichText(
+            p=[Paragraph(
+                pPr=ParagraphProperties(defRPr=x_label_font),
+                endParaRPr=x_label_font,
+            )]
+        )
+
+        # ── Data references ──
         data_ref = Reference(ws, min_col=5, min_row=data_start_row,
                              max_row=data_end_row)
-        # Category labels: the bin labels in column D
         cat_ref = Reference(ws, min_col=4, min_row=data_start_row + 1,
                             max_row=data_end_row)
         chart.add_data(data_ref, titles_from_data=True)
         chart.set_categories(cat_ref)
-        chart.shape = 4
-        chart.width = 22
-        chart.height = 12
+
+        # ── Size: wide enough for labels, not so tall it dominates ──
+        chart.width = 24
+        chart.height = 13
 
         # Anchor chart to column A, below current content
         ws.add_chart(chart, f"A{data_start_row}")
-        # Advance row past the chart (~18 rows) and data table
-        row = max(row, data_start_row + 20)
-
-    # ------------------------------------------------------------------ #
-    # 4. Absent Students & Flagged Items
-    # ------------------------------------------------------------------ #
-    row += 2
-    ws[f'A{row}'] = "Absent Students & Flagged Items"
-    ws[f'A{row}'].font = Font(size=13, bold=True)
-    row += 1
-
-    row = _write_flagged_items_section(
-        ws, row, df, item_cols,
-        orphan_scans, absent_students,
-        corrections_detail, corrections_applied,
-        auto_detected_students=auto_detected_students or [],
-        versions=versions,
-    )
-
-    # ------------------------------------------------------------------ #
-    # 5. Scoring Parameters (for reproducibility)
-    # ------------------------------------------------------------------ #
-    if scoring_params:
-        row += 1
-        ws[f'A{row}'] = "Scoring Parameters"
-        ws[f'A{row}'].font = Font(size=13, bold=True)
-        row += 1
-        ws[f'A{row}'] = "(Recorded so results can be replicated if needed.)"
-        ws[f'A{row}'].font = Font(italic=True, color="888888")
-        row += 1
-
-        param_headers = ["Parameter", "Value"]
-        for col_idx, hdr in enumerate(param_headers, start=1):
-            ws.cell(row=row, column=col_idx, value=hdr)
-        format_header_row(ws, row)
-        row += 1
-
-        # Display-friendly names for common scoring params
-        _labels = {
-            'min_fill': 'Min Fill %',
-            'fixed_thresh': 'Fixed Threshold',
-            'auto_calibrate_thresh': 'Auto Calibrate Threshold',
-            'calibrate_background': 'Background Calibration',
-            'background_percentile': 'Background Percentile',
-            'adaptive_rescoring': 'Adaptive Rescoring',
-            'adaptive_max_adjustment': 'Adaptive Max Adjustment',
-            'adaptive_min_above_floor': 'Adaptive Min Above Floor',
-            'dpi': 'Render DPI',
-        }
-        for param_key, param_val in scoring_params.items():
-            label = _labels.get(param_key, param_key)
-            ws.cell(row=row, column=1, value=label)
-            ws.cell(row=row, column=2, value=str(param_val))
-            for c in (1, 2):
-                ws.cell(row=row, column=c).border = BORDER_THIN
-            row += 1
+        # Advance row past the chart (~20 rows) and data table
+        row = max(row, data_start_row + 22)
 
     auto_size_columns(ws)
 
@@ -2026,6 +2076,74 @@ def _write_flagged_items_section(
         row += 1
 
     return row
+
+
+def create_flags_and_issues_tab(
+    wb, df, item_cols,
+    orphan_scans, absent_students,
+    corrections_detail, corrections_applied,
+    auto_detected_students=None,
+    versions=None,
+    scoring_params=None,
+):
+    """Create a dedicated 'Flags & Issues' worksheet.
+
+    Consolidates all diagnostic information that used to be inline on the
+    Summary sheet: absent students, auto-detected versions, flagged items
+    (blanks, multi-fills, orphans), corrections applied, and scoring
+    parameters.  Keeps the Summary sheet focused on statistics.
+    """
+    ws = wb.create_sheet("Flags & Issues")
+
+    ws['A1'] = "Flags & Issues"
+    ws['A1'].font = Font(size=16, bold=True)
+    row = 3
+
+    # ---- Delegate to the shared flagged-items writer ----
+    row = _write_flagged_items_section(
+        ws, row, df, item_cols,
+        orphan_scans, absent_students,
+        corrections_detail, corrections_applied,
+        auto_detected_students=auto_detected_students or [],
+        versions=versions,
+    )
+
+    # ---- Scoring Parameters (for reproducibility) ----
+    if scoring_params:
+        row += 1
+        ws.cell(row=row, column=1, value="Scoring Parameters")
+        ws.cell(row=row, column=1).font = Font(size=13, bold=True)
+        row += 1
+        ws.cell(row=row, column=1, value="(Recorded so results can be replicated if needed.)")
+        ws.cell(row=row, column=1).font = Font(italic=True, color="888888")
+        row += 1
+
+        param_headers = ["Parameter", "Value"]
+        for col_idx, hdr in enumerate(param_headers, start=1):
+            ws.cell(row=row, column=col_idx, value=hdr)
+        format_header_row(ws, row)
+        row += 1
+
+        _labels = {
+            'min_fill': 'Min Fill %',
+            'fixed_thresh': 'Fixed Threshold',
+            'auto_calibrate_thresh': 'Auto Calibrate Threshold',
+            'calibrate_background': 'Background Calibration',
+            'background_percentile': 'Background Percentile',
+            'adaptive_rescoring': 'Adaptive Rescoring',
+            'adaptive_max_adjustment': 'Adaptive Max Adjustment',
+            'adaptive_min_above_floor': 'Adaptive Min Above Floor',
+            'dpi': 'Render DPI',
+        }
+        for param_key, param_val in scoring_params.items():
+            label = _labels.get(param_key, param_key)
+            ws.cell(row=row, column=1, value=label)
+            ws.cell(row=row, column=2, value=str(param_val))
+            for c in (1, 2):
+                ws.cell(row=row, column=c).border = BORDER_THIN
+            row += 1
+
+    auto_size_columns(ws)
 
 
 def create_version_tab(
@@ -2365,11 +2483,15 @@ def create_version_tab(
                     correct_answers[col] = key_val
 
     # Response summary header
+    # Column order: Question, Correct, # Students, % Correct,
+    # then Upper/Lower 27% (if available), then per-option counts, Blank, Multi.
     resp_headers = ['Question', 'Correct', '# Students', '% Correct']
-    resp_headers += sorted_options
-    resp_headers += ['Blank', 'Multi']
+    disc_cols = 0  # number of discrimination columns inserted before options
     if _has_discrimination:
         resp_headers += ['Upper 27%', 'Lower 27%']
+        disc_cols = 2
+    resp_headers += sorted_options
+    resp_headers += ['Blank', 'Multi']
     for col_idx, hdr in enumerate(resp_headers, start=1):
         ws.cell(row=row_num, column=col_idx, value=hdr)
     format_header_row(ws, row_num)
@@ -2418,9 +2540,10 @@ def create_version_tab(
         else:
             pct_cell.fill = COLOR_PROBLEM
 
-        # Write counts for each option
+        # Write counts for each option (shifted right by disc_cols when
+        # Upper/Lower 27% columns are present before the option columns)
         for opt_idx, option in enumerate(sorted_options):
-            col_offset = 5 + opt_idx
+            col_offset = 5 + disc_cols + opt_idx
             count = counts.get(option, 0)
             cell = ws.cell(row=row_num, column=col_offset, value=count)
             if option == correct_answer:
@@ -2428,8 +2551,8 @@ def create_version_tab(
             elif count > 0 and n_ver_students > 0 and (count / n_ver_students) > 0.25:
                 cell.fill = COLOR_WARNING
 
-        # Blank and Multi columns
-        blank_offset = 5 + len(sorted_options)
+        # Blank and Multi columns (after disc_cols + option columns)
+        blank_offset = 5 + disc_cols + len(sorted_options)
         multi_offset = blank_offset + 1
         blank_cell = ws.cell(row=row_num, column=blank_offset, value=blank_count)
         if blank_count > 0:
@@ -2438,25 +2561,23 @@ def create_version_tab(
         if multi_count > 0:
             multi_cell.fill = COLOR_MULTI
 
-        # Upper/Lower 27% discrimination columns
+        # Upper/Lower 27% discrimination columns (columns 5-6, right after % Correct)
         if _has_discrimination:
-            upper_offset = multi_offset + 1
-            lower_offset = upper_offset + 1
             upper_pct = upper_27_correct.get(col_name, 0)
             lower_pct = lower_27_correct.get(col_name, 0)
 
-            ws.cell(row=row_num, column=upper_offset, value=f"{upper_pct:.0f}%")
-            ws.cell(row=row_num, column=lower_offset, value=f"{lower_pct:.0f}%")
+            ws.cell(row=row_num, column=5, value=f"{upper_pct:.0f}%")
+            ws.cell(row=row_num, column=6, value=f"{lower_pct:.0f}%")
 
             # Color-code: good discrimination = upper >> lower (green),
             # inverted discrimination = upper < lower (red, item is broken)
             disc = upper_pct - lower_pct
             if disc >= 30:
-                ws.cell(row=row_num, column=upper_offset).fill = COLOR_GOOD
+                ws.cell(row=row_num, column=5).fill = COLOR_GOOD
             elif disc < 0:
                 # Inverted: weak students outperform strong students — flag
-                ws.cell(row=row_num, column=upper_offset).fill = COLOR_PROBLEM
-                ws.cell(row=row_num, column=lower_offset).fill = COLOR_PROBLEM
+                ws.cell(row=row_num, column=5).fill = COLOR_PROBLEM
+                ws.cell(row=row_num, column=6).fill = COLOR_PROBLEM
 
         row_num += 1
 

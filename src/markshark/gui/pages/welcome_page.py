@@ -773,7 +773,7 @@ class WelcomePage(QWidget):
         gs_btn_row = QHBoxLayout()
         gs_btn_row.setSpacing(8)
 
-        help_btn = QPushButton("Help & Documentation")
+        help_btn = QPushButton("Help && Documentation")
         help_btn.setStyleSheet(
             f"QPushButton {{ background-color: {_BLUE}; color: white; "
             f"padding: 6px 14px; border-radius: 6px; font-weight: bold; font-size: 12px; }}"
@@ -782,7 +782,7 @@ class WelcomePage(QWidget):
         help_btn.clicked.connect(self._on_open_help)
         gs_btn_row.addWidget(help_btn)
 
-        tutorial_btn = QPushButton("Tutorial and Sample Data")
+        tutorial_btn = QPushButton("Tutorial && Sample Data")
         tutorial_btn.setStyleSheet(
             "QPushButton { background-color: #6c757d; color: white; "
             "padding: 6px 14px; border-radius: 6px; font-weight: bold; font-size: 12px; }"

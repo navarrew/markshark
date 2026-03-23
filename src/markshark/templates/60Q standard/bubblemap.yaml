@@ -3,15 +3,17 @@ metadata:
   description: 60 questions, 5 choices (A-E)
   pages: 1
   total_questions: 60
-  alignment:
-    aruco:
-      enabled: true
-      dictionary: DICT_4X4_50
-      marker_ids: [0, 1, 2, 3]
-      size_mm: 6
-      margin_mm: 6
   schema_version: 3
   page_size: letter
+
+registration:
+  primary_method: aruco
+  aruco:
+    enabled: true
+    dictionary: DICT_4X4_50
+    marker_ids: [0, 1, 2, 3]
+    size_mm: 6
+    margin_mm: 6
 
 
 fonts:

@@ -1,5 +1,17 @@
 # Getting Started
 **Note:** *If you're new to MarkShark we have a tutorial PDF and a practice dataset for you to download and experiment with on the welcome page.*
+
+## Table of Contents
+- [Step 1 - Find a bubble sheet](#step-1---find-a-bubble-sheet-that-meets-your-needs)
+- [Step 2 - Set up your folders](#step-2---set-up-your-markshark-folders-on-your-computer)
+- [Step 3 - Workflow after the test](#step-3---workflow-after-the-test)
+- [Scanning tips](#scanning-tips)
+- [Your answer key](#your-answer-key)
+- [Your class roster](#your-class-roster-optional)
+- [MarkShark folders and files](#more-about-the-markshark-folders-and-files)
+- [An overview of MarkShark pages](#an-overview-of-markshark-pages)
+- [Getting help](#getting-help)
+
 # Step 1 - Find a bubble sheet that meets your needs.
 MarkShark comes with many different bubble sheets templates you can download, print, and use right away.  MarkShark bubble sheet templates comprise two files - a pdf and an associated text file (a **bubblemap**) that tells the software what each of the bubbles represents.
 On the **Welcome page** you can click 'Browse Templates' and see the various bubble sheets that can be used right away with MarkShark.  In the **Template Manager** you can get a closer look at each of the templates, select some favorites, and archive the ones you don't want to use to get them out of the way.  Click on the 'Download PDF' button and you can print and use these bubble sheets right away!
@@ -28,9 +40,15 @@ The best way to avoid issues is to feed MarkShark good scans of your student bub
 - **Scan using grayscale, at a resolution of 150 dpi.**  There's not much benefit having a resolution greater than 150 dots per inch and a 300 dpi image is 4x larger in terms of file size.  It's unlikely that your scans will perform significantly better with a higher resolution, but don't go much lower than 150 dpi either.
 - **Do not use a phone camera.**  Photos taken with a phone warp the image unless you are looking straight down upon the scan and the paper is flat, not curled.  Lighting across the picture is often uneven and shadows from your arms or the camera can make certain areas of the scan much darker than others.  Any time you save using your phone will cost you later in troubleshooting how to de-warp the poor-quality scan.
 - **Use white paper for your bubble sheets.** MarkShark must distinguish between gray pixels that are background vs. gray pixels that were caused by a pencil mark.  If your background paper is colored it will often appear as gray when converted to black and white.  You want to maximize the difference between the gray-level on the paper and the pencil marks written by the student.
-## Your answer key 
-[See more about ways to make your answer key here.](getting-started.md)
+## Your answer key
+You'll need a file that lists the correct answer for each question. The easiest way to make one is to download our sample key from the Welcome page and replace the answers with your own. You can also paste answers from Word, Excel, or Google Docs into the Answer Key Utility, or create a simple text file or spreadsheet from scratch. MarkShark accepts `.txt`, `.csv`, and `.xlsx` key files and handles single-version or multi-version exams.
+
+For the full details on key formats and scoring options, see [Answer Keys and Rosters](key_formats.md).
+
 ## Your class roster (optional)
+A class roster is a CSV file with student IDs and names. If you provide one, MarkShark will match scanned sheets to students by ID, display names in the results, and flag anyone who was absent. Most learning management systems can export a class list as CSV that works with MarkShark. A roster is optional — without one, MarkShark still scores every sheet but can only identify students by what they bubbled in.
+
+For roster column details, see [Answer Keys and Rosters](key_formats.md#your-class-roster-optional).
 
 ---
 # More about the MarkShark folders and files
@@ -52,57 +70,59 @@ MarkShark does not modify your original files, but instead makes copies of them 
 | `log_DATE-TIME.txt` | `logs/` | Logs of alignment and scoring data |
 ---
 ## An Overview of MarkShark Pages
+
+The pages below are listed in the same order as the sidebar. Most teachers only use the first few regularly — the rest are there when you need them.
+
 ### Welcome
-XXX.
+Your starting point. Browse bubble sheet templates, download sample data, and access the tutorial. If you're new to MarkShark, start here.
+
 ### Grader
-The main grading page. Load scans, select a template, provide an answer key and optional roster, then click **Align & Score**. After scoring, switch to the **Generate Report** tab to create an Excel report.
+The main grading page. Load scans, select a template, provide an answer key and optional roster, then click **Align & Score**. After scoring, switch to the **Generate Report** tab to create an Excel report. See [Scoring](scoring.md) and [Report](report.md) for details.
+
 ### Review & Correct
-View scored results in a spreadsheet alongside the annotated PDF. Click on a student row to see their scanned sheet. Double-click answer cells to correct misread answers or student IDs. Corrections are saved automatically.
-
-When corrections are ready, click **Apply Corrections & Re-annotate** to re-run scoring with your corrections applied. This updates both the CSV scores and the annotated PDF — corrected answers are marked with teal diamonds and a "Corrections applied" stamp. Use **Clear Corrections** to start fresh if needed.
-
-### Course Manager
-Manage your courses and assessments. Browse course folders, view assessment contents, create new assessments, and open them directly in the Grader.
-### Template Manager
-Browse, preview, favourite, and reorder your installed bubble sheet templates. Each template includes a PDF master and a bubblemap YAML that defines bubble positions.
-### LMS Integration
-Import and export gradebook files for learning management systems (Canvas, Brightspace, etc.).
-
-### Align Only
-Run the alignment step independently. Useful for troubleshooting alignment issues or preparing scans for external processing.
-### Score Only
-Run scoring on pre-aligned PDFs without re-running alignment. Useful for re-scoring with different thresholds.
-### Report Only
-Generate a report from existing results and corrections without re-running the full pipeline.
-## Answer Key Utility
-Create, import, edit, and export answer keys. Supports importing from text files, CSVs, and Excel spreadsheets. Build keys from scratch with per-question answer selection and multi-answer support.
-[See more at the utilities help page.](utilities.md#the-answer-key-utility)
-### PDF Tools
-Split, merge, and manipulate PDF files. Useful for preparing scans or combining output documents.
-### Mock Data Utility
-Generate synthetic student datasets for testing. Creates fake scans, answer keys, response CSVs, and rosters from any installed template. Useful for testing templates before real grading.
-### Bubblemap Utility
-Overlay the bubblemap grid onto a template PDF to visually verify that bubble positions are correctly defined. Supports multi-page templates and shows the output zone location.
+View scored results in a spreadsheet alongside the annotated PDF. Click on a student row to see their scanned sheet. Double-click answer cells to correct misread answers or student IDs. When corrections are ready, click **Apply Corrections & Re-annotate** to update both the CSV and the annotated PDF. See [Corrections](corrections.md) for details.
 
 ---
-## Getting Help
-- **GitHub:** [github.com/navarrew/markshark](https://github.com/navarrew/markshark)
-- **Issues:** Report bugs or request features on the GitHub Issues page.
 
-[see Getting Started](getting_started.md)
-[see Troubleshooting](scoring.md#troubleshooting)
-[Answer Key Formats](key_formats.md)
+### Align Only
+Run the alignment step by itself, without scoring. Useful for troubleshooting alignment issues or preparing scans for external processing.
 
-- MarkShark works on both Mac and PC computers.
-- MarkShark works for courses as small as 10 students to classes bigger than 1000!
-- You can use a scanner you probably already own or have access to.
-- You print your own bubble sheets, you don't have to order them.
-- We provide many bubblesheet templates for you to choose from.
-- *You can make your own custom bubble sheets using our companion platform* ***'Bubblefish'***
-- Make a mistake with your answer key?  No problem!  You can rescore in seconds!
-- A student fill in their ID incorrectly?  No problem!  You can fix it with a click!
-- You scanned one page upside-down?  No problem!  Our PDF tools can fix it fast!
-- You can easily copy student scores directly into the spreadsheet your course software uses. It's easy to integrate MarkShark with any LMS!
-- MarkShark accepts a variety of answer key formats.
-- MarkShark generates a report that is easy to read and understand.
-- MarkShark's annotated student scan output makes it easy to see why a student got their score.
+### Score Only
+Run scoring on pre-aligned PDFs without re-running alignment. Useful for re-scoring with a different answer key or different threshold settings.
+
+### Report Only
+Generate a report from an existing `results.csv` without re-running alignment or scoring. Handy if you just want to regenerate the Excel report with different options.
+
+---
+
+### Course Manager
+Organize your courses and assessments. Browse course folders, view assessment contents, create new assessments, and open them directly in the Grader.
+
+### Template Manager
+Browse, preview, favourite, and reorder your installed bubble sheet templates. Each template includes a printable PDF and a bubblemap file that tells MarkShark where the bubbles are.
+
+---
+
+### Answer Key Utility
+A visual tool for building, editing, and exporting answer keys. Paste answers from Word or Excel, or import an existing key file. See [Utilities](utilities.md#the-answer-key-utility) for details.
+
+### LMS Integration
+Import and export gradebook files for learning management systems (Canvas, Brightspace, etc.). Create reusable column-mapping filters and write MarkShark scores back into your LMS gradebook. See [Utilities](utilities.md#lms-integration) for details.
+
+### PDF Tools
+Convert images to PDF, combine multiple PDFs, reorder pages, or interleave front-and-back scans. See [Utilities](utilities.md#pdf-tools) for details.
+
+### Mock Data Utility
+Generate a complete synthetic dataset (fake scans, answer key, roster) from any installed template. Useful for testing your workflow or following the tutorial without needing real student data.
+
+### Bubblemap Utility
+Overlay a bubblemap grid onto a PDF to visually verify that bubble positions are defined correctly. Useful for checking new templates or troubleshooting alignment issues. See [Utilities](utilities.md#the-bubblemap-visualizer) for details.
+
+---
+
+### Help
+The help pages you're reading right now.
+
+### Settings
+Configure default paths, scoring thresholds, alignment parameters, and display options.
+

@@ -35,8 +35,8 @@ _HELP_TABS = [
     ("Scoring", "scoring.md"),
     ("Corrections", "corrections.md"),
     ("Report", "report.md"),
-    ("LMS Integration", "lms_integration.md"),
     ("Utilities", "utilities.md"),
+    ("Troubleshooting", "troubleshooting.md"),
 ]
 
 
@@ -205,8 +205,12 @@ def _md_to_html(md: str) -> str:
             _close_all_lists(html_lines, list_stack)
 
         # ── Empty line ──
+        # In Markdown, blank lines separate block elements (paragraphs,
+        # headings, lists, etc.) but don't produce visible whitespace on
+        # their own — the spacing comes from the blocks' margins.  We
+        # therefore skip blank lines entirely instead of emitting <br>,
+        # which was causing excessive vertical gaps between paragraphs.
         if not stripped:
-            html_lines.append("<br>")
             continue
 
         # ── Paragraph ──
@@ -274,7 +278,7 @@ def _render_markdown(md: str) -> str:
     """Convert markdown to styled HTML for a QTextBrowser."""
     html = _md_to_html(md)
     return (
-        '<div style="font-family: Poppins, Roboto, Helvetica, Arial, sans-serif; '
+        '<div style="font-family: Poppins, Helvetica, Arial, sans-serif; '
         'max-width: 800px; margin: 0 auto; color: #333;">'
         f"{html}"
         "</div>"
@@ -344,12 +348,41 @@ class HelpPage(QWidget):
 
         # ── Tabbed help content ──
         self.tabs = QTabWidget()
+        # Style the tab bar so the active tab is clearly distinguishable.
+        # Selected tab gets a teal background with white text; unselected
+        # tabs stay light grey so the contrast is obvious at a glance.
+        self.tabs.setStyleSheet(
+            "QTabBar::tab {"
+            "  padding: 6px 14px;"
+            "  margin-right: 2px;"
+            "  border: 1px solid #ccc;"
+            "  border-bottom: none;"
+            "  border-top-left-radius: 4px;"
+            "  border-top-right-radius: 4px;"
+            "  background: #e8e8e8;"
+            "  color: #444;"
+            "}"
+            "QTabBar::tab:selected {"
+            "  background: #0E817E;"
+            "  color: white;"
+            "  font-weight: bold;"
+            "}"
+            "QTabBar::tab:hover:!selected {"
+            "  background: #d0d0d0;"
+            "}"
+        )
         layout.addWidget(self.tabs, 1)
 
         for tab_label, filename in _HELP_TABS:
             browser = QTextBrowser()
-            # Don't let Qt handle link clicks — we intercept them below
-            # so we can route .md links to the correct tab.
+            # Don't let Qt handle ANY link clicks — we intercept them
+            # all so we can route .md links to the correct tab,
+            # scroll to anchors, and open external URLs in the
+            # system browser.  setOpenLinks(False) prevents
+            # QTextBrowser from loading relative links (like
+            # key_formats.md) into the current browser via its
+            # built-in setSource() mechanism.
+            browser.setOpenLinks(False)
             browser.setOpenExternalLinks(False)
             browser.setStyleSheet(_BROWSER_STYLE)
             # Tell QTextBrowser where to find relative image paths
@@ -357,8 +390,8 @@ class HelpPage(QWidget):
             browser.setSearchPaths([str(_HELP_DIR)])
 
             # Intercept all link clicks so we can handle:
-            #   - Cross-page links: [text](scoring.md) → load in place
-            #   - Cross-page + anchor: [text](scoring.md#troubleshooting)
+            #   - Cross-page links: [text](scoring.md) → switch to that tab
+            #   - Cross-page + anchor: [text](scoring.md#section) → switch + scroll
             #   - Same-page anchors: [text](#section-name) → scroll
             #   - External URLs: https://... → open in system browser
             browser.anchorClicked.connect(self._on_link_clicked)
@@ -370,30 +403,25 @@ class HelpPage(QWidget):
             self.tabs.addTab(browser, tab_label)
             self._browsers[filename] = browser
 
-        # Reset a tab to its own content whenever the user clicks it.
-        # Uses tabBarClicked (not currentChanged) so re-clicking the
-        # already-active tab also resets — important after a cross-page
-        # link loaded foreign content into this tab's browser.
+        # Re-clicking the active tab scrolls back to the top — handy
+        # after the teacher has scrolled deep into a long page.
         self.tabs.tabBarClicked.connect(self._on_tab_clicked)
 
     # ------------------------------------------------------------------
-    # Tab reset — clicking a tab reloads its own help file
+    # Tab click — scroll back to the top of the page
     # ------------------------------------------------------------------
 
     def _on_tab_clicked(self, index: int):
-        """Reload the clicked tab's own markdown content.
+        """Scroll the clicked tab's browser back to the top.
 
-        Cross-page links load foreign content into the current browser
-        (see _on_link_clicked).  Clicking any tab button resets it to
-        that tab's own help file — acting as a reliable "home" for each
-        topic.
+        Useful when the teacher clicks the already-active tab to
+        return to the beginning after scrolling through a long page.
         """
         if 0 <= index < len(_HELP_TABS):
             _, filename = _HELP_TABS[index]
             browser = self._browsers.get(filename)
             if browser:
-                md = _load_help_file(filename)
-                browser.setHtml(_render_markdown(md))
+                browser.verticalScrollBar().setValue(0)
 
     # ------------------------------------------------------------------
     # Link navigation — cross-page, same-page, and external
@@ -404,13 +432,12 @@ class HelpPage(QWidget):
 
         Markdown links in help files can point to:
           [text](#anchor)                  → scroll within current page
-          [text](other_page.md)            → load that file in place
-          [text](other_page.md#anchor)     → load in place + scroll
+          [text](other_page.md)            → switch to that tab
+          [text](other_page.md#anchor)     → switch to tab + scroll
           [text](https://example.com)      → open in system browser
 
-        Cross-page links load content into the *current* browser rather
-        than switching tabs.  The user can click the tab button to reset
-        back to that tab's own content (see _on_tab_clicked).
+        Cross-page links switch to the target tab so the tab bar
+        always reflects which page the teacher is reading.
         """
         import webbrowser as _wb
 
@@ -438,14 +465,13 @@ class HelpPage(QWidget):
         filename = path_part.lstrip("/")
 
         if filename in self._browsers:
-            # Load the linked page's content INTO the current browser
-            # (not switching tabs).  This keeps the user on the same tab
-            # so they can click that tab button again to "go home" to
-            # the tab's own content — see _on_tab_clicked().
-            current_browser = self.tabs.currentWidget()
-            if isinstance(current_browser, QTextBrowser):
-                md = _load_help_file(filename)
-                current_browser.setHtml(_render_markdown(md))
-                if fragment:
-                    current_browser.scrollToAnchor(fragment)
+            # Find the tab index for this filename and switch to it.
+            # This keeps the tab bar in sync so the teacher always
+            # knows which help page they are reading.
+            for idx, (_label, fn) in enumerate(_HELP_TABS):
+                if fn == filename:
+                    self.tabs.setCurrentIndex(idx)
+                    if fragment:
+                        self._browsers[filename].scrollToAnchor(fragment)
+                    return
             return
