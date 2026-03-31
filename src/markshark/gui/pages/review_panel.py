@@ -95,6 +95,7 @@ _COLOR_ROW_SELECTED = QColor("#90CAF9")  # medium blue (Material Blue 200)
 def _flag_cell(item: QTableWidgetItem, color: QColor):
     """Set background AND store flag role so selection delegate can see it."""
     item.setBackground(QBrush(color))
+    item.setForeground(QBrush(QColor("black")))
     item.setData(_ROLE_FLAG_COLOR, color)
 
 
@@ -120,6 +121,8 @@ class _FlagPreservingDelegate(QStyledItemDelegate):
     so the user can still tell the row is selected.
     """
 
+    _BLACK = QColor("black")
+
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
         flag_color = index.data(_ROLE_FLAG_COLOR)
@@ -129,12 +132,20 @@ class _FlagPreservingDelegate(QStyledItemDelegate):
                 # Darken the flag colour slightly to hint at selection
                 darker = flag_color.darker(115)
                 option.backgroundBrush = QBrush(darker)
-                # Remove the Selected state so Qt doesn't paint over it
-                option.state &= ~sel_flag
             else:
                 # Normal (non-flagged) cell in a selected row
                 option.backgroundBrush = QBrush(_COLOR_ROW_SELECTED)
-                option.state &= ~sel_flag
+            # Remove the Selected state so Qt doesn't paint its own
+            # highlight, and force text to black so it stays readable
+            # against coloured backgrounds (light-blue selection,
+            # orange multi-mark, pink blank, etc.).
+            option.state &= ~sel_flag
+            option.palette.setColor(
+                option.palette.ColorRole.Text, self._BLACK
+            )
+            option.palette.setColor(
+                option.palette.ColorRole.HighlightedText, self._BLACK
+            )
 
 
 class AnswerTextDelegate(_FlagPreservingDelegate):
@@ -824,8 +835,18 @@ class ReviewPanelPage(QWidget):
         # Populate rows
         self.spreadsheet.setRowCount(len(data))
         for row_idx, row_data in enumerate(data):
+            # Use page-based correction key to match what _on_cell_changed
+            # stores.  Fall back to StudentID for legacy corrections.
+            page_id = _get_field(row_data, "Page", "page")
             student_id = _get_field(row_data, "StudentID", "student_id", "ID")
-            student_corrections = effective.get(student_id, {})
+            if page_id:
+                correction_id = f"page:{page_id}"
+            else:
+                correction_id = student_id or ""
+            student_corrections = effective.get(correction_id, {})
+            # Also check for legacy corrections keyed by StudentID
+            if not student_corrections and student_id:
+                student_corrections = effective.get(student_id, {})
 
             # Orphan detection for visual indicator
             flag_details = _get_field(row_data, "FlagDetails", "flagdetails")
@@ -931,23 +952,29 @@ class ReviewPanelPage(QWidget):
         if not row_data:
             return
 
-        # In Simple Grade mode, corrections are keyed by page number (always
-        # unique and stable) instead of student ID (which may be blank).
-        if getattr(self, "_simple_mode", False):
-            student_id = _get_field(row_data, "Page", "page")
+        # Use Page number as the correction key — it is always unique per
+        # row (each physical scan page has its own number) and avoids the
+        # problem where two students scanned with the same ID would both
+        # be affected by a single correction.
+        # Fall back to StudentID only if Page is not available.
+        page_id = _get_field(row_data, "Page", "page")
+        if page_id:
+            correction_id = f"page:{page_id}"
+        elif getattr(self, "_simple_mode", False):
+            correction_id = _get_field(row_data, "Page", "page") or ""
         else:
-            student_id = _get_field(row_data, "StudentID", "student_id", "ID")
+            correction_id = _get_field(row_data, "StudentID", "student_id", "ID") or ""
         original_value = row_data.get(col_name, "") or ""
 
         if self._is_q_column(col_name):
             # Answer correction
             if new_value == original_value:
                 # Value matches original — revert any existing correction
-                if self._correction_log.has_correction(student_id, col_name):
-                    self._correction_log.revert(student_id, col_name, "Reverted via GUI")
+                if self._correction_log.has_correction(correction_id, col_name):
+                    self._correction_log.revert(correction_id, col_name, "Reverted via GUI")
             else:
                 self._correction_log.add_answer_correction(
-                    student_id=student_id,
+                    student_id=correction_id,
                     question=col_name,
                     original=original_value,
                     corrected=new_value,
@@ -956,12 +983,15 @@ class ReviewPanelPage(QWidget):
         elif col_name == "StudentID":
             if new_value != original_value:
                 self._correction_log.add_student_id_correction(
-                    original_value, new_value, "Manual correction via GUI",
+                    original_id=original_value,
+                    corrected_id=new_value,
+                    reason="Manual correction via GUI",
+                    correction_key=correction_id,
                 )
         elif col_name in ("LastName", "FirstName"):
             if new_value != original_value:
                 self._correction_log.add_answer_correction(
-                    student_id=student_id,
+                    student_id=correction_id,
                     question=col_name,
                     original=original_value,
                     corrected=new_value,
@@ -969,7 +999,7 @@ class ReviewPanelPage(QWidget):
                 )
 
         # Update cell colour and sync
-        self._update_cell_style(row, col, new_value, original_value, col_name, student_id)
+        self._update_cell_style(row, col, new_value, original_value, col_name, correction_id)
         self._sync_corrections_to_logs()
         self._update_status()
 
@@ -1077,23 +1107,30 @@ class ReviewPanelPage(QWidget):
         if not row_data:
             return
 
+        page_id = _get_field(row_data, "Page", "page")
         student_id = _get_field(row_data, "StudentID", "student_id", "ID")
+        correction_id = f"page:{page_id}" if page_id else (student_id or "")
 
-        if not self._correction_log.has_correction(student_id, col_name):
-            return
+        # Check both page-based and legacy StudentID-based keys
+        correction_key = col_name
+        if not self._correction_log.has_correction(correction_id, correction_key):
+            # Try legacy key
+            if not student_id or not self._correction_log.has_correction(student_id, correction_key):
+                return
+            correction_id = student_id
 
         menu = QMenu(self)
         revert_action = menu.addAction("Revert to Original")
         action = menu.exec(self.spreadsheet.viewport().mapToGlobal(pos))
 
         if action == revert_action:
-            self._correction_log.revert(student_id, col_name, "Reverted via GUI")
+            self._correction_log.revert(correction_id, correction_key, "Reverted via GUI")
             # Refresh the cell to show original value
             original_value = row_data.get(col_name, "") or ""
             self._programmatic_update = True
             item.setText(original_value)
             self._programmatic_update = False
-            self._update_cell_style(row, col, original_value, original_value, col_name, student_id)
+            self._update_cell_style(row, col, original_value, original_value, col_name, correction_id)
             self._sync_corrections_to_logs()
             self._update_status()
 
@@ -1118,20 +1155,25 @@ class ReviewPanelPage(QWidget):
         # Update flag info / orphan suggestions
         flag_details = _get_field(row_data, "FlagDetails", "flagdetails")
         if "ID:orphan" in (flag_details or ""):
-            # Check if the orphan ID has already been corrected
+            # Check if the orphan ID has already been corrected.
+            # Use page-based key so blank/duplicate IDs resolve correctly.
             student_id = _get_field(row_data, "StudentID", "student_id", "ID") or ""
+            page_id = _get_field(row_data, "Page", "page")
+            correction_id = f"page:{page_id}" if page_id else student_id
             orphan_corrected = (
                 self._correction_log is not None
-                and self._correction_log.has_correction(student_id, "student_id")
+                and (self._correction_log.has_correction(correction_id, "student_id")
+                     or self._correction_log.has_correction(student_id, "student_id"))
             )
             if orphan_corrected:
                 # Look up what the ID was corrected to, so the teacher can
                 # see the mapping and undo it if needed.
                 effective = self._correction_log.get_effective_corrections()
-                corrected_id = effective.get(student_id, {}).get("student_id", "")
+                corr = effective.get(correction_id, {}) or effective.get(student_id, {})
+                corrected_id = corr.get("student_id", "")
                 self.flag_panel.show_corrected(
                     "CORRECTED",
-                    student_id=student_id,
+                    student_id=correction_id,
                     original_id=student_id,
                     corrected_id=corrected_id,
                 )
@@ -1272,10 +1314,24 @@ class ReviewPanelPage(QWidget):
             )
             return
 
+        # Derive a page-based correction key from the currently selected
+        # row so that blank/duplicate IDs don't collide.
+        correction_key = ""
+        row_idx = self._current_student_idx
+        if row_idx >= 0:
+            first_item = self.spreadsheet.item(row_idx, 0)
+            if first_item:
+                rd = first_item.data(Qt.ItemDataRole.UserRole)
+                if rd:
+                    page_id = _get_field(rd, "Page", "page")
+                    if page_id:
+                        correction_key = f"page:{page_id}"
+
         self._correction_log.add_student_id_correction(
             original_id=original_id,
             corrected_id=suggested_id,
             reason=f"Orphan match: {reason}",
+            correction_key=correction_key,
         )
 
         # Remove accepted ID from the absent pool
@@ -1291,8 +1347,20 @@ class ReviewPanelPage(QWidget):
         if self._correction_log is None:
             return
 
+        # Build the page-based correction key from the current row
+        revert_key = student_id
+        row_idx = self._current_student_idx
+        if row_idx >= 0:
+            first_item = self.spreadsheet.item(row_idx, 0)
+            if first_item:
+                rd = first_item.data(Qt.ItemDataRole.UserRole)
+                if rd:
+                    page_id = _get_field(rd, "Page", "page")
+                    if page_id:
+                        revert_key = f"page:{page_id}"
+
         # Revert the correction in the log (appends a REVERT entry)
-        self._correction_log.revert(student_id, "student_id", "Undone via GUI")
+        self._correction_log.revert(revert_key, "student_id", "Undone via GUI")
         self._sync_corrections_to_logs()
 
         # Rebuild the spreadsheet so the cell reverts to original styling

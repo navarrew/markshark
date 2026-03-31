@@ -362,24 +362,39 @@ def merge_corrections(
     df_ids_normalized = df[id_col].apply(_normalize_id) if id_col else pd.Series("", index=df.index)
 
     for _, correction in corrections.iterrows():
-        student_id_normalized = _normalize_id(correction['student_id'])
+        raw_sid = str(correction['student_id']).strip()
         question_str = str(correction['question']).strip().upper()
         new_value = str(correction['corrected_answer']).strip()
+
+        # Page-based correction keys use a "page:" prefix (e.g. "page:3").
+        # Strip the prefix and match directly against the Page column.
+        is_page_keyed = raw_sid.lower().startswith("page:")
+        if is_page_keyed:
+            page_number = raw_sid.split(":", 1)[1].strip()
+        student_id_normalized = _normalize_id(raw_sid) if not is_page_keyed else ""
+
+        _value_indices = set(df[_value_mask].index.tolist())
 
         # Special handling for ID corrections (orphan scans)
         if question_str == 'ID':
             # This is an ID correction - update the StudentID column
             new_id = new_value.upper() if new_value else ''
 
-            # Find the student row by their ORIGINAL (wrong) ID
-            student_mask = df_ids_normalized == student_id_normalized
-            _value_indices = set(df[_value_mask].index.tolist())
-            student_indices = [i for i in df[student_mask].index.tolist()
-                              if i != key_row_idx and i not in _value_indices]
+            # Find the student row — prefer page-based matching when the
+            # correction key uses the "page:" prefix.
+            student_indices = []
+            if is_page_keyed and page_col:
+                page_mask = df[page_col].astype(str).str.strip() == page_number
+                student_indices = [i for i in df[page_mask].index.tolist()
+                                   if i != key_row_idx and i not in _value_indices]
+            if not student_indices and not is_page_keyed:
+                student_mask = df_ids_normalized == student_id_normalized
+                student_indices = [i for i in df[student_mask].index.tolist()
+                                  if i != key_row_idx and i not in _value_indices]
 
             # Fallback: try matching by Page column (Simple Grade mode
             # stores the page number in the correction's student_id field).
-            if not student_indices and page_col:
+            if not student_indices and page_col and not is_page_keyed:
                 page_mask = df[page_col].astype(str).str.strip() == student_id_normalized
                 student_indices = [i for i in df[page_mask].index.tolist()
                                    if i != key_row_idx and i not in _value_indices]
@@ -424,15 +439,21 @@ def merge_corrections(
                   f"(available: {item_cols[:5]}...)", file=sys.stderr)
             continue
 
-        # Find matching student rows (excluding KEY and VALUE rows)
-        student_mask = df_ids_normalized == student_id_normalized
-        _value_indices = set(df[_value_mask].index.tolist())
-        student_indices = [i for i in df[student_mask].index.tolist()
-                          if i != key_row_idx and i not in _value_indices]
+        # Find matching student rows (excluding KEY and VALUE rows).
+        # Prefer page-based matching when the correction uses "page:" key.
+        student_indices = []
+        if is_page_keyed and page_col:
+            page_mask = df[page_col].astype(str).str.strip() == page_number
+            student_indices = [i for i in df[page_mask].index.tolist()
+                               if i != key_row_idx and i not in _value_indices]
+        if not student_indices and not is_page_keyed:
+            student_mask = df_ids_normalized == student_id_normalized
+            student_indices = [i for i in df[student_mask].index.tolist()
+                              if i != key_row_idx and i not in _value_indices]
 
         # Fallback: try matching by Page column (Simple Grade mode
         # stores the page number in the correction's student_id field).
-        if not student_indices and page_col:
+        if not student_indices and page_col and not is_page_keyed:
             page_mask = df[page_col].astype(str).str.strip() == student_id_normalized
             student_indices = [i for i in df[page_mask].index.tolist()
                                if i != key_row_idx and i not in _value_indices]

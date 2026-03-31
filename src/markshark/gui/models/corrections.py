@@ -211,23 +211,31 @@ class CorrectionLog:
         self,
         original_id: str,
         corrected_id: str,
-        reason: str = ""
+        reason: str = "",
+        correction_key: str = ""
     ) -> Correction:
         """
         Correct a student's ID.
 
         Args:
-            original_id: Original detected ID
+            original_id: Original detected ID (shown in logs)
             corrected_id: Corrected ID
             reason: Optional reason for correction
+            correction_key: Lookup key for this correction.  When
+                provided, this is used as the student_id in the
+                correction record instead of original_id.  Allows
+                page-based keying (e.g. "page:3") so that two
+                students with the same original ID are corrected
+                independently.
 
         Returns:
             The created Correction object
         """
+        key = correction_key or original_id
         correction = Correction(
             timestamp=datetime.now().isoformat(),
             correction_type="STUDENT_ID",
-            student_id=original_id,
+            student_id=key,
             field="student_id",
             original_value=original_id,
             corrected_value=corrected_id,
