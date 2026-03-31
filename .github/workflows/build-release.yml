@@ -1,0 +1,126 @@
+# Build standalone MarkShark apps for macOS and Windows, then create
+# a GitHub Release with both attached.
+#
+# Triggered by pushing a version tag:
+#   git tag v1.2.1
+#   git push origin --tags
+#
+# The tag name (e.g. "v1.2.1") is used as the release version.
+
+name: Build & Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write  # needed to create releases and upload assets
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  # ─── macOS ───────────────────────────────────────────────────────
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build macOS app
+        env:
+          MARKSHARK_VERSION: ${{ steps.version.outputs.version }}
+        run: pyinstaller MarkShark.spec
+
+      - name: Zip the .app bundle
+        run: |
+          cd dist
+          zip -r ../MarkShark-${{ steps.version.outputs.version }}-macOS.zip MarkShark.app
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: MarkShark-${{ steps.version.outputs.version }}-macOS.zip
+
+  # ─── Windows ─────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build Windows app
+        env:
+          MARKSHARK_VERSION: ${{ steps.version.outputs.version }}
+        run: pyinstaller MarkShark-win.spec
+
+      - name: Zip the Windows bundle
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/MarkShark -DestinationPath MarkShark-${{ steps.version.outputs.version }}-Windows.zip
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: MarkShark-${{ steps.version.outputs.version }}-Windows.zip
+
+  # ─── Create GitHub Release ───────────────────────────────────────
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: MarkShark v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            MarkShark-${{ steps.version.outputs.version }}-macOS.zip
+            MarkShark-${{ steps.version.outputs.version }}-Windows.zip

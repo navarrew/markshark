@@ -1,12 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec file for MarkShark GUI.
+PyInstaller spec file for MarkShark GUI — Windows build.
 
 Build with:
-    pyinstaller MarkShark.spec
+    pyinstaller MarkShark-win.spec
 
-Produces:  dist/MarkShark.app  (macOS)
-           dist/MarkShark/     (directory bundle)
+Produces:  dist/MarkShark/MarkShark.exe
 """
 
 import os
@@ -112,13 +111,13 @@ exe = EXE(
     pyz,
     a.scripts,
     [],
-    icon='markshark.icns',
+    icon="markshark.ico",
     exclude_binaries=True,
     name="MarkShark",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,  # UPX disabled — can cause false positives with Windows Defender
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -131,18 +130,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name="MarkShark",
-)
-app = BUNDLE(
-    coll,
-    name="MarkShark.app",
-    icon="markshark.icns",
-    bundle_identifier="io.markshark.app",
-    info_plist={
-        "CFBundleDisplayName": "MarkShark",
-        "CFBundleShortVersionString": VERSION,
-        "NSHighResolutionCapable": True,
-    },
 )

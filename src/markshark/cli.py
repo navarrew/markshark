@@ -32,11 +32,30 @@ from .mapviewer_core import overlay_bublmap
 from .score_core import score_pdf
 # stats_tools imported by report command when needed
 
+def _version_callback(value: bool):
+    """Print version and exit when --version is passed."""
+    if value:
+        from markshark import __version__
+        rprint(f"MarkShark {__version__}")
+        raise typer.Exit()
+
+
 app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
-    help="MarkShark: align, mapviewer, score, and analyze bubble-sheet exams.",
 )
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        False, "--version", "-V",
+        help="Show version and exit.",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+):
+    """MarkShark: align, mapviewer, score, and analyze bubble-sheet exams."""
 
 # ------------------------------- QUICK-GRADE -------------------------------
 @app.command()
