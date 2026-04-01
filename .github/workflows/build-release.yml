@@ -22,11 +22,10 @@ env:
 
 jobs:
   # ─── macOS ───────────────────────────────────────────────────────
-  # Use macos-13 (Intel) so the build runs on both Intel and Apple
-  # Silicon Macs (via Rosetta).  macos-latest is ARM-only and won't
-  # run on older Intel machines.
+  # Builds on Apple Silicon (macos-latest).  Intel Mac users can
+  # install via pip instead.  GitHub retired Intel macOS runners.
   build-macos:
-    runs-on: macos-13
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
