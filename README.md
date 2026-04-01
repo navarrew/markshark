@@ -49,6 +49,7 @@ If you can print an exam and scan it, you should be able to grade it quickly and
 ---
 
 ## Installation
+MarkShark is currently available via 'pip' (Python package installer) and as pre-built standalone applications for Mac and PC.
 
 ```bash
 pip install markshark
