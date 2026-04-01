@@ -18,11 +18,15 @@ permissions:
 
 env:
   PYTHON_VERSION: '3.12'
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ─── macOS ───────────────────────────────────────────────────────
+  # Use macos-13 (Intel) so the build runs on both Intel and Apple
+  # Silicon Macs (via Rosetta).  macos-latest is ARM-only and won't
+  # run on older Intel machines.
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
 
