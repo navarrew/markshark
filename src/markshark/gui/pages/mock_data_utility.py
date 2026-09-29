@@ -2,12 +2,12 @@
 Mock Data Utility - generate synthetic student datasets for any template.
 
 Wraps markshark.mock_dataset.generate_mock_dataset() with a PySide6 GUI
-that mirrors the Streamlit version's capabilities: template selection,
-configurable parameters (students, DPI, darkness, blank/multi rates),
-threaded generation, and results display.
+that offers template selection, configurable parameters (students, DPI,
+darkness, blank/multi rates), threaded generation, and results display.
 """
 
 from pathlib import Path
+from html import escape as _html_escape  # paths shown in rich-text labels
 from typing import Optional, List, Dict
 
 from PySide6.QtCore import Qt, QThread, Signal
@@ -551,8 +551,8 @@ class MockDataPage(QWidget):
         ]:
             path = results.get(key, "")
             if path:
-                lines.append(f"<b>{label}:</b> {Path(path).name}")
-        lines.append(f"<br><b>Location:</b> {Path(results.get('scans', '')).parent}")
+                lines.append(f"<b>{label}:</b> {_html_escape(Path(path).name)}")
+        lines.append(f"<br><b>Location:</b> {_html_escape(str(Path(results.get('scans', '')).parent))}")
 
         absent = self.absent_spin.value()
         if absent > 0:

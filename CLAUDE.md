@@ -1,7 +1,7 @@
 # MarkShark - Claude Code Project Guide
 
 ## Project Overview
-MarkShark is a bubble sheet grading system that processes scanned answer sheets, scores them against answer keys, and generates reports. It supports multiple interfaces: CLI, Streamlit web app, and PySide6 desktop GUI.
+MarkShark is a bubble sheet grading system that processes scanned answer sheets, scores them against answer keys, and generates reports. It supports two interfaces: a CLI and a PySide6 desktop GUI.
 
 ## Coding Philosophy — Long-Term Maintenance, Cross-Platform
 
@@ -63,7 +63,6 @@ The package root and `tools/` directory have distinct roles:
 | `defaults.py` | Global config and scoring constants |
 | `template_manager.py` | Core domain object — templates are central to the app |
 | `mock_dataset.py` | Synthetic dataset generator for testing/demos |
-| `app_streamlit.py` | Streamlit web interface |
 | `gui/` | PySide6 desktop application (see GUI Structure below) |
 
 **`tools/`** — reusable helper libraries with no CLI entry points:
@@ -73,7 +72,8 @@ The package root and `tools/` directory have distinct roles:
 | `align_tools.py` | `align_core` | Image processing, ArUco detection, homography |
 | `score_tools.py` | `score_core` | Bubble ROI scoring, grid centers, version detection |
 | `key_parser.py` | `score_core`, `score_tools`, GUI key builder | Answer key parsing (text/CSV/Excel), scoring logic |
-| `project_utils.py` | GUI pages | Project directory structure, archiving, metadata |
+| `project_utils.py` | GUI pages | Project directory structure, archiving, metadata, `sanitize_project_name()` (the one folder-name cleaner) |
+| `safe_output.py` | `score_core`, `report_tools`, `stats_tools`, GUI | Formula-injection protection for every CSV/Excel file we write |
 | `report_tools.py` | CLI, GUI | Excel report generation, item analysis |
 | `stats_tools.py` | `report_tools` | Statistics computation |
 | `bubblemap_io.py` | Multiple | Bubble sheet template I/O (YAML ↔ `Bubblemap`) |
@@ -155,7 +155,10 @@ gui/
 3. **Never copy the run-button stylesheet literal** into a new file. Import `RUN_BUTTON_STYLE`.
 4. **When copying bundled files** (templates, assets) always use `safe_copy_file()` so macOS hidden-flag issues don't resurface.
 5. **If a new pattern appears in 2+ pages**, extract it to `utils.py` proactively rather than leaving the duplication for later.
-6. **Import style**: Use lazy (in-method) imports for functions like `from ..utils import open_file_or_folder` to avoid circular-import risk. Use module-level imports for constants like `RUN_BUTTON_STYLE`.
+6. **Never write CSV or Excel files without formula protection.** Student names come from roster files we did not create, and a name like `=HYPERLINK(...)` runs as a formula when opened in Excel. Use `neutralize_csv_row/dict/dataframe` (CSV) or `force_formulas_to_text(wb)` (openpyxl, just before `save`) from `tools/safe_output.py`.
+7. **Never build a folder name by hand.** Call `sanitize_project_name()` from `tools/project_utils.py`; it blocks `..`/slashes and Windows-reserved names (`CON`, `AUX`, ...). It returns `""` when nothing usable is left, so check for that.
+8. **Escape text before putting it in a rich-text (HTML) Qt label.** Names, paths, and template descriptions can contain `<`. Use `html.escape()`.
+9. **Import style**: Use lazy (in-method) imports for functions like `from ..utils import open_file_or_folder` to avoid circular-import risk. Use module-level imports for constants like `RUN_BUTTON_STYLE`.
 
 ## Terminology: UI vs Code
 
@@ -213,6 +216,9 @@ This branch (`feature/gui-simplified-csv`) focuses on:
 
 ## Testing
 ```bash
+# Unit tests (formula protection, folder-name cleaning); needs pytest, openpyxl, pandas
+python -m pytest tests
+
 # Run scoring
 markshark score aligned.pdf --bublmap template.yaml --key-txt key.txt --out-csv results.csv
 

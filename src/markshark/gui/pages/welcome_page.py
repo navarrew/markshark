@@ -6,6 +6,7 @@ recently opened projects for easy access.
 """
 
 from pathlib import Path
+from html import escape as _html_escape  # names/paths shown in rich-text labels
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCursor, QFontDatabase, QPixmap
@@ -192,13 +193,13 @@ class _TemplatePicker(QDialog):
         t = self._templates[row]
         self._selected_template = t
 
-        parts = [f"<b>{t.display_name}</b>"]
+        parts = [f"<b>{_html_escape(str(t.display_name))}</b>"]
         if t.description:
-            parts.append(t.description)
+            parts.append(_html_escape(str(t.description)))
         if t.num_questions:
             parts.append(f"Questions: {t.num_questions}")
         if t.choices_label:
-            parts.append(f"Choices: {t.choices_label}")
+            parts.append(f"Choices: {_html_escape(str(t.choices_label))}")
         if t.num_pages:
             parts.append(f"Pages: {t.num_pages}")
 
@@ -252,12 +253,12 @@ class _TemplatePicker(QDialog):
                 safe_copy_file(pdf_path, save_path)
                 self.details_label.setText(
                     self.details_label.text()
-                    + f"<br><span style='color: green;'>Saved to {save_path}</span>"
+                    + f"<br><span style='color: green;'>Saved to {_html_escape(str(save_path))}</span>"
                 )
             except Exception as e:
                 self.details_label.setText(
                     self.details_label.text()
-                    + f"<br><span style='color: red;'>Error: {e}</span>"
+                    + f"<br><span style='color: red;'>Error: {_html_escape(str(e))}</span>"
                 )
 
 
@@ -433,11 +434,11 @@ class _TutorialDialog(QDialog):
         try:
             safe_copy_file(source, save_path)
             self.status_label.setText(
-                f"<span style='color: green;'>Saved to {save_path}</span>"
+                f"<span style='color: green;'>Saved to {_html_escape(str(save_path))}</span>"
             )
         except Exception as e:
             self.status_label.setText(
-                f"<span style='color: red;'>Error: {e}</span>"
+                f"<span style='color: red;'>Error: {_html_escape(str(e))}</span>"
             )
 
     def _on_download_pdf(self):
@@ -979,13 +980,13 @@ class WelcomePage(QWidget):
         # Course name
         name = course.get("name", "Unnamed")
         if missing:
-            name_label = QLabel(f"\u26A0 <b>{name}</b>")
+            name_label = QLabel(f"\u26A0 <b>{_html_escape(str(name))}</b>")
             name_label.setToolTip(
                 "Course folder not found — it may have been moved or renamed."
             )
             name_label.setStyleSheet("font-size: 13px; color: #b91c1c;")
         else:
-            name_label = QLabel(f"<b>{name}</b>")
+            name_label = QLabel(f"<b>{_html_escape(str(name))}</b>")
             name_label.setStyleSheet("font-size: 13px; color: #1a1a1a;")
         name_label.setFixedWidth(170)
         row_layout.addWidget(name_label)
@@ -1158,11 +1159,11 @@ class WelcomePage(QWidget):
         # Project name (bold), with warning flag if missing
         name = proj.get("name", "Unnamed")
         if missing:
-            name_label = QLabel(f"\u26A0 <b>{name}</b>")
+            name_label = QLabel(f"\u26A0 <b>{_html_escape(str(name))}</b>")
             name_label.setToolTip("Assessment folder not found — it may have been moved or deleted.")
             name_label.setStyleSheet("font-size: 13px; color: #b91c1c;")
         else:
-            name_label = QLabel(f"<b>{name}</b>")
+            name_label = QLabel(f"<b>{_html_escape(str(name))}</b>")
             name_label.setStyleSheet("font-size: 13px; color: #1a1a1a;")
         name_label.setFixedWidth(170)
         row_layout.addWidget(name_label)

@@ -98,7 +98,6 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        "streamlit",
         "tkinter",
         "unittest",
         "test",

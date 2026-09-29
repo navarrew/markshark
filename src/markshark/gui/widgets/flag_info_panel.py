@@ -8,6 +8,7 @@ Two modes:
 """
 
 from typing import Dict, List, Optional
+from html import escape as _html_escape  # names/paths shown in rich-text labels
 
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import (
@@ -258,7 +259,11 @@ class FlagInfoPanel(QWidget):
         btn.clicked.connect(_on_accept)
         row.addWidget(btn)
 
-        label = QLabel(f"<b>{suggested_id}</b> — {name}  <i>({reason})</i>")
+        # Names and IDs come from the roster file, so escape them before Qt renders them as HTML.
+        label = QLabel(
+            f"<b>{_html_escape(str(suggested_id))}</b> — {_html_escape(str(name))}"
+            f"  <i>({_html_escape(str(reason))})</i>"
+        )
         label.setTextFormat(Qt.TextFormat.RichText)
         row.addWidget(label, 1)
 

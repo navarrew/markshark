@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
 from ..widgets import PageHeader, PDFPreview, ProjectSelector, FlagInfoPanel
 from ..models import CorrectionLog
 from ..utils import RUN_BUTTON_STYLE
+from markshark.tools.safe_output import neutralize_csv_dict
 
 # Lazy-loaded roster helpers (avoid import errors if score_core unavailable)
 try:
@@ -1739,7 +1740,8 @@ class ReviewPanelPage(QWidget):
                     f.write(f"# Exported: {Path(file_path).name}\n")
                     writer = csv.DictWriter(f, fieldnames=fieldnames)
                     writer.writeheader()
-                    writer.writerows(final_data)
+                    # Names may come from a roster file: keep them from running as formulas.
+                    writer.writerows(neutralize_csv_dict(r) for r in final_data)
 
                 self.status_label.setText(f"Exported to: {file_path}")
 

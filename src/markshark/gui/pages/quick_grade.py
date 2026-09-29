@@ -1,7 +1,7 @@
 """
 Grader page - the main grading workflow.
 
-Mirrors the Streamlit "Quick Grade" functionality:
+Workflow steps:
 1. Select template
 2. Upload scans, key, roster
 3. Configure options

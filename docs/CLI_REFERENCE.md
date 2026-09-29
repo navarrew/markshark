@@ -5,7 +5,7 @@ Generated from the repository `cli.py` and `defaults.py` as of 2026-01-26.
 ## Installed entry points
 
 - `markshark` -> `markshark.cli:app_main`
-- `markshark-streamlit` -> `markshark.streamlit_launcher:main` (Streamlit web interface)
+- `markshark-gui` -> `markshark.gui.app:main` (Native PySide6 desktop GUI)
 - `python -m markshark.gui` (Native PySide6 desktop GUI)
 
 ## Global help
@@ -201,17 +201,3 @@ bubblemap YAML.
 - `--annotate-all-cells` sets `annotate_all_cells` (bool). Default: False. Draw every bubble in each row
 - `--label-density` sets `label_density` (bool). Default: False. Overlay % fill text
 - `--auto-thresh/--no-auto-thresh` sets `auto_thresh` (bool). Default: True. Auto-calibrate threshold
-
-## `streamlit`
-
-Launch the Streamlit web interface.
-
-For the native desktop GUI, use: `python -m markshark.gui`
-
-**Usage**
-
-`markshark streamlit [OPTIONS]`
-
-**Options**
-- `--port` sets `port` (int). Default: auto-detected. Port to serve Streamlit web interface
-- `--headless` Run without opening a browser (for remote servers)

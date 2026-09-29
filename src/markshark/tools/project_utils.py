@@ -31,39 +31,65 @@ from datetime import datetime
 from typing import Optional, Dict, List
 
 
+# Names Windows refuses to use for a file or folder, in any capitalisation and
+# even with an extension (so "aux.txt" is also refused).  Creating a folder
+# called "CON" on Windows either fails or produces something that cannot be
+# opened or deleted normally, so we avoid these names on every platform to keep
+# course folders portable between Mac and Windows computers.
+_WINDOWS_RESERVED_NAMES = frozenset(
+    ["CON", "PRN", "AUX", "NUL"]
+    + [f"COM{i}" for i in range(1, 10)]
+    + [f"LPT{i}" for i in range(1, 10)]
+)
+
+# Windows stops working with paths longer than about 260 characters, and the
+# course folder path plus subfolders and file names all count toward that.
+_MAX_FOLDER_NAME_LENGTH = 100
+
+
 def sanitize_project_name(name: str) -> str:
     """
-    Sanitize project name for filesystem safety.
+    Turn text typed by a user into a safe folder name for a course or assessment.
 
-    Converts spaces to underscores, removes special characters,
-    and ensures the name is filesystem-safe.
+    This is the single place folder names are cleaned.  The New Assessment and
+    New Course dialogs all call it, so they behave the same way.
+
+    Rules:
+      - Letters, numbers, hyphens, underscores and spaces are kept.
+      - Every other character (slashes, dots, colons, quotes, ...) becomes ``_``.
+        Slashes and dots are what would let a name such as ``../../x`` point
+        outside the course folder, so none can survive.
+      - Leading and trailing spaces are removed.
+      - Names Windows reserves (CON, PRN, AUX, NUL, COM1-9, LPT1-9) get a
+        trailing ``_`` so the folder can be created on Windows too.
+      - Names are cut to 100 characters.
 
     Args:
-        name: Raw project name from user input
+        name: Raw text from user input
 
     Returns:
-        Sanitized project name suitable for directory names
+        A folder-safe name, or an empty string if nothing usable is left.
+        Callers must check for the empty string and ask the user again.
 
     Examples:
-        >>> sanitize_project_name("FINAL EXAM BIO101 2025")
-        'FINAL_EXAM_BIO101_2025'
+        >>> sanitize_project_name("Midterm 1")
+        'Midterm 1'
         >>> sanitize_project_name("Test: Spring/Fall")
-        'Test_Spring_Fall'
+        'Test_ Spring_Fall'
+        >>> sanitize_project_name("../../etc")
+        '______etc'
+        >>> sanitize_project_name("CON")
+        'CON_'
+        >>> sanitize_project_name("   ")
+        ''
     """
-    # Replace spaces with underscores
-    name = name.replace(" ", "_")
+    safe = "".join(c if c.isalnum() or c in "-_ " else "_" for c in name)
+    safe = safe.strip()[:_MAX_FOLDER_NAME_LENGTH].strip()
 
-    # Remove or replace problematic characters
-    # Keep: letters, numbers, underscores, hyphens, periods
-    name = re.sub(r'[^\w\-.]', '_', name)
+    if safe.upper() in _WINDOWS_RESERVED_NAMES:
+        safe += "_"
 
-    # Remove leading/trailing underscores or periods
-    name = name.strip("_.")
-
-    # Collapse multiple underscores
-    name = re.sub(r'_+', '_', name)
-
-    return name
+    return safe
 
 
 def create_project_structure(base_dir: Path, project_name: str) -> Path:

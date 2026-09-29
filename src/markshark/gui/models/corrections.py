@@ -18,6 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Iterator
 
+from markshark.tools.safe_output import neutralize_csv_row
+
 
 @dataclass
 class Correction:
@@ -152,7 +154,9 @@ class CorrectionLog:
         # Append the correction
         with open(self.path, "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow([
+            # The reason is free text typed by the teacher and the IDs may come
+            # from a roster, so guard against spreadsheet formulas.
+            writer.writerow(neutralize_csv_row([
                 correction.timestamp,
                 correction.correction_type,
                 correction.student_id,
@@ -160,7 +164,7 @@ class CorrectionLog:
                 correction.original_value,
                 correction.corrected_value,
                 correction.reason
-            ])
+            ]))
 
         # Update in-memory cache
         if self._corrections is not None:

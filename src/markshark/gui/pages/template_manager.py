@@ -11,6 +11,7 @@ Features:
 """
 
 from pathlib import Path
+from html import escape as _html_escape  # template text is user-supplied YAML
 from typing import Optional, List
 
 from PySide6.QtCore import Qt, Signal
@@ -387,33 +388,33 @@ class TemplateManagerPage(QWidget):
 
         # Line 1: ID + validation status
         valid_text = "<span style='color: green;'>Valid</span>" if is_valid else "<span style='color: red;'>Invalid</span>"
-        details.append(f"<b>ID:</b> {template.template_id} &nbsp;&nbsp;&nbsp; {valid_text}")
+        details.append(f"<b>ID:</b> {_html_escape(str(template.template_id))} &nbsp;&nbsp;&nbsp; {valid_text}")
 
         # Show errors if invalid
         if not is_valid and errors:
-            details.append("<span style='color: red; font-size: 10px;'>" + " | ".join(errors) + "</span>")
+            details.append("<span style='color: red; font-size: 10px;'>" + " | ".join(_html_escape(str(e)) for e in errors) + "</span>")
 
         # Line 2: Description (if present)
         if template.description:
-            details.append(f"<b>Description:</b> {template.description}")
+            details.append(f"<b>Description:</b> {_html_escape(str(template.description))}")
 
         # Line 3: Pages, Questions, Choices on same line
         pqc = []
         if template.num_pages:
-            pqc.append(f"<b>Pages:</b> {template.num_pages}")
+            pqc.append(f"<b>Pages:</b> {_html_escape(str(template.num_pages))}")
         if template.num_questions:
-            pqc.append(f"<b>Questions:</b> {template.num_questions}")
+            pqc.append(f"<b>Questions:</b> {_html_escape(str(template.num_questions))}")
         if template.choices_label:
-            pqc.append(f"<b>Choices:</b> {template.choices_label}")
+            pqc.append(f"<b>Choices:</b> {_html_escape(str(template.choices_label))}")
         elif template.num_choices:
-            pqc.append(f"<b>Choices:</b> {template.num_choices}")
+            pqc.append(f"<b>Choices:</b> {_html_escape(str(template.num_choices))}")
         if pqc:
             details.append(" &nbsp;&nbsp; ".join(pqc))
 
         # Line 4: File names on same line
         pdf_name = template.template_pdf_path.name if template.template_pdf_path else 'N/A'
         yaml_name = template.bubblemap_yaml_path.name if template.bubblemap_yaml_path else 'N/A'
-        details.append(f"<b>PDF:</b> {pdf_name} &nbsp;&nbsp; <b>Bubblemap:</b> {yaml_name}")
+        details.append(f"<b>PDF:</b> {_html_escape(str(pdf_name))} &nbsp;&nbsp; <b>Bubblemap:</b> {_html_escape(str(yaml_name))}")
 
         self.details_label.setText("<br>".join(details))
 

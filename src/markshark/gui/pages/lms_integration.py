@@ -37,6 +37,10 @@ from PySide6.QtWidgets import (
 from ..widgets import FileSelector, PageHeader
 from ..models.lms_filter_registry import LmsFilterRegistry
 from ..utils import RUN_BUTTON_STYLE as _RUN_BTN_STYLE
+from markshark.tools.safe_output import (
+    force_formulas_to_text,
+    neutralize_csv_row,
+)
 
 _NONE_LABEL = "(none)"
 _ADD_NEW_COL = "\u2795 Add a new column\u2026"
@@ -543,7 +547,7 @@ class LmsIntegrationPage(QWidget):
                 writer = csv.writer(f)
                 writer.writerow(["StudentID", "LastName", "FirstName"])
                 for sid, last, first in roster_rows:
-                    writer.writerow([sid, last, first])
+                    writer.writerow(neutralize_csv_row([sid, last, first]))
             self.import_status.setText(f"Roster exported — {len(roster_rows)} students.")
         except Exception as e:
             QMessageBox.critical(self, "Write Error", f"Failed to write roster:\n{e}")
@@ -1075,8 +1079,10 @@ class LmsIntegrationPage(QWidget):
         """Write a CSV file."""
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f, delimiter=delimiter)
-            writer.writerow(headers)
-            writer.writerows(rows)
+            # LMS files are written back out unchanged except for formula
+            # protection (see tools/safe_output.py).
+            writer.writerow(neutralize_csv_row(headers))
+            writer.writerows(neutralize_csv_row(r) for r in rows)
 
     @staticmethod
     def _write_xlsx(path: str, headers: list, rows: list):
@@ -1086,4 +1092,5 @@ class LmsIntegrationPage(QWidget):
         ws.append(headers)
         for row in rows:
             ws.append(row)
+        force_formulas_to_text(wb)  # LMS/roster text must never run as formulas
         wb.save(path)

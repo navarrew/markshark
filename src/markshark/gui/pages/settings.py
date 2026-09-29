@@ -7,6 +7,7 @@ save (to ~/.markshark/settings.json), and reset back to factory defaults.
 """
 
 from pathlib import Path
+from html import escape as _html_escape  # paths shown in rich-text labels
 from PySide6.QtCore import Qt
 
 from ..models.settings_store import SettingsStore
@@ -211,13 +212,13 @@ class SettingsPage(QWidget):
             templates_path = str(TemplateManager.get_default_templates_dir())
         except Exception:
             templates_path = "(could not detect)"
-        templates_label = QLabel(f"Templates directory:  <code>{templates_path}</code>")
+        templates_label = QLabel(f"Templates directory:  <code>{_html_escape(templates_path)}</code>")
         templates_label.setTextFormat(Qt.TextFormat.RichText)
         templates_label.setStyleSheet("color: #fff; font-size: 11px; padding: 2px 0;")
         prefs_layout.addWidget(templates_label)
 
         config_dir = Path.home() / ".markshark"
-        config_label = QLabel(f"Config data location:  <code>{config_dir}</code>")
+        config_label = QLabel(f"Config data location:  <code>{_html_escape(str(config_dir))}</code>")
         config_label.setTextFormat(Qt.TextFormat.RichText)
         config_label.setStyleSheet("color: #fff; font-size: 11px; padding: 2px 0;")
         prefs_layout.addWidget(config_label)

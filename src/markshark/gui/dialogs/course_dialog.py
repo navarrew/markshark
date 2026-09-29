@@ -184,9 +184,8 @@ class CourseDialog(QDialog):
             return
 
         # Sanitize the subfolder name
-        safe = "".join(
-            c if c.isalnum() or c in "-_ " else "_" for c in subfolder
-        ).strip()
+        from markshark.tools.project_utils import sanitize_project_name
+        safe = sanitize_project_name(subfolder)
         if not safe:
             QMessageBox.warning(
                 self, "Invalid Name",

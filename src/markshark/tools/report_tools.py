@@ -35,6 +35,7 @@ except ImportError:
         "Install it with: pip install rapidfuzz"
     )
 
+from .safe_output import force_formulas_to_text, neutralize_csv_dataframe
 from .stats_tools import (
     detect_item_columns,
     detect_key_row_index,
@@ -613,13 +614,13 @@ def apply_corrections_to_csv(
     if corrections.empty:
         print("[corrections] No corrections found in XLSX", file=sys.stderr)
         # Still write the output (a clean copy)
-        df.to_csv(output_csv, index=False)
+        neutralize_csv_dataframe(df).to_csv(output_csv, index=False)
         return 0
 
     df, corrections_applied = merge_corrections(df, corrections, item_cols, key_row_idx, roster=roster)
 
-    # Write corrected CSV
-    df.to_csv(output_csv, index=False)
+    # Write corrected CSV (names come from a roster: guard against formulas)
+    neutralize_csv_dataframe(df).to_csv(output_csv, index=False)
     print(f"[corrections] Wrote corrected CSV with {corrections_applied} corrections to {output_csv}", file=sys.stderr)
 
     return corrections_applied
@@ -1200,6 +1201,7 @@ def generate_report(
         create_class_scores_tab(wb, df, item_cols, k)
         create_answer_key_tab(wb, item_cols, versions, version_stats)
 
+        force_formulas_to_text(wb)  # roster names must never run as formulas
         wb.save(out_xlsx)
         print(f"Simple Grade report generated: {out_xlsx}")
         return
@@ -1495,7 +1497,8 @@ def generate_report(
         scoring_params=scoring_params,
     )
 
-    # Save workbook
+    # Save workbook (roster names must never run as formulas; see safe_output.py)
+    force_formulas_to_text(wb)
     wb.save(out_xlsx)
     print(f"Excel report generated: {out_xlsx}")
 

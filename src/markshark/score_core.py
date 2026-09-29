@@ -37,6 +37,7 @@ from .defaults import (
 
 from .tools.bubblemap_io import load_bublmap, Bubblemap, GridLayout, PageLayout, OutputZone
 from .tools import io_pages as IO
+from .tools.safe_output import neutralize_csv_row
 from .tools.score_tools import (
     process_page_all,
     load_key_txt,
@@ -1872,7 +1873,9 @@ def score_pdf(
                 else:
                     row[flag_details_idx] = "ID:orphan"
 
-            writer.writerow(row)
+            # Names come from the roster file, so guard against spreadsheet formulas
+            # (see tools/safe_output.py).  Numbers and answer letters are unchanged.
+            writer.writerow(neutralize_csv_row(row))
 
     # Print summary
     n_students = len(all_student_data)

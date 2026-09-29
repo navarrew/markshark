@@ -25,6 +25,8 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
+from .safe_output import neutralize_csv_dataframe
+
 # Matplotlib is only used if --plots-dir is provided
 try:
     import matplotlib.pyplot as plt
@@ -390,7 +392,10 @@ def run(input_csv: str,
     df_out[num_cols] = df_out[num_cols].round(decimals)
 
     float_fmt = f"%.{decimals}f"
-    df_out.to_csv(output_csv, index=False, float_format=float_fmt, encoding="utf-8-sig")
+    # df_out still carries student names from the roster, so guard against formulas.
+    neutralize_csv_dataframe(df_out).to_csv(
+        output_csv, index=False, float_format=float_fmt, encoding="utf-8-sig"
+    )
 
     # Exam-level reliability
     k = len(item_cols)

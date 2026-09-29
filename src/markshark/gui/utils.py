@@ -156,9 +156,8 @@ def create_new_project(parent_widget=None) -> Path | None:
         return None
 
     # Sanitize
-    safe_name = "".join(
-        c if c.isalnum() or c in "-_ " else "_" for c in name
-    ).strip()
+    from markshark.tools.project_utils import sanitize_project_name
+    safe_name = sanitize_project_name(name)
     if not safe_name:
         QMessageBox.warning(
             parent_widget, "Invalid Name",

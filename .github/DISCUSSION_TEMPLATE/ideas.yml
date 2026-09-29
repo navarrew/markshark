@@ -34,7 +34,7 @@ body:
         - alignment
         - bubblemap
         - keys
-        - UX / Streamlit
+        - UX / desktop app
         - packaging / install
         - docs
     validations:
