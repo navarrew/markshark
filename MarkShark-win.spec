@@ -101,6 +101,12 @@ a = Analysis(
         "tkinter",
         "unittest",
         "test",
+        # MarkShark uses PySide6 only.  PyInstaller aborts the build if it
+        # finds a second Qt toolkit in the build environment (common in
+        # Anaconda, which ships PyQt5), so exclude the others explicitly.
+        "PyQt5",
+        "PyQt6",
+        "PySide2",
     ],
     noarchive=False,
     optimize=0,
