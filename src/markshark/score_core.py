@@ -975,6 +975,28 @@ def _annotate_output_zone(
 # Main grading entry point
 # ----------------------------
 
+def _find_student_corrections(corrections, page_label, student_id):
+    """Return the corrections dict for one scanned sheet, or {} if none.
+
+    Why two keys: the Review panel files each correction under the sheet's
+    page label (for example "page:3" for a one-page sheet, or "page:3-4" for
+    a two-page sheet), because page numbers are unique per scan while student
+    IDs can be duplicated or misread.  Older corrections files were filed
+    under the student ID instead, so we fall back to that to keep them working.
+
+    page_label must match the CSV "Page" column exactly, since that is the
+    value the Review panel reads when it builds the key.
+    What would break: building page_label differently from the CSV Page
+    column makes every correction silently miss its sheet.
+    """
+    if not corrections:
+        return {}
+    by_page = corrections.get(f"page:{page_label}")
+    if by_page:
+        return by_page
+    return corrections.get(student_id, {})
+
+
 def score_pdf(
     input_path: str,
     bublmap_path: str,
@@ -1233,6 +1255,12 @@ def score_pdf(
                 # Get all pages for this student
                 start_page_idx = student_idx * pages_per_student
                 student_pages = pages[start_page_idx:start_page_idx + pages_per_student]
+                # Same text the CSV 'Page' column gets, because the Review panel
+                # files corrections under it (e.g. 'page:3' or 'page:3-4').
+                student_page_label = (
+                    f"{start_page_idx + 1}-{start_page_idx + pages_per_student}"
+                    if pages_per_student > 1 else str(start_page_idx + 1)
+                )
                 
                 # Process each page and collect data
                 all_answers = []
@@ -1292,7 +1320,7 @@ def score_pdf(
                 # also picks up corrected values when it slices per-page answers.
                 if corrections:
                     sid = student_info.get("student_id", "")
-                    student_corrections = corrections.get(sid, {})
+                    student_corrections = _find_student_corrections(corrections, student_page_label, sid)
                     # StudentID correction — update info so roster/output zone use the corrected ID
                     if "student_id" in student_corrections:
                         student_info["student_id"] = student_corrections["student_id"]
@@ -1472,7 +1500,7 @@ def score_pdf(
                         page_corrected = set()
                         if corrections:
                             sid = student_info.get("student_id", "")
-                            student_corrections = corrections.get(sid, {})
+                            student_corrections = _find_student_corrections(corrections, student_page_label, sid)
                             for field_name in student_corrections:
                                 if field_name.startswith("Q"):
                                     try:
@@ -1588,7 +1616,7 @@ def score_pdf(
                 # This must happen before scoring so corrected answers affect the grades.
                 if corrections:
                     sid = info.get("student_id", "")
-                    student_corrections = corrections.get(sid, {})
+                    student_corrections = _find_student_corrections(corrections, str(page_idx), sid)
                     # StudentID correction — update info so roster/output zone use the corrected ID
                     if "student_id" in student_corrections:
                         info["student_id"] = student_corrections["student_id"]
@@ -1712,7 +1740,7 @@ def score_pdf(
                     student_corrected = set()
                     if corrections:
                         sid = info.get("student_id", "")
-                        student_corrections = corrections.get(sid, {})
+                        student_corrections = _find_student_corrections(corrections, str(page_idx), sid)
                         for field_name in student_corrections:
                             if field_name.startswith("Q"):
                                 try:

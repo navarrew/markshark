@@ -398,11 +398,20 @@ class CorrectionLog:
         result = dict(row)
         student_id = row.get(student_id_field, "")
 
-        if not student_id:
-            return result
-
         effective = self.get_effective_corrections()
-        student_corrections = effective.get(student_id, {})
+
+        # The Review panel files corrections under the sheet's page label
+        # (for example "page:3" or "page:3-4"), taken from the row's Page
+        # column.  Older logs used the student ID, so try the page key first
+        # and fall back to the ID.  Without this, exported grades silently
+        # ignore every correction made in the Review panel.
+        page_label = str(row.get("Page", row.get("page", ""))).strip()
+        student_corrections = effective.get(f"page:{page_label}", {}) if page_label else {}
+        if not student_corrections and student_id:
+            student_corrections = effective.get(student_id, {})
+
+        if not student_corrections:
+            return result
 
         # Apply student ID correction (special case - changes the ID itself)
         if "student_id" in student_corrections:

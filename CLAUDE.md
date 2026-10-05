@@ -201,7 +201,7 @@ A streamlined grading mode for small classes (no student IDs, no roster matching
 - **Global default**: `SettingsStore` key `"defaults/simple_grade"` (default: `False`)
 - **Report**: `generate_report(..., simple=True)` produces Summary + Class Scores + Answer Key only (no per-version item analysis)
 - **CLI**: `markshark report --simple` for the same streamlined output
-- **Corrections**: In simple mode, corrections are keyed by **page number** (from the CSV `Page` column) instead of `StudentID`. The `merge_corrections()` function auto-falls back to Page matching when StudentID matching fails — no explicit mode flag needed.
+- **Corrections**: The Review panel keys ALL corrections by page label (`page:3` for one-page sheets, `page:3-4` for multipage), copied from the CSV `Page` column, in simple mode or not. Every consumer must look up the page key first and fall back to `StudentID` only for older logs: `merge_corrections()` (report), `_find_student_corrections()` in `score_core.py` (re-annotate), and `CorrectionLog.apply_to_row()` (export). A consumer that looks up by StudentID only will silently ignore corrections.
 - **Review panel**: Detects simple mode from ProjectRegistry on CSV load; uses page number as the correction key in `_on_cell_changed()`
 
 ## Current Feature Branch Focus
