@@ -108,6 +108,14 @@ a = Analysis(
         "PyQt5",
         "PyQt6",
         "PySide2",
+        # Same PyMuPDF 2.0 layout-analyzer problem documented in
+        # MarkShark-win.spec.  It is a dependency issue, not a Windows one, so
+        # the macOS build needs the identical exclusions.  Verified on Windows;
+        # not yet verified on macOS.
+        "pymupdf.layout",
+        "pymupdf_layout",
+        "pymupdf4llm",
+        "onnxruntime",
     ],
     noarchive=False,
     optimize=0,
