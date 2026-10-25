@@ -1,0 +1,89 @@
+# Manual test build of the Windows app.
+#
+# Why this file exists:
+#   build-release.yml only runs when you push a version tag (like v1.2.3), and
+#   it always publishes a public GitHub Release.  This file builds only the
+#   Windows app, on demand, from any branch, and publishes nothing.
+#
+# How to run it:
+#   GitHub website > your repository > Actions tab > "Build Windows (manual test)"
+#   > "Run workflow" button (choose a branch) > wait a few minutes > open the
+#   finished run > download "windows-test-build" from the Artifacts section.
+#   Artifacts are kept for 14 days, then GitHub deletes them.
+#
+# Keep in sync:
+#   The build steps copy the Windows job in build-release.yml on purpose, so a
+#   test build here predicts what a real release will produce.  If you change
+#   the build steps in one file, change them in the other.
+
+name: Build Windows (manual test)
+
+on:
+  workflow_dispatch:   # adds the "Run workflow" button; nothing triggers it automatically
+
+permissions:
+  contents: read       # this job only reads the code; it never writes to the repository
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Download the full history and all tags.  MarkShark's version number
+          # is worked out from git tags (hatch-vcs in pyproject.toml), and a
+          # default shallow download has no tags, which can break the install.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Make a label for this test build
+        id: version
+        shell: bash
+        # Looks like "test-56bafa8": the first 7 characters of the commit ID.
+        # This tells you exactly which version of the code a zip came from.
+        run: echo "version=test-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build Windows app
+        env:
+          MARKSHARK_VERSION: ${{ steps.version.outputs.version }}
+        run: pyinstaller MarkShark-win.spec
+
+      - name: Check the build produced what we expect
+        shell: pwsh
+        # Fails the run early, with a clear message, if the program or its
+        # bundled templates are missing, instead of handing you a broken zip.
+        run: |
+          if (-not (Test-Path "dist/MarkShark/MarkShark.exe")) {
+            throw "MarkShark.exe was not built"
+          }
+          $templates = Get-ChildItem -Recurse -Directory dist/MarkShark -Filter templates | Select-Object -First 1
+          if (-not $templates) {
+            throw "The templates folder is missing from the bundle"
+          }
+          $bytes = (Get-ChildItem -Recurse -File dist/MarkShark | Measure-Object Length -Sum).Sum
+          Write-Host ("Build looks complete. Total size: {0:N0} MB" -f ($bytes / 1MB))
+
+      - name: Zip the Windows bundle
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/MarkShark -DestinationPath MarkShark-${{ steps.version.outputs.version }}-Windows.zip
+
+      - name: Upload the zip so you can download it
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-test-build
+          path: MarkShark-${{ steps.version.outputs.version }}-Windows.zip
+          retention-days: 14
