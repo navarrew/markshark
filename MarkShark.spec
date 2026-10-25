@@ -108,10 +108,10 @@ a = Analysis(
         "PyQt5",
         "PyQt6",
         "PySide2",
-        # Same PyMuPDF 2.0 layout-analyzer problem documented in
-        # MarkShark-win.spec.  It is a dependency issue, not a Windows one, so
-        # the macOS build needs the identical exclusions.  Verified on Windows;
-        # not yet verified on macOS.
+        # Same PyMuPDF 2.0 layout-analyzer guard documented in
+        # MarkShark-win.spec.  Inert while the "pymupdf>=1.24,<2" cap in
+        # pyproject.toml holds; kept so raising that cap cannot silently
+        # reintroduce the startup crash on this platform either.
         "pymupdf.layout",
         "pymupdf_layout",
         "pymupdf4llm",

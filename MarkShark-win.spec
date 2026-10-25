@@ -107,17 +107,19 @@ a = Analysis(
         "PyQt5",
         "PyQt6",
         "PySide2",
-        # PyMuPDF 2.0 (installed by "pymupdf>=1.24" in pyproject.toml) added an
-        # optional page-layout analyzer that runs an AI model.  Importing
-        # PyMuPDF activates it immediately, and it reads model data files from
-        # pymupdf/layout/resources/.  PyInstaller bundles the analyzer's Python
-        # code but not those data files, so the frozen app died at startup with
-        # FileNotFoundError on layout_rf*.yaml before any window appeared.
-        # MarkShark only renders and writes PDF pages (see tools/io_pages.py)
-        # and never calls the analyzer.  PyMuPDF wraps its own
-        # "import pymupdf.layout" in try/except ImportError, so excluding these
-        # makes it skip the analyzer cleanly instead of crashing.
-        # Removing these lines brings the startup crash back.
+        # Second line of defence against the PyMuPDF 2.0 layout analyzer.
+        # PyMuPDF 2.0 activates an AI page-layout analyzer on import and reads
+        # model data files from pymupdf/layout/resources/.  PyInstaller bundled
+        # the analyzer's code but not those data files, so the packaged app
+        # died at startup with FileNotFoundError on layout_rf*.yaml before any
+        # window appeared.  MarkShark only renders and writes PDF pages (see
+        # tools/io_pages.py) and never calls the analyzer.
+        # The real fix is the "pymupdf>=1.24,<2" cap in pyproject.toml, which
+        # keeps 2.0 out entirely; with that cap these modules do not exist and
+        # these four lines do nothing.  They are kept so that raising the cap
+        # later cannot silently reintroduce the crash.  PyMuPDF wraps its own
+        # "import pymupdf.layout" in try/except ImportError, so excluding them
+        # makes it skip the analyzer cleanly rather than fail.
         "pymupdf.layout",
         "pymupdf_layout",
         "pymupdf4llm",

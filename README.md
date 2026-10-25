@@ -71,7 +71,7 @@ markshark --help
 - rich>=13.7
 - opencv-contrib-python>=4.9
 - numpy>=1.26
-- pymupdf>=1.24
+- pymupdf>=1.24,<2
 - pdf2image>=1.17
 - pandas>=2.1
 - matplotlib>=3.8

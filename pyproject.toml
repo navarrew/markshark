@@ -29,7 +29,14 @@ dependencies = [
   "PySide6>=6.6",
   "opencv-contrib-python>=4.9",
   "numpy>=1.26",
-  "pymupdf>=1.24",
+  # Renders PDF pages to images and writes annotated PDFs (tools/io_pages.py).
+  # Capped below 2.0 deliberately.  PyMuPDF 2.0 bundles an AI page-layout
+  # analyzer that activates on import and pulls in onnxruntime, networkx,
+  # psutil and tabulate.  MarkShark uses none of it, and its model data files
+  # broke the packaged Windows app at startup.  The 1.x line does the same
+  # rendering job with no extra dependencies at all.  Before raising this cap,
+  # build and launch the packaged app on both Mac and Windows.
+  "pymupdf>=1.24,<2",
   "pdf2image>=1.17",
   "pandas>=2.1",
   "matplotlib>=3.8",
